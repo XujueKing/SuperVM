@@ -1,0 +1,3 @@
+[2m2025-11-02T20:42:28.791695Z[0m [32m INFO[0m [2mnode_core[0m[2m:[0m Starting node (PoC) with config: config.toml
+[2m2025-11-02T20:42:28.803252Z[0m [32m INFO[0m [2mnode_core[0m[2m:[0m PoC: add(7,8) => 15
+[2m2025-11-02T20:42:28.806183Z[0m [32m INFO[0m [2mnode_core[0m[2m:[0m 按 Ctrl-C 退出...

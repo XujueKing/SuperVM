@@ -1,0 +1,21 @@
+﻿[package]
+name = "vm-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+wasmi = "0.31"
+wasmtime = "17.0"
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+wat = "1.0"
+
+# 密码学库
+sha2 = "0.10"
+sha3 = "0.10"
+k256 = { version = "0.13", features = ["ecdsa", "arithmetic"] }
+ed25519-dalek = { version = "2.0", features = ["rand_core"] }
+hex = "0.4"

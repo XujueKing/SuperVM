@@ -1,0 +1,5 @@
+next: add chain_api and events in host.rs
+- add fields events, block_number, timestamp to HostState (already will be added)
+- implement chain_api functions: block_number(), timestamp(), emit_event(ptr,len)
+- register these functions in lib.rs
+- add tests in lib.rs to validate emit_event

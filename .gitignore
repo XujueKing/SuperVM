@@ -1,0 +1,33 @@
+# Rust 编译输出
+/target/
+**/*.rs.bk
+*.pdb
+
+# Cargo lock 文件（库项目可以忽略）
+# Cargo.lock
+
+# IDE / 编辑器
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 测试输出
+*.stderr
+*.stdout
+
+# Solana 参考代码（保留本地，但不提交到仓库）
+/solana/
+
+# 临时文件
+*.tmp
+*.log

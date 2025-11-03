@@ -1,0 +1,15 @@
+﻿[workspace]
+members = [
+    "src/vm-runtime",
+    "src/node-core"
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["king <king@example.com>"]
+description = "SuperVM - WASM-first VM PoC and workspace"
+readme = "README-PoC.md"
+repository = "https://github.com/king/supervm"
+license = "MIT OR Apache-2.0"

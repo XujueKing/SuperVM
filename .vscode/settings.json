@@ -1,0 +1,6 @@
+﻿{
+  "terminal.integrated.defaultProfile.windows": "Windows PowerShell",
+  "code-runner.runInTerminal": true,
+  "powershell.codeFormatting.preset": "Default",
+  "powershell.integratedConsole.showOnStartup": false
+}
