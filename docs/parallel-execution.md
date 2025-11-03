@@ -215,6 +215,8 @@ pub struct ParallelScheduler {
 **核心方法**:
 - `execute_with_snapshot<F>()`: 快照保护执行
 - `execute_with_retry<F>(max_retries)`: 自动重试执行
+- `execute_batch(ops)`: 批量执行一组交易，原子提交/回滚
+- `batch_write/read/delete(...)`: 批量存储操作，降低锁争用
 - `get_parallel_batch()`: 获取可并行交易
 - `get_stats()`: 获取执行统计
 
@@ -258,6 +260,32 @@ pub struct Task {
 - ✅ **高吞吐量**: 减少线程空闲时间
 - ✅ **可扩展性**: 支持任意数量的工作线程
 - ✅ **优先级支持**: 可按优先级调度任务
+
+---
+
+### 8. Batch Operations (批量操作)
+
+**动机**: 批量化减少锁获取与快照创建/提交的次数，提升高并发场景下的吞吐量。
+
+**StateManager 批量 API**:
+- `batch_write(Vec<(Vec<u8>, Vec<u8>)>) -> usize`
+- `batch_read(&[Vec<u8>]) -> Vec<(Vec<u8>, Vec<u8>)>`
+- `batch_delete(&[Vec<u8>]) -> usize`
+- `batch_emit_events(Vec<Vec<u8>>) -> usize`
+
+**ParallelScheduler 批量 API**:
+- `execute_batch<Vec<T>>(Vec<F>)`: 在单一快照中执行多笔交易，任一失败则整批回滚
+- 直通批量存储接口：`batch_write/read/delete`
+
+**示例**:
+```rust
+// 批量执行三笔转账，任一失败则整批回滚
+let results = scheduler.execute_batch(vec![
+    Box::new(|m: &StateManager| { /* tx1 */ Ok(1) }) as Box<dyn FnOnce(&StateManager) -> Result<i32, String>>,
+    Box::new(|m: &StateManager| { /* tx2 */ Ok(2) }),
+    Box::new(|m: &StateManager| { /* tx3 */ Ok(3) }),
+])?;
+```
 
 ---
 

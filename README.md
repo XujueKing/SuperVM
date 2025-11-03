@@ -1,8 +1,8 @@
 # SuperVM - WASM Runtime with Event System
 
 开发者: 
-Rainbow Haruko(CHINA) / king(CHINA)
-Alan Tang(CHINA) / Xuxu(CHINA)
+Rainbow Haruko(CHINA) / king(CHINA) / NoahX(CHINA)
+/ Alan Tang(CHINA) / Xuxu(CHINA)
 
 SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作、链上下文访问和事件系统。
 
