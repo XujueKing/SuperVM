@@ -210,11 +210,175 @@ fn bench_parallel_scheduling(c: &mut Criterion) {
     group.finish();
 }
 
+/// 基准测试: MVCC 性能对比
+fn bench_mvcc_operations(c: &mut Criterion) {
+    use vm_runtime::MvccStore;
+    use std::sync::Arc;
+    
+    let mut group = c.benchmark_group("mvcc_operations");
+    
+    // 基准 1: 只读事务 vs 读写事务
+    group.bench_function("read_only_transaction", |b| {
+        let store = Arc::new(MvccStore::new());
+        
+        // 预填充数据
+        for i in 0..100 {
+            let mut txn = store.begin();
+            txn.write(format!("key_{}", i).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+        }
+        
+        b.iter(|| {
+            let txn = store.begin_read_only();
+            for i in 0..10 {
+                black_box(txn.read(&format!("key_{}", i).into_bytes()));
+            }
+            let _ = txn.commit();
+        });
+    });
+    
+    group.bench_function("read_write_transaction", |b| {
+        let store = Arc::new(MvccStore::new());
+        
+        // 预填充数据
+        for i in 0..100 {
+            let mut txn = store.begin();
+            txn.write(format!("key_{}", i).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+        }
+        
+        b.iter(|| {
+            let txn = store.begin();
+            for i in 0..10 {
+                black_box(txn.read(&format!("key_{}", i).into_bytes()));
+            }
+            let _ = txn.commit();
+        });
+    });
+    
+    // 基准 2: 无冲突写入性能
+    group.bench_function("mvcc_non_conflicting_writes", |b| {
+        let store = Arc::new(MvccStore::new());
+        let mut counter = 0;
+        
+        b.iter(|| {
+            let mut txn = store.begin();
+            let key = format!("key_{}", counter).into_bytes();
+            txn.write(key, b"value".to_vec());
+            let _ = txn.commit();
+            counter += 1;
+        });
+    });
+    
+    // 基准 3: 冲突写入性能（写同一个键）
+    group.bench_function("mvcc_conflicting_writes", |b| {
+        let store = Arc::new(MvccStore::new());
+        
+        b.iter(|| {
+            let mut txn = store.begin();
+            txn.write(b"hot_key".to_vec(), b"value".to_vec());
+            let _ = txn.commit(); // 可能成功也可能冲突
+        });
+    });
+    
+    group.finish();
+}
+
+/// 基准测试: MVCC 调度器集成
+fn bench_mvcc_scheduler(c: &mut Criterion) {
+    use vm_runtime::MvccStore;
+    use std::sync::Arc;
+    
+    let mut group = c.benchmark_group("mvcc_scheduler");
+    
+    // 基准 1: Snapshot 后端 vs MVCC 后端（只读）
+    group.bench_function("snapshot_backend_read", |b| {
+        let scheduler = ParallelScheduler::new();
+        
+        // 预填充数据
+        for i in 0..100 {
+            scheduler.execute_with_snapshot(|manager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(format!("key_{}", i).into_bytes(), b"value".to_vec());
+                Ok(())
+            }).unwrap();
+        }
+        
+        b.iter(|| {
+            scheduler.execute_with_snapshot(|manager| {
+                let storage = manager.get_storage();
+                let storage = storage.lock().unwrap();
+                for i in 0..10 {
+                    black_box(storage.get(&format!("key_{}", i).into_bytes()));
+                }
+                Ok(())
+            }).unwrap();
+        });
+    });
+    
+    group.bench_function("mvcc_backend_read_only", |b| {
+        let store = Arc::new(MvccStore::new());
+        let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&store));
+        
+        // 预填充数据
+        for i in 0..100 {
+            scheduler.execute_with_mvcc(|txn| {
+                txn.write(format!("key_{}", i).into_bytes(), b"value".to_vec());
+                Ok(())
+            }).unwrap();
+        }
+        
+        b.iter(|| {
+            scheduler.execute_with_mvcc_read_only(|txn| {
+                for i in 0..10 {
+                    black_box(txn.read(&format!("key_{}", i).into_bytes()));
+                }
+                Ok(())
+            }).unwrap();
+        });
+    });
+    
+    // 基准 2: 写入性能对比
+    group.bench_function("snapshot_backend_write", |b| {
+        let scheduler = ParallelScheduler::new();
+        let mut counter = 0;
+        
+        b.iter(|| {
+            scheduler.execute_with_snapshot(|manager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(format!("key_{}", counter).into_bytes(), b"value".to_vec());
+                Ok(())
+            }).unwrap();
+            counter += 1;
+        });
+    });
+    
+    group.bench_function("mvcc_backend_write", |b| {
+        let store = Arc::new(MvccStore::new());
+        let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&store));
+        let mut counter = 0;
+        
+        b.iter(|| {
+            scheduler.execute_with_mvcc(|txn| {
+                txn.write(format!("key_{}", counter).into_bytes(), b"value".to_vec());
+                Ok(())
+            }).unwrap();
+            counter += 1;
+        });
+    });
+    
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_conflict_detection,
     bench_snapshot_operations,
     bench_dependency_graph,
-    bench_parallel_scheduling
+    bench_parallel_scheduling,
+    bench_mvcc_operations,
+    bench_mvcc_scheduler
 );
 criterion_main!(benches);

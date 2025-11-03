@@ -9,12 +9,14 @@ mod storage;
 mod host;
 mod crypto;
 pub mod parallel;
+pub mod mvcc;
 
 pub use storage::{Storage, MemoryStorage};
 pub use parallel::{
     ReadWriteSet, ExecutionResult, ParallelScheduler, ConflictDetector, DependencyGraph, TxId,
     StorageSnapshot, StateManager, ExecutionStats, WorkStealingScheduler, Task
 };
+pub use mvcc::{MvccStore, Version, Txn};
 use host::{HostState, storage_api, chain_api, crypto_api};
 
 /// VM 运行时的主要接口

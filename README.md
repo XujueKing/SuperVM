@@ -20,7 +20,8 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
 - **并行执行引擎**:
   - 🚀 并行交易调度器 (ParallelScheduler)
   - ⚡ 工作窃取调度器 (WorkStealingScheduler)
-  - 📦 批量操作优化 (batch_write/read/delete/execute) - NEW
+  - 📦 批量操作优化 (batch_write/read/delete/execute)
+  - 🔐 MVCC 多版本并发控制 (MvccStore) - NEW
   - 🔍 冲突检测与依赖分析 (ConflictDetector)
   - 📊 执行统计 (ExecutionStats)
   - 🔄 自动重试机制 (execute_with_retry)
@@ -38,7 +39,8 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - Demo 5: 并行执行与冲突检测
   - Demo 6: 状态快照与回滚
   - Demo 7: 工作窃取调度器
-  - Demo 8: 批量操作优化 (NEW 📦)
+  - Demo 8: 批量操作优化
+  - Demo 9: MVCC 多版本并发控制 (NEW �)
 
 ## 快速开始
 
@@ -79,7 +81,7 @@ cargo test -p vm-runtime
 cargo test -p vm-runtime test_execute_with_context
 ```
 
-**测试覆盖 (41/41 通过):**
+**测试覆盖 (54/54 通过):**
 
 **核心功能:**
 - ✅ test_memory_storage - 存储实现测试
@@ -117,11 +119,40 @@ cargo test -p vm-runtime test_execute_with_context
 - ✅ test_execute_batch - 批量执行
 - ✅ test_execute_batch_rollback - 批量回滚
 
+**MVCC 多版本并发控制:**
+- ✅ test_mvcc_write_write_conflict - 写写冲突检测
+- ✅ test_mvcc_snapshot_isolation_visibility - 快照隔离可见性
+- ✅ test_mvcc_version_visibility_multiple_versions - 多版本可见性
+- ✅ test_mvcc_concurrent_reads - 并发读取测试
+- ✅ test_mvcc_concurrent_writes_different_keys - 不同键并发写
+- ✅ test_mvcc_concurrent_writes_same_key_conflicts - 同键冲突检测
+- ✅ test_mvcc_read_only_transaction - 只读事务快速路径
+- ✅ test_mvcc_read_only_cannot_write - 只读事务写入保护
+- ✅ test_mvcc_read_only_cannot_delete - 只读事务删除保护
+- ✅ test_mvcc_read_only_performance - 只读性能对比
+
+**MVCC 调度器集成:**
+- ✅ test_scheduler_mvcc_basic_commit - MVCC调度器基础提交
+- ✅ test_scheduler_mvcc_abort_on_error - MVCC调度器错误回滚
+- ✅ test_scheduler_mvcc_read_only_fast_path - MVCC调度器只读路径
+
 **基准测试:**
 ```powershell
 # 运行性能基准测试
 cargo bench --bench parallel_benchmark
 ```
+
+### 性能摘要 (Criterion)
+
+- 并行调度 get_parallel_batch/100: 平均约 350,045 ns/批
+- 冲突检测 non_conflicting/100: 平均约 396,673 ns
+- 冲突检测 50% 冲突/100: 平均约 460,675 ns
+- 快照创建 create_snapshot/1000: 平均约 224,712 ns
+- 依赖图 build_and_query/100: 平均约 344,862 ns
+
+说明:
+- 单位为 ns/iter（Criterion 默认），不同机器的绝对值会有差异，请以相对对比为主。
+- 完整 HTML 报告路径: target/criterion/report/index.html
 
 ## 使用示例
 
@@ -229,6 +260,41 @@ let operations = vec![
 ];
 let results = scheduler.execute_batch(operations)?;
 ```
+
+### MVCC 多版本并发控制
+
+```rust
+use vm_runtime::MvccStore;
+
+let store = MvccStore::new();
+
+// 事务 1：写入并提交
+let mut t1 = store.begin();
+t1.write(b"balance".to_vec(), b"100".to_vec());
+let ts1 = t1.commit()?;
+
+// 事务 2：快照隔离读取
+let t2 = store.begin();
+assert_eq!(t2.read(b"balance").as_deref(), Some(b"100".as_ref()));
+
+// 并发更新同一键会触发写写冲突检测
+let mut t3 = store.begin();
+let mut t4 = store.begin();
+t3.write(b"balance".to_vec(), b"200".to_vec());
+t4.write(b"balance".to_vec(), b"300".to_vec());
+
+// 第一个提交成功
+t3.commit()?;
+// 第二个提交失败（写写冲突）
+assert!(t4.commit().is_err());
+```
+
+**优化特性**:
+- ✅ 每键粒度读写锁 (RwLock)，允许并发读取
+- ✅ DashMap 无锁哈希表，降低全局锁竞争
+- ✅ 原子时间戳 (AtomicU64)，消除时间戳分配瓶颈
+- ✅ 提交时按键排序加锁，避免死锁
+- ✅ 快照隔离 (Snapshot Isolation) 语义
 
 ### 使用事件系统
 
@@ -385,31 +451,36 @@ SuperVM/
 - 🚀 **高性能**: wasmtime JIT 编译优化
 - 📦 **模块化**: 可插拔存储后端,易于扩展
 
+提示: 想快速了解本项目的性能表现？请直接查看下方的“[性能摘要 (Criterion)](#性能摘要-criterion)”小节，或打开本地基准报告 HTML：`target/criterion/report/index.html`。
+
 ## 开发状态
 
-当前版本: **v0.3.0** (活跃开发)
+当前版本: **v0.5.0** (活跃开发)
 
 **已完成 ✅:**
 - ✅ 基础 WASM 执行引擎
 - ✅ 存储抽象与实现
 - ✅ Host Functions (存储 + 链上下文 + 事件 + 密码学)
 - ✅ execute_with_context API
-- ✅ 并行执行引擎 (85% 完成)
-  - ✅ 冲突检测与依赖分析
-  - ✅ 状态快照与回滚
-  - ✅ 执行统计与监控
-  - ✅ 自动重试机制
-  - ✅ 工作窃取调度器 (NEW)
-- ✅ 完整单元测试覆盖 (35 个测试)
-- ✅ 性能基准测试框架
+- ✅ 并行执行引擎
+    - ✅ 冲突检测与依赖分析
+    - ✅ 状态快照与回滚
+    - ✅ 执行统计与监控
+    - ✅ 自动重试机制
+    - ✅ 工作窃取调度器
+    - ✅ 批量操作优化（batch_write/read/delete/execute）
+    - ✅ MVCC 多版本并发控制（每键粒度读写锁 + DashMap）
+- ✅ 完整单元测试覆盖 (47 个测试)
+- ✅ 性能基准测试框架（Criterion）
 
 **进行中 🚧:**
-- 🚧 批量提交优化
-- 🚧 性能基准测试报告
+- 🚧 性能基准测试报告总结与文档化
+- 🚧 MVCC 与 ParallelScheduler 集成
 
 **计划中 📋:**
 - 📋 编译器集成 (Solidity/AssemblyScript)
 - 📋 EVM 兼容层
+- 📋 乐观并发控制（OCC）
 - 📋 生产环境部署
 
 详见 [CHANGELOG.md](CHANGELOG.md) 和 [ROADMAP.md](ROADMAP.md)。

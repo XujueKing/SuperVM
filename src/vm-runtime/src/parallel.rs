@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 use crossbeam_deque::{Injector, Stealer, Worker};
 use rayon::prelude::*;
+use crate::mvcc::{MvccStore, Txn};
 
 /// 交易标识符
 pub type TxId = u64;
@@ -253,6 +254,8 @@ pub struct ParallelScheduler {
     stats_rollback: Arc<AtomicU64>,
     stats_retry: Arc<AtomicU64>,
     stats_conflict: Arc<AtomicU64>,
+    /// 可选的 MVCC 存储后端
+    mvcc_store: Option<Arc<MvccStore>>,
 }
 
 impl ParallelScheduler {
@@ -266,6 +269,22 @@ impl ParallelScheduler {
             stats_rollback: Arc::new(AtomicU64::new(0)),
             stats_retry: Arc::new(AtomicU64::new(0)),
             stats_conflict: Arc::new(AtomicU64::new(0)),
+            mvcc_store: None,
+        }
+    }
+
+    /// 使用 MVCC 后端创建调度器
+    pub fn new_with_mvcc(store: Arc<MvccStore>) -> Self {
+        Self {
+            detector: Arc::new(Mutex::new(ConflictDetector::new())),
+            completed: Arc::new(Mutex::new(HashSet::new())),
+            state_manager: Arc::new(Mutex::new(StateManager::new())),
+            stats_successful: Arc::new(AtomicU64::new(0)),
+            stats_failed: Arc::new(AtomicU64::new(0)),
+            stats_rollback: Arc::new(AtomicU64::new(0)),
+            stats_retry: Arc::new(AtomicU64::new(0)),
+            stats_conflict: Arc::new(AtomicU64::new(0)),
+            mvcc_store: Some(store),
         }
     }
     
@@ -403,6 +422,59 @@ impl ParallelScheduler {
     pub fn get_events(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
         let manager = self.state_manager.lock().unwrap();
         manager.get_events()
+    }
+
+    /// 使用 MVCC 事务执行（读写事务）
+    ///
+    /// - 闭包内进行读写，成功则提交，失败则中止
+    pub fn execute_with_mvcc<T, F>(&self, operation: F) -> Result<T, String>
+    where
+        F: FnOnce(&mut Txn) -> Result<T, String>,
+    {
+        let store = self
+            .mvcc_store
+            .as_ref()
+            .ok_or_else(|| "MVCC store is not configured".to_string())?;
+
+        let mut txn = store.begin();
+        match operation(&mut txn) {
+            Ok(v) => {
+                txn.commit()?;
+                self.stats_successful.fetch_add(1, Ordering::Relaxed);
+                Ok(v)
+            }
+            Err(e) => {
+                // 丢弃事务即视为回滚本地写集合
+                self.stats_failed.fetch_add(1, Ordering::Relaxed);
+                self.stats_rollback.fetch_add(1, Ordering::Relaxed);
+                Err(e)
+            }
+        }
+    }
+
+    /// 使用 MVCC 只读事务执行（快速路径）
+    pub fn execute_with_mvcc_read_only<T, F>(&self, operation: F) -> Result<T, String>
+    where
+        F: FnOnce(&Txn) -> Result<T, String>,
+    {
+        let store = self
+            .mvcc_store
+            .as_ref()
+            .ok_or_else(|| "MVCC store is not configured".to_string())?;
+
+        let txn = store.begin_read_only();
+        match operation(&txn) {
+            Ok(v) => {
+                // 只读事务提交为快速路径
+                let _ = txn.commit()?;
+                self.stats_successful.fetch_add(1, Ordering::Relaxed);
+                Ok(v)
+            }
+            Err(e) => {
+                self.stats_failed.fetch_add(1, Ordering::Relaxed);
+                Err(e)
+            }
+        }
     }
     
     /// 批量执行交易
@@ -1518,5 +1590,71 @@ mod snapshot_tests {
         
         // 应该返回错误
         assert!(result.is_err());
+    }
+
+    // =========================
+    // MVCC 集成测试
+    // =========================
+
+    #[test]
+    fn test_scheduler_mvcc_basic_commit() {
+        use crate::mvcc::MvccStore;
+        use std::sync::Arc;
+        
+        let mvcc = Arc::new(MvccStore::new());
+        let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc));
+
+        // 成功的 MVCC 事务
+        let result = scheduler.execute_with_mvcc(|txn| {
+            txn.write(b"k".to_vec(), b"v".to_vec());
+            Ok(())
+        });
+        assert!(result.is_ok());
+
+        // 只读事务应能看到最新值
+        let ro = mvcc.begin_read_only();
+        assert_eq!(ro.read(b"k").as_deref(), Some(b"v".as_ref()));
+    }
+
+    #[test]
+    fn test_scheduler_mvcc_abort_on_error() {
+        use crate::mvcc::MvccStore;
+        use std::sync::Arc;
+        
+        let mvcc = Arc::new(MvccStore::new());
+        let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc));
+
+        // 失败事务，不应提交
+        let result: Result<(), String> = scheduler.execute_with_mvcc(|txn| {
+            txn.write(b"kk".to_vec(), b"vv".to_vec());
+            Err("fail".into())
+        });
+        assert!(result.is_err());
+
+        // 读不到未提交的写
+        let ro = mvcc.begin_read_only();
+        assert_eq!(ro.read(b"kk"), None);
+    }
+
+    #[test]
+    fn test_scheduler_mvcc_read_only_fast_path() {
+        use crate::mvcc::MvccStore;
+        use std::sync::Arc;
+        
+        let mvcc = Arc::new(MvccStore::new());
+        let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc));
+
+        // 先写入
+        scheduler.execute_with_mvcc(|txn| {
+            txn.write(b"rk".to_vec(), b"rv".to_vec());
+            Ok(())
+        }).unwrap();
+
+        // 只读查询
+        let r = scheduler.execute_with_mvcc_read_only(|txn| {
+            Ok(txn.read(b"rk"))
+        }).unwrap();
+
+        assert_eq!(r.as_deref(), Some(b"rv".as_ref()));
     }
 }

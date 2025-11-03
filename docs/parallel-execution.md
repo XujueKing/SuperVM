@@ -1,8 +1,8 @@
 # 并行执行引擎设计文档
 
 作者: king  
-版本: v0.2.0  
-日期: 2025-11-03
+版本: v0.5.0  
+日期: 2025-11-04
 
 ## 目录
 
@@ -526,6 +526,21 @@ scheduler.execute_with_snapshot(|manager| {
 })?;
 ```
 
+### 4. 常见瓶颈分析
+
+- 锁竞争（Mutex 争用）
+    - 症状: 高并发下延迟抖动、尾延迟上升
+    - 缓解: 采用批量写/读、缩短持锁区间、必要时细化锁粒度
+- 快照创建/回滚开销
+    - 症状: 大事务或深度嵌套时耗时上升
+    - 缓解: 合理分批、减少不必要的嵌套、将只读路径移出快照
+- 依赖图过度密集
+    - 症状: 可并行度下降、批次变小
+    - 缓解: 通过读写集设计减少交叉访问、对热门键做分片
+- 调度开销（工作窃取）
+    - 症状: 任务极短时调度成本相对偏高
+    - 缓解: 合并小任务为批处理、提升每个任务的工作量
+
 ---
 
 ## 测试验证
@@ -567,6 +582,24 @@ cargo bench --bench parallel_benchmark
 2. **快照操作性能**: 10/100/1000 数据项
 3. **依赖图构建**: 不同冲突率
 4. **并行调度**: 批次大小优化
+
+#### 如何阅读报告
+
+- 打开 HTML 报告: `target/criterion/report/index.html`
+- estimates.json 字段:
+    - mean/median: 平均/中位数耗时
+    - slope: 线性拟合的趋势估计
+    - std_dev: 标准差（抖动）
+    - confidence_interval: 置信区间（默认 95%）
+- 单位: ns/iter（Criterion 默认单位）
+
+#### 示例指标（节选）
+
+- 并行调度 get_parallel_batch/100: 平均约 350,045 ns/批
+- 冲突检测 non_conflicting/100: 平均约 396,673 ns
+- 冲突检测 50% 冲突/100: 平均约 460,675 ns
+- 快照创建 create_snapshot/1000: 平均约 224,712 ns
+- 依赖图 build_and_query/100: 平均约 344,862 ns
 
 ---
 
@@ -612,17 +645,134 @@ let result = scheduler.execute_with_retry(
 
 ---
 
+## MVCC 存储后端 (v0.5.0) 🔐
+
+### 什么是 MVCC？
+
+MVCC (Multi-Version Concurrency Control，多版本并发控制) 是一种并发控制方法，允许多个事务同时访问数据库而不互相阻塞。每个键维护多个版本，事务读取其启动时刻的快照，写入创建新版本。
+
+### 何时使用 MVCC？
+
+**推荐使用 MVCC 的场景**:
+- ✅ 高并发读写混合负载
+- ✅ 长事务与短事务混合
+- ✅ 需要快照隔离语义
+- ✅ 查询密集型应用（使用只读事务优化）
+
+**推荐使用 Snapshot 的场景**:
+- ✅ 简单串行执行
+- ✅ 短事务为主
+- ✅ 内存敏感场景（MVCC 会保留多版本）
+- ✅ 不需要高并发
+
+### 创建 MVCC 调度器
+
+```rust
+use vm_runtime::{ParallelScheduler, MvccStore};
+use std::sync::Arc;
+
+// 创建 MVCC 存储
+let mvcc_store = Arc::new(MvccStore::new());
+
+// 创建使用 MVCC 后端的调度器
+let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc_store));
+
+// 执行读写事务
+scheduler.execute_with_mvcc(|txn| {
+    // 读取数据
+    if let Some(balance) = txn.read(b"balance") {
+        println!("Balance: {:?}", balance);
+    }
+    
+    // 写入数据（本地缓存）
+    txn.write(b"balance".to_vec(), b"100".to_vec());
+    
+    // 成功返回，自动提交
+    Ok(())
+})?;
+
+// 执行只读事务（快速路径，无冲突检测）
+let result = scheduler.execute_with_mvcc_read_only(|txn| {
+    let balance = txn.read(b"balance")?
+        .ok_or("Balance not found")?;
+    
+    Ok(balance)
+})?;
+```
+
+### MVCC 特性
+
+**快照隔离 (Snapshot Isolation)**:
+- 每个事务看到启动时刻的数据快照
+- 读取不会被写入阻塞
+- 写入不会阻塞读取
+
+**写写冲突检测**:
+```rust
+let store = Arc::new(MvccStore::new());
+
+// 事务 1 和 2 并发写同一键
+let mut t1 = store.begin();
+let mut t2 = store.begin();
+
+t1.write(b"key".to_vec(), b"value1".to_vec());
+t2.write(b"key".to_vec(), b"value2".to_vec());
+
+// 第一个提交成功
+t1.commit()?;
+
+// 第二个提交失败（写写冲突）
+assert!(t2.commit().is_err());
+```
+
+**只读事务优化**:
+```rust
+// 只读事务使用快速路径
+let ro_txn = store.begin_read_only();
+
+// 可以读取多个键
+let val1 = ro_txn.read(b"key1");
+let val2 = ro_txn.read(b"key2");
+
+// 提交无需冲突检测，直接返回
+let start_ts = ro_txn.commit()?;
+
+// ❌ 只读事务不能写入（会 panic）
+// ro_txn.write(...); // panic!
+```
+
+**细粒度并发控制**:
+- DashMap 无锁哈希表，减少全局锁竞争
+- 每键 RwLock，允许多个事务并发读取同一键
+- 提交时按键排序加锁，避免死锁
+- 原子时间戳分配，消除时间戳瓶颈
+
+### MVCC vs Snapshot 性能对比
+
+运行 MVCC 基准测试:
+```bash
+cargo bench --bench parallel_benchmark -- mvcc
+```
+
+**典型性能特征**:
+- **只读事务**: MVCC 快速路径比 Snapshot 快 2-5 倍
+- **并发读取**: MVCC 允许无锁并发，Snapshot 需要锁
+- **写入性能**: 无冲突时性能相近，MVCC 略有开销（版本管理）
+- **冲突场景**: MVCC 在提交时检测，Snapshot 在锁获取时阻塞
+
+---
+
 ## 未来优化
 
-### 短期 (v0.3.0)
-- [ ] 工作窃取调度算法
-- [ ] 批量提交优化
-- [ ] 性能基准测试报告
+### 短期 (v0.6.0)
+- [ ] MVCC 垃圾回收（旧版本清理）
+- [ ] MVCC 性能调优与压力测试
+- [ ] 交易优先级调度策略强化
 
-### 中期 (v0.4.0)
-- [ ] MVCC (多版本并发控制)
-- [ ] 乐观并发控制
-- [ ] 交易优先级调度
+### 中期 (v0.7.0)
+- [ ] 乐观并发控制（OCC）集成
+- [ ] 跨分片/分区的并行调度探索
+- [ ] MVCC 与 Snapshot 自动选择策略
 
 ### 长期 (v1.0.0)
 - [ ] 分布式并行执行
@@ -636,7 +786,9 @@ let result = scheduler.execute_with_retry(
 - [Solana Sealevel 并行执行](https://medium.com/solana-labs/sealevel-parallel-processing-thousands-of-smart-contracts-d814b378192)
 - [Aptos Block-STM](https://medium.com/aptoslabs/block-stm-how-we-execute-over-160k-transactions-per-second-on-the-aptos-blockchain-3b003657e4ba)
 - [Sui 并行执行模型](https://docs.sui.io/learn/sui-execution)
+- [PostgreSQL MVCC](https://www.postgresql.org/docs/current/mvcc.html)
+- [CockroachDB Transaction Layer](https://www.cockroachlabs.com/docs/stable/architecture/transaction-layer.html)
 
 ---
 
-*最后更新: 2025-11-03*
+*最后更新: 2025-11-04*

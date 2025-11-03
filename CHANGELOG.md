@@ -7,7 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - vm-runtime v0.4.0 (2025-11-04)
+### Added - vm-runtime v0.5.0 (2025-11-04)
+
+#### MVCC Multi-Version Concurrency Control 🔐
+- **MvccStore**: 多版本并发控制存储实现
+  - 快照隔离 (Snapshot Isolation) 语义
+  - 每个键维护版本链,按时间戳升序存储
+  - 原子时间戳分配 (AtomicU64),消除瓶颈
+  - **细粒度并发控制**:
+    - DashMap 无锁哈希表,减少全局锁争用
+    - 每键 RwLock 读写锁,允许并发读取
+    - 提交时按键排序加锁,避免死锁
+    - 仅锁定写集合涉及的键,最小化锁持有范围
+- **Txn**: 事务接口
+  - `begin()`: 开启读写事务,分配快照版本 (start_ts)
+  - `begin_read_only()`: 开启只读事务 (快速路径)
+  - `read()`: 读取 start_ts 及之前的可见版本
+  - `write()` / `delete()`: 本地缓存写操作 (只读事务会 panic)
+  - `commit()`: 提交事务,进行写写冲突检测 (只读无需检测,直接返回 start_ts)
+  - `abort()`: 放弃事务
+- **只读事务优化** ⚡:
+  - `begin_read_only()` 标记事务为只读
+  - 提交时跳过冲突检测和锁获取
+  - 无写集合,直接返回快照时间戳
+  - 显著降低只读查询开销
+- **冲突检测**:
+  - 提交时检测写写冲突 (Write-Write Conflict)
+  - 若发现 ts > start_ts 的已提交版本则拒绝提交
+  - 保证可串行化 (Serializability)
+
+#### Scheduler Integration with MVCC 🔗
+- **ParallelScheduler MVCC 支持**:
+  - `new_with_mvcc(store: Arc<MvccStore>)`: 创建 MVCC 后端调度器
+  - `execute_with_mvcc<F>(&self, operation: F)`: 执行读写事务
+    - 自动开启事务、执行操作、提交或回滚
+    - 更新统计信息 (successful/failed/rollback)
+  - `execute_with_mvcc_read_only<F>(&self, operation: F)`: 执行只读事务
+    - 使用快速路径,无冲突检测开销
+    - 适用于查询密集型场景
+  - 非破坏性集成: 保留原有 snapshot 机制,可选使用 MVCC
+
+#### Testing 🧪
+- 新增 10 个 MVCC 核心测试:
+  - `test_mvcc_write_write_conflict`: 写写冲突检测
+  - `test_mvcc_snapshot_isolation_visibility`: 快照隔离可见性
+  - `test_mvcc_version_visibility_multiple_versions`: 多版本可见性
+  - `test_mvcc_concurrent_reads`: 并发读取性能
+  - `test_mvcc_concurrent_writes_different_keys`: 不同键并发写
+  - `test_mvcc_concurrent_writes_same_key_conflicts`: 同键冲突检测
+  - `test_mvcc_read_only_transaction`: 只读事务快速路径
+  - `test_mvcc_read_only_cannot_write`: 只读事务写入保护
+  - `test_mvcc_read_only_cannot_delete`: 只读事务删除保护
+  - `test_mvcc_read_only_performance`: 只读性能对比
+- 新增 3 个 MVCC 调度器集成测试:
+  - `test_scheduler_mvcc_basic_commit`: MVCC调度器基础提交
+  - `test_scheduler_mvcc_abort_on_error`: MVCC调度器错误回滚
+  - `test_scheduler_mvcc_read_only_fast_path`: MVCC调度器只读路径
+- 总测试数: **54/54 通过** ✅
+
+#### Dependencies 📦
+- 新增 `dashmap ^6.1`: 高性能并发哈希表
+- 新增 `parking_lot ^0.12`: 更快的 RwLock 实现
+
+#### Performance 🚀
+- **并发读取**: 多事务可同时读取不同键 (无锁竞争)
+- **并发写入**: 不同键的写入可并发执行
+- **时间戳分配**: 原子操作,避免锁开销
+- **锁粒度**: 从全局锁优化为每键锁,大幅降低争用
+
+## [0.4.0] - 2025-11-04
+
+### Added - vm-runtime v0.4.0
 
 #### Batch Operations Optimization 📦
 - **StateManager 批量操作**:
