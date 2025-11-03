@@ -389,6 +389,7 @@ fn bench_mvcc_gc(c: &mut Criterion) {
                     max_versions_per_key: 3,
                     enable_time_based_gc: false,
                     version_ttl_secs: 3600,
+                    auto_gc: None,
                 };
                 let store = Arc::new(MvccStore::new_with_config(config));
                 
@@ -417,6 +418,7 @@ fn bench_mvcc_gc(c: &mut Criterion) {
             max_versions_per_key: 5,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = Arc::new(MvccStore::new_with_config(config));
         
@@ -451,6 +453,7 @@ fn bench_mvcc_gc(c: &mut Criterion) {
             max_versions_per_key: 5,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = Arc::new(MvccStore::new_with_config(config));
         
@@ -476,6 +479,7 @@ fn bench_mvcc_gc(c: &mut Criterion) {
             max_versions_per_key: 3,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = Arc::new(MvccStore::new_with_config(config));
         
@@ -499,6 +503,114 @@ fn bench_mvcc_gc(c: &mut Criterion) {
     group.finish();
 }
 
+/// 基准测试: 自动 GC 性能影响
+fn bench_auto_gc_impact(c: &mut Criterion) {
+    use vm_runtime::{MvccStore, GcConfig, AutoGcConfig};
+    use std::sync::Arc;
+    
+    let mut group = c.benchmark_group("auto_gc_impact");
+    
+    // 基准 1: 无 GC vs 自动 GC 的写入性能
+    group.bench_function("write_without_auto_gc", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 100,  // 高阈值，GC 不会频繁触发
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: None,
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        let mut counter = 0;
+        
+        b.iter(|| {
+            let mut txn = store.begin();
+            txn.write(format!("key{}", counter % 100).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+            counter += 1;
+        });
+    });
+    
+    group.bench_function("write_with_auto_gc", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 10,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: Some(AutoGcConfig {
+                interval_secs: 1,
+                version_threshold: 50,
+                run_on_start: false,
+            }),
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        let mut counter = 0;
+        
+        b.iter(|| {
+            let mut txn = store.begin();
+            txn.write(format!("key{}", counter % 100).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+            counter += 1;
+        });
+        
+        store.stop_auto_gc();
+    });
+    
+    // 基准 2: 无 GC vs 自动 GC 的读取性能
+    group.bench_function("read_without_auto_gc", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 100,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: None,
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        
+        // 预填充
+        for i in 0..100 {
+            let mut txn = store.begin();
+            txn.write(format!("key{}", i).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+        }
+        
+        b.iter(|| {
+            let txn = store.begin_read_only();
+            for i in 0..10 {
+                black_box(txn.read(&format!("key{}", i).into_bytes()));
+            }
+        });
+    });
+    
+    group.bench_function("read_with_auto_gc", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 10,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: Some(AutoGcConfig {
+                interval_secs: 1,
+                version_threshold: 50,
+                run_on_start: false,
+            }),
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        
+        // 预填充
+        for i in 0..100 {
+            let mut txn = store.begin();
+            txn.write(format!("key{}", i).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+        }
+        
+        b.iter(|| {
+            let txn = store.begin_read_only();
+            for i in 0..10 {
+                black_box(txn.read(&format!("key{}", i).into_bytes()));
+            }
+        });
+        
+        store.stop_auto_gc();
+    });
+    
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_conflict_detection,
@@ -507,6 +619,7 @@ criterion_group!(
     bench_parallel_scheduling,
     bench_mvcc_operations,
     bench_mvcc_scheduler,
-    bench_mvcc_gc
+    bench_mvcc_gc,
+    bench_auto_gc_impact
 );
 criterion_main!(benches);

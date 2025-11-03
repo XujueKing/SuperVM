@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}, Mutex};
+use std::sync::{Arc, atomic::{AtomicU64, AtomicBool, Ordering}, Mutex};
+use std::thread;
+use std::time::Duration;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
@@ -12,6 +14,29 @@ pub struct GcConfig {
     pub enable_time_based_gc: bool,
     /// 版本过期时间（秒），超过此时间的版本可被清理
     pub version_ttl_secs: u64,
+    /// 自动 GC 配置
+    pub auto_gc: Option<AutoGcConfig>,
+}
+
+/// 自动 GC 配置
+#[derive(Debug, Clone)]
+pub struct AutoGcConfig {
+    /// GC 间隔时间（秒）
+    pub interval_secs: u64,
+    /// 版本数阈值：超过此数量触发 GC（0 表示不启用）
+    pub version_threshold: usize,
+    /// 是否在启动时立即执行一次 GC
+    pub run_on_start: bool,
+}
+
+impl Default for AutoGcConfig {
+    fn default() -> Self {
+        Self {
+            interval_secs: 60,      // 每 60 秒
+            version_threshold: 1000, // 超过 1000 个版本
+            run_on_start: false,
+        }
+    }
 }
 
 impl Default for GcConfig {
@@ -20,16 +45,18 @@ impl Default for GcConfig {
             max_versions_per_key: 10, // 默认保留 10 个版本
             enable_time_based_gc: false,
             version_ttl_secs: 3600, // 1小时
+            auto_gc: None,          // 默认不启用自动 GC
         }
     }
 }
 
-/// MVCC 存储实现（优化版 + GC）：
+/// MVCC 存储实现（优化版 + GC + 自动 GC）：
 /// - 使用 DashMap 实现每键粒度的并发控制，减少全局锁竞争
 /// - 每个键的版本链使用 RwLock 保护，允许并发读
 /// - 使用 AtomicU64 管理时间戳，避免锁竞争
 /// - 提交时仅锁定写集合涉及的键，最小化锁持有范围
 /// - 支持垃圾回收，清理不再需要的旧版本
+/// - 支持后台自动 GC，定期或按阈值触发
 pub struct MvccStore {
     /// 每个 key 的版本链（按 ts 升序存放），使用 RwLock 允许并发读
     data: DashMap<Vec<u8>, RwLock<Vec<Version>>>,
@@ -42,6 +69,10 @@ pub struct MvccStore {
     gc_config: Arc<Mutex<GcConfig>>,
     /// GC 统计信息
     gc_stats: Arc<Mutex<GcStats>>,
+    /// 自动 GC 运行标志
+    auto_gc_running: Arc<AtomicBool>,
+    /// 自动 GC 停止信号
+    auto_gc_stop: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,13 +100,24 @@ impl MvccStore {
     }
 
     pub fn new_with_config(config: GcConfig) -> Arc<Self> {
-        Arc::new(Self { 
+        let auto_gc_enabled = config.auto_gc.is_some();
+        
+        let store = Arc::new(Self { 
             data: DashMap::new(),
             ts: AtomicU64::new(0),
             active_txns: Arc::new(Mutex::new(Vec::new())),
-            gc_config: Arc::new(Mutex::new(config)),
+            gc_config: Arc::new(Mutex::new(config.clone())),
             gc_stats: Arc::new(Mutex::new(GcStats::default())),
-        })
+            auto_gc_running: Arc::new(AtomicBool::new(false)),
+            auto_gc_stop: Arc::new(AtomicBool::new(false)),
+        });
+        
+        // 如果配置了自动 GC，启动后台线程
+        if auto_gc_enabled {
+            let _ = Self::start_auto_gc_internal(Arc::clone(&store));
+        }
+        
+        store
     }
 
     /// 开启一个事务，分配 start_ts（快照版本）
@@ -236,6 +278,100 @@ impl MvccStore {
     pub fn total_keys(&self) -> usize {
         self.data.len()
     }
+
+    /// 启动自动 GC（内部方法）
+    fn start_auto_gc_internal(store: Arc<Self>) -> Result<(), String> {
+        // 检查是否已经在运行
+        if store.auto_gc_running.swap(true, Ordering::SeqCst) {
+            return Err("Auto GC is already running".to_string());
+        }
+
+        let config = store.gc_config.lock().unwrap().clone();
+        let auto_gc_config = match config.auto_gc {
+            Some(cfg) => cfg,
+            None => {
+                store.auto_gc_running.store(false, Ordering::SeqCst);
+                return Err("Auto GC is not configured".to_string());
+            }
+        };
+
+        // 重置停止信号
+        store.auto_gc_stop.store(false, Ordering::SeqCst);
+
+        // 启动后台线程
+        let store_clone = Arc::clone(&store);
+        thread::spawn(move || {
+            let threshold = auto_gc_config.version_threshold;
+
+            // 如果配置了启动时运行，先执行一次
+            if auto_gc_config.run_on_start {
+                let _ = store_clone.gc();
+            }
+
+            // 循环执行 GC
+            while !store_clone.auto_gc_stop.load(Ordering::SeqCst) {
+                // 等待间隔时间（可中断）
+                for _ in 0..(auto_gc_config.interval_secs * 10) {
+                    if store_clone.auto_gc_stop.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+
+                if store_clone.auto_gc_stop.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                // 检查是否需要触发 GC
+                let should_run = if threshold > 0 {
+                    store_clone.total_versions() >= threshold
+                } else {
+                    true // threshold=0 表示总是定时执行
+                };
+
+                if should_run {
+                    let _ = store_clone.gc();
+                }
+            }
+
+            // 标记为已停止
+            store_clone.auto_gc_running.store(false, Ordering::SeqCst);
+        });
+
+        Ok(())
+    }
+
+    /// 启动自动 GC
+    /// 
+    /// 根据配置的 auto_gc 参数启动后台 GC 线程
+    /// 
+    /// # 返回
+    /// - `Ok(())`: 成功启动
+    /// - `Err(String)`: 启动失败（已在运行或未配置）
+    pub fn start_auto_gc(self: &Arc<Self>) -> Result<(), String> {
+        Self::start_auto_gc_internal(Arc::clone(self))
+    }
+
+    /// 停止自动 GC
+    /// 
+    /// 发送停止信号给后台 GC 线程，线程会在当前 GC 完成后退出
+    pub fn stop_auto_gc(&self) {
+        self.auto_gc_stop.store(true, Ordering::SeqCst);
+    }
+
+    /// 检查自动 GC 是否正在运行
+    pub fn is_auto_gc_running(&self) -> bool {
+        self.auto_gc_running.load(Ordering::SeqCst)
+    }
+
+    /// 更新自动 GC 配置（需要重启才能生效）
+    /// 
+    /// 注意：如果自动 GC 正在运行，需要先 stop_auto_gc()，
+    /// 更新配置后再 start_auto_gc()
+    pub fn update_auto_gc_config(&self, auto_config: Option<AutoGcConfig>) {
+        let mut config = self.gc_config.lock().unwrap();
+        config.auto_gc = auto_config;
+    }
 }
 
 pub struct Txn {
@@ -338,6 +474,20 @@ impl Txn {
 impl Drop for Txn {
     fn drop(&mut self) {
         self.store.unregister_txn(self.start_ts);
+    }
+}
+
+/// MvccStore 销毁时自动停止 GC 线程
+impl Drop for MvccStore {
+    fn drop(&mut self) {
+        self.stop_auto_gc();
+        // 等待 GC 线程退出（最多等待 2 秒）
+        for _ in 0..20 {
+            if !self.is_auto_gc_running() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
     }
 }
 
@@ -639,6 +789,7 @@ mod tests {
             max_versions_per_key: 3,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = MvccStore::new_with_config(config);
 
@@ -672,6 +823,7 @@ mod tests {
             max_versions_per_key: 2,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = MvccStore::new_with_config(config);
 
@@ -719,6 +871,7 @@ mod tests {
             max_versions_per_key: 2,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = MvccStore::new_with_config(config);
 
@@ -744,6 +897,7 @@ mod tests {
             max_versions_per_key: 2,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = MvccStore::new_with_config(config);
 
@@ -782,6 +936,7 @@ mod tests {
             max_versions_per_key: 2,
             enable_time_based_gc: false,
             version_ttl_secs: 3600,
+            auto_gc: None,
         };
         let store = MvccStore::new_with_config(config);
 
@@ -805,6 +960,250 @@ mod tests {
         let stats = store.get_gc_stats();
         assert_eq!(stats.gc_count, 2);
         assert_eq!(stats.versions_cleaned, cleaned1 + cleaned2);
+    }
+
+    // ====================
+    // 自动 GC 测试
+    // ====================
+
+    #[test]
+    fn test_auto_gc_periodic() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: Some(AutoGcConfig {
+                interval_secs: 1,      // 每 1 秒
+                version_threshold: 0,  // 不使用阈值，定时执行
+                run_on_start: false,
+            }),
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 验证自动 GC 已启动
+        assert!(store.is_auto_gc_running());
+
+        // 写入一些版本
+        for i in 0..5 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+
+        // 初始有 5 个版本
+        assert_eq!(store.total_versions(), 5);
+
+        // 等待 GC 执行（至少 1.5 秒）
+        thread::sleep(Duration::from_millis(1500));
+
+        // GC 应该已经执行，版本数应减少到 max_versions_per_key=2
+        assert!(store.total_versions() <= 2, "Auto GC should have cleaned old versions");
+
+        // 验证统计
+        let stats = store.get_gc_stats();
+        assert!(stats.gc_count >= 1, "At least one GC should have run");
+
+        // 停止自动 GC
+        store.stop_auto_gc();
+        
+        // 等待停止
+        thread::sleep(Duration::from_millis(200));
+        
+        // 验证已停止
+        assert!(!store.is_auto_gc_running());
+    }
+
+    #[test]
+    fn test_auto_gc_threshold() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: Some(AutoGcConfig {
+                interval_secs: 1,      // 每 1 秒检查
+                version_threshold: 10, // 超过 10 个版本触发
+                run_on_start: false,
+            }),
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 写入少量版本（不触发阈值）
+        for i in 0..5 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+
+        // 等待 1.5 秒
+        thread::sleep(Duration::from_millis(1500));
+
+        // 版本数应该没有变化（未达到阈值）
+        let versions_before = store.total_versions();
+        assert_eq!(versions_before, 5);
+
+        // 写入更多版本，超过阈值
+        for i in 5..15 {
+            let mut txn = store.begin();
+            txn.write(format!("key{}", i).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+        }
+
+        // 现在应该有超过 10 个版本
+        assert!(store.total_versions() > 10);
+
+        // 等待 GC 执行
+        thread::sleep(Duration::from_millis(1500));
+
+        // GC 应该已清理
+        let versions_after = store.total_versions();
+        assert!(versions_after < versions_before + 10, "Auto GC should have cleaned when threshold exceeded");
+
+        store.stop_auto_gc();
+    }
+
+    #[test]
+    fn test_auto_gc_run_on_start() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: Some(AutoGcConfig {
+                interval_secs: 60,     // 长间隔，不会在测试期间再次运行
+                version_threshold: 0,
+                run_on_start: true,    // 启动时立即运行
+            }),
+        };
+
+        // 先创建存储并写入数据（不启用自动 GC）
+        let config_without_auto = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: None,
+        };
+        let store_temp = MvccStore::new_with_config(config_without_auto);
+        
+        for i in 0..5 {
+            let mut txn = store_temp.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+        
+        drop(store_temp);
+
+        // 创建启用 run_on_start 的存储
+        let store = MvccStore::new_with_config(config);
+        
+        // 写入数据
+        for i in 0..5 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+
+        // 等待启动时 GC 完成
+        thread::sleep(Duration::from_millis(500));
+
+        // 验证 GC 已执行
+        let stats = store.get_gc_stats();
+        assert!(stats.gc_count >= 1, "run_on_start should trigger GC");
+
+        store.stop_auto_gc();
+    }
+
+    #[test]
+    fn test_auto_gc_start_stop() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: None,  // 不自动启动
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 初始未运行
+        assert!(!store.is_auto_gc_running());
+
+        // 手动配置并启动
+        store.update_auto_gc_config(Some(AutoGcConfig {
+            interval_secs: 1,
+            version_threshold: 0,
+            run_on_start: false,
+        }));
+
+        let result = store.start_auto_gc();
+        assert!(result.is_ok());
+        assert!(store.is_auto_gc_running());
+
+        // 重复启动应失败
+        let result2 = store.start_auto_gc();
+        assert!(result2.is_err());
+
+        // 停止
+        store.stop_auto_gc();
+        thread::sleep(Duration::from_millis(200));
+        assert!(!store.is_auto_gc_running());
+
+        // 可以再次启动
+        let result3 = store.start_auto_gc();
+        assert!(result3.is_ok());
+        assert!(store.is_auto_gc_running());
+
+        store.stop_auto_gc();
+    }
+
+    #[test]
+    fn test_auto_gc_concurrent_safety() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let config = GcConfig {
+            max_versions_per_key: 5,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+            auto_gc: Some(AutoGcConfig {
+                interval_secs: 1,
+                version_threshold: 20,
+                run_on_start: false,
+            }),
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+
+        // 多线程并发写入
+        let handles: Vec<_> = (0..4)
+            .map(|tid| {
+                let store_clone = Arc::clone(&store);
+                thread::spawn(move || {
+                    for i in 0..10 {
+                        let mut txn = store_clone.begin();
+                        txn.write(
+                            format!("key_{}_{}", tid, i).into_bytes(),
+                            format!("value_{}_{}", tid, i).into_bytes(),
+                        );
+                        let _ = txn.commit();
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                })
+            })
+            .collect();
+
+        // 等待写入完成
+        for h in handles {
+            h.join().unwrap();
+        }
+
+        // 等待 GC 运行
+        thread::sleep(Duration::from_millis(2000));
+
+        // 验证：系统仍正常运行，没有 panic
+        let stats = store.get_gc_stats();
+        println!("GC stats: {:?}", stats);
+
+        // 可以正常读取
+        let txn = store.begin();
+        let _ = txn.read(b"key_0_0");
+
+        store.stop_auto_gc();
     }
 }
 

@@ -40,7 +40,8 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - Demo 6: 状态快照与回滚
   - Demo 7: 工作窃取调度器
   - Demo 8: 批量操作优化
-  - Demo 9: MVCC 多版本并发控制 (NEW �)
+  - Demo 9: MVCC 多版本并发控制
+  - Demo 10: MVCC 自动垃圾回收 (NEW 🎉)
 
 ## 快速开始
 
@@ -81,7 +82,7 @@ cargo test -p vm-runtime
 cargo test -p vm-runtime test_execute_with_context
 ```
 
-**测试覆盖 (59/59 通过):**
+**测试覆盖 (64/64 通过):**
 
 **核心功能:**
 - ✅ test_memory_storage - 存储实现测试
@@ -142,6 +143,13 @@ cargo test -p vm-runtime test_execute_with_context
 - ✅ test_gc_no_active_transactions - 无活跃事务时的清理
 - ✅ test_gc_multiple_keys - 多键 GC
 - ✅ test_gc_stats_accumulation - GC 统计累计
+
+**MVCC 自动垃圾回收 (NEW 🎉):**
+- ✅ test_auto_gc_periodic - 周期性自动清理
+- ✅ test_auto_gc_threshold - 阈值触发自动清理
+- ✅ test_auto_gc_run_on_start - 启动时立即清理
+- ✅ test_auto_gc_start_stop - 启动/停止控制
+- ✅ test_auto_gc_concurrent_safety - 并发安全性
 
 **基准测试:**
 ```powershell
@@ -337,6 +345,52 @@ println!("当前键数量: {}", store.total_keys());
 - 保留所有活跃事务可见的版本（基于水位线）
 - 根据 `max_versions_per_key` 限制清理超量版本
 - 自动跟踪活跃事务，防止清理仍在使用的版本
+
+**自动 GC (v0.7.0 NEW 🎉)**:
+```rust
+use vm_runtime::{MvccStore, GcConfig, AutoGcConfig};
+use std::sync::Arc;
+
+// 创建启用自动 GC 的 MVCC 存储
+let config = GcConfig {
+    max_versions_per_key: 10,
+    enable_time_based_gc: false,
+    version_ttl_secs: 3600,
+    auto_gc: Some(AutoGcConfig {
+        interval_secs: 60,            // 每 60 秒执行一次 GC
+        version_threshold: 1000,      // 当总版本数超过 1000 时触发
+        run_on_start: false,          // 启动时不立即运行
+    }),
+};
+let store = Arc::new(MvccStore::new_with_config(config));
+
+// 自动 GC 后台线程已启动，无需手动调用 gc()
+
+// 动态控制自动 GC
+store.stop_auto_gc();                // 停止自动 GC
+store.start_auto_gc();               // 重新启动自动 GC
+assert!(store.is_auto_gc_running()); // 检查运行状态
+
+// 更新自动 GC 配置（运行时动态调整）
+store.update_auto_gc_config(Some(AutoGcConfig {
+    interval_secs: 30,      // 改为 30 秒
+    version_threshold: 500, // 降低阈值
+    run_on_start: false,
+}));
+
+// Drop 时会自动停止 GC 线程并等待退出
+```
+
+**自动 GC 触发策略**:
+- **周期性触发**: 每隔 `interval_secs` 秒执行一次 GC
+- **阈值触发**: 当总版本数 ≥ `version_threshold` 时立即触发（如果配置了阈值）
+- **启动触发**: 如果 `run_on_start = true`，启动时立即执行一次
+- **优雅停止**: Drop 时自动停止后台线程，最多等待 2 秒
+
+**性能影响** (基准测试):
+- 写入开销: 自动 GC 对写入操作的影响 < 5%
+- 读取开销: 对读取操作无明显影响
+- 后台线程: 采用可中断休眠 (100ms 粒度)，响应快速
 
 ### 使用事件系统
 

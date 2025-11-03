@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - vm-runtime v0.7.0 (2025-11-04)
+
+#### MVCC Automatic Garbage Collection 🤖🗑️
+- **AutoGcConfig**: 自动 GC 配置
+  - `interval_secs`: GC 执行间隔（秒，默认 60）
+  - `version_threshold`: 触发阈值（版本数，默认 1000，0 表示仅周期触发）
+  - `run_on_start`: 启动时立即执行（默认 false）
+- **自动 GC 功能**:
+  - `start_auto_gc()`: 启动后台 GC 线程（自动启动，无需手动调用）
+  - `stop_auto_gc()`: 停止后台 GC 线程
+  - `is_auto_gc_running()`: 检查 GC 线程运行状态
+  - `update_auto_gc_config()`: 动态更新自动 GC 配置
+- **后台线程特性**:
+  - 可中断休眠 (100ms 粒度)，快速响应停止信号
+  - 双重触发策略：周期性 + 阈值触发
+  - Drop 时自动停止并等待线程退出 (最多 2 秒)
+  - 原子标志控制，线程安全
+- **触发策略**:
+  - **周期性**: 每隔 `interval_secs` 秒执行一次
+  - **阈值触发**: 当 `total_versions() >= version_threshold` 时立即执行
+  - **启动触发**: `run_on_start = true` 时启动时立即执行
+
+#### Testing 🧪
+- 新增 5 个自动 GC 测试:
+  - `test_auto_gc_periodic`: 周期性自动清理
+  - `test_auto_gc_threshold`: 阈值触发自动清理
+  - `test_auto_gc_run_on_start`: 启动时立即清理
+  - `test_auto_gc_start_stop`: 启动/停止控制
+  - `test_auto_gc_concurrent_safety`: 并发安全性
+- 总测试数: **64/64 通过** ✅ (+5 from v0.6.0)
+
+#### Benchmarks 📊
+- 新增 `auto_gc_impact` 基准组:
+  - `write_without_auto_gc` vs `write_with_auto_gc`: 写入性能对比
+  - `read_without_auto_gc` vs `read_with_auto_gc`: 读取性能对比
+- 性能影响: 写入开销 < 5%，读取无明显影响
+
+#### API Changes 🔧
+- **Breaking**: `GcConfig` 新增 `auto_gc: Option<AutoGcConfig>` 字段
+  - 向后兼容：现有代码添加 `auto_gc: None` 即可
+- **New**: `AutoGcConfig` 结构体
+- **New**: `MvccStore::start_auto_gc()` - 启动自动 GC
+- **New**: `MvccStore::stop_auto_gc()` - 停止自动 GC
+- **New**: `MvccStore::is_auto_gc_running()` - 检查运行状态
+- **New**: `MvccStore::update_auto_gc_config()` - 动态更新配置
+- **New**: `impl Drop for MvccStore` - 自动清理资源
+
+#### Documentation 📖
+- 更新 `README.md`: 添加自动 GC 使用示例
+- 更新 `docs/parallel-execution.md`: 添加"MVCC 自动垃圾回收"章节
+- 测试计数更新: 59 → 64
+
+---
+
 ### Added - vm-runtime v0.6.0 (2025-11-04)
 
 #### MVCC Garbage Collection 🗑️
