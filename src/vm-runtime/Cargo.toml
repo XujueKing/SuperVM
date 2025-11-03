@@ -19,3 +19,10 @@ sha3 = "0.10"
 k256 = { version = "0.13", features = ["ecdsa", "arithmetic"] }
 ed25519-dalek = { version = "2.0", features = ["rand_core"] }
 hex = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "parallel_benchmark"
+harness = false

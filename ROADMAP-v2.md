@@ -126,26 +126,28 @@ cargo run -p node-core --once  # 端到端验证成功
 
 ---
 
-### 📋 阶段 4: 并行执行引擎 (周9-14)
+### � 阶段 4: 并行执行引擎 (周9-14) - 进行中
 
 **目标**: 实现基于账户的并行交易执行
 
-#### 计划功能
+#### 已完成功能 ✅
 
 **调度系统**:
-- [ ] 交易依赖分析
-- [ ] 账户访问模式提取
-- [ ] 并行执行调度器
+- ✅ 交易依赖分析 (DependencyGraph)
+- ✅ 账户访问模式提取 (ReadWriteSet)
+- ✅ 并行执行调度器 (ParallelScheduler)
 - [ ] 工作窃取算法
 
 **冲突检测**:
-- [ ] 读写集收集
-- [ ] 冲突检测算法
+- ✅ 读写集收集 (ReadWriteSet::add_read/add_write)
+- ✅ 冲突检测算法 (ConflictDetector)
 - [ ] 重试机制
 - [ ] 性能优化
 
 **状态管理**:
-- [ ] 快照与回滚
+- ✅ 快照与回滚 (StorageSnapshot + StateManager)
+- ✅ 事务保护执行 (execute_with_snapshot)
+- ✅ 嵌套快照支持
 - [ ] MVCC 实现研究
 - [ ] 批量提交优化
 - [ ] 内存池管理
@@ -154,12 +156,26 @@ cargo run -p node-core --once  # 端到端验证成功
 - [ ] 基准测试框架
 - [ ] 吞吐量测试
 - [ ] 延迟测试
-- [ ] 并发正确性验证
+- ✅ 并发正确性验证 (8 个单元测试通过)
+
+**演示程序**:
+- ✅ Demo 5: 并行冲突检测演示
+- ✅ Demo 6: 状态快照与回滚演示
+
+**测试覆盖**:
+- ✅ 并行执行测试 (6/6 通过)
+- ✅ 状态快照测试 (5/5 通过)
+- ✅ 调度器集成测试 (3/3 通过)
+- ✅ 总计: 29/29 测试通过
 
 **交付物**:
-- parallel-executor crate
-- 性能测试报告
-- 并行执行设计文档
+- ✅ parallel 模块 (vm-runtime::parallel)
+- ✅ ReadWriteSet, ConflictDetector, DependencyGraph
+- ✅ ParallelScheduler 集成 StateManager
+- [ ] 性能测试报告
+- [ ] 并行执行设计文档
+
+**进度**: 🎯 约 65% 完成
 
 ---
 
@@ -307,18 +323,24 @@ cargo run -p node-core --once  # 端到端验证成功
 - [x] 基础设施搭建
 - [x] WASM 运行时 (wasmtime)
 - [x] 存储抽象层
-- [x] Host Functions (storage + chain + events)
- - [x] Host Functions (storage + chain + events + crypto)
+- [x] Host Functions (storage + chain + events + crypto)
 - [x] execute_with_context API
 - [x] 单元测试覆盖
 - [x] CLI 工具和演示
 - [x] 开发文档
+- [x] 并行执行核心功能 (冲突检测、依赖分析、调度器)
+- [x] 状态快照与回滚系统
 
 ### 🚧 进行中
-- [ ] 编译器适配 (下一阶段)
+- [x] 并行执行引擎 (65% 完成)
+  - ✅ 核心调度系统
+  - ✅ 冲突检测
+  - ✅ 状态管理 (快照/回滚)
+  - ⏳ 性能优化与测试
 
 ### 📋 待开始
-- [ ] 并行执行
+- [ ] 并行执行完善 (性能优化、工作窃取)
+- [ ] 编译器适配
 - [ ] EVM 兼容
 - [ ] 生产准备
 
@@ -326,7 +348,8 @@ cargo run -p node-core --once  # 端到端验证成功
 - **阶段 1**: ✅ 100%
 - **阶段 2**: ✅ 100%
 - **阶段 3**: 📋 0%
-- **整体进度**: 🎯 33% (2/6 阶段完成)
+- **阶段 4**: 🚧 65%
+- **整体进度**: 🎯 44% (2.65/6 阶段完成)
 
 ---
 

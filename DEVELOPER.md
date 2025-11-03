@@ -10,7 +10,7 @@ Xuxu
 联系信息（请在需要时替换为真实联系方式）:
 - Rainbow Haruko King Xu
 - 邮箱: iscrbank@gmail.com leadbrand@me.com   # 请替换为真实邮箱
-- GitHub: https://github.com/XujueKing
+- GitHub: https://github.com/XujueKing/SuperVM
 
 如果需要在仓库中公开其它联系方式（如个人网站或社交），请在本文件中更新。
 

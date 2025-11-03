@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// 交易标识符
 pub type TxId = u64;
@@ -188,6 +189,52 @@ impl ConflictDetector {
     }
 }
 
+/// 执行统计信息
+#[derive(Debug, Clone, Default)]
+pub struct ExecutionStats {
+    /// 执行成功的交易数
+    pub successful_txs: u64,
+    /// 执行失败的交易数
+    pub failed_txs: u64,
+    /// 回滚的交易数
+    pub rollback_count: u64,
+    /// 重试的交易数
+    pub retry_count: u64,
+    /// 检测到的冲突数
+    pub conflict_count: u64,
+}
+
+impl ExecutionStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// 获取总交易数
+    pub fn total_txs(&self) -> u64 {
+        self.successful_txs + self.failed_txs
+    }
+    
+    /// 计算成功率
+    pub fn success_rate(&self) -> f64 {
+        let total = self.total_txs();
+        if total == 0 {
+            0.0
+        } else {
+            self.successful_txs as f64 / total as f64
+        }
+    }
+    
+    /// 计算回滚率
+    pub fn rollback_rate(&self) -> f64 {
+        let total = self.total_txs();
+        if total == 0 {
+            0.0
+        } else {
+            self.rollback_count as f64 / total as f64
+        }
+    }
+}
+
 /// 并行执行调度器
 /// 
 /// 管理交易的并行执行,确保正确性
@@ -196,6 +243,14 @@ pub struct ParallelScheduler {
     detector: Arc<Mutex<ConflictDetector>>,
     /// 已完成的交易
     completed: Arc<Mutex<HashSet<TxId>>>,
+    /// 状态管理器
+    state_manager: Arc<Mutex<StateManager>>,
+    /// 执行统计 (原子计数器)
+    stats_successful: Arc<AtomicU64>,
+    stats_failed: Arc<AtomicU64>,
+    stats_rollback: Arc<AtomicU64>,
+    stats_retry: Arc<AtomicU64>,
+    stats_conflict: Arc<AtomicU64>,
 }
 
 impl ParallelScheduler {
@@ -203,7 +258,33 @@ impl ParallelScheduler {
         Self {
             detector: Arc::new(Mutex::new(ConflictDetector::new())),
             completed: Arc::new(Mutex::new(HashSet::new())),
+            state_manager: Arc::new(Mutex::new(StateManager::new())),
+            stats_successful: Arc::new(AtomicU64::new(0)),
+            stats_failed: Arc::new(AtomicU64::new(0)),
+            stats_rollback: Arc::new(AtomicU64::new(0)),
+            stats_retry: Arc::new(AtomicU64::new(0)),
+            stats_conflict: Arc::new(AtomicU64::new(0)),
         }
+    }
+    
+    /// 获取执行统计信息
+    pub fn get_stats(&self) -> ExecutionStats {
+        ExecutionStats {
+            successful_txs: self.stats_successful.load(Ordering::Relaxed),
+            failed_txs: self.stats_failed.load(Ordering::Relaxed),
+            rollback_count: self.stats_rollback.load(Ordering::Relaxed),
+            retry_count: self.stats_retry.load(Ordering::Relaxed),
+            conflict_count: self.stats_conflict.load(Ordering::Relaxed),
+        }
+    }
+    
+    /// 重置统计信息
+    pub fn reset_stats(&self) {
+        self.stats_successful.store(0, Ordering::Relaxed);
+        self.stats_failed.store(0, Ordering::Relaxed);
+        self.stats_rollback.store(0, Ordering::Relaxed);
+        self.stats_retry.store(0, Ordering::Relaxed);
+        self.stats_conflict.store(0, Ordering::Relaxed);
     }
     
     /// 记录交易完成
@@ -223,6 +304,103 @@ impl ParallelScheduler {
         
         let graph = detector.build_dependency_graph(all_txs);
         graph.get_ready_transactions(all_txs, &completed)
+    }
+    
+    /// 获取状态管理器的引用
+    pub fn get_state_manager(&self) -> Arc<Mutex<StateManager>> {
+        Arc::clone(&self.state_manager)
+    }
+    
+    /// 在快照保护下执行操作
+    /// 
+    /// 该方法会:
+    /// 1. 创建状态快照
+    /// 2. 执行提供的操作
+    /// 3. 如果操作成功,提交快照并更新统计
+    /// 4. 如果操作失败,回滚到快照并更新统计
+    /// 
+    /// # 参数
+    /// - `operation`: 要执行的操作,返回 Result<T, String>
+    /// 
+    /// # 返回
+    /// - `Ok(T)`: 操作成功的结果
+    /// - `Err(String)`: 操作失败的错误信息
+    pub fn execute_with_snapshot<T, F>(&self, operation: F) -> Result<T, String>
+    where
+        F: FnOnce(&StateManager) -> Result<T, String>,
+    {
+        let mut manager = self.state_manager.lock().unwrap();
+        
+        // 创建快照
+        manager.create_snapshot()?;
+        
+        // 执行操作
+        let result = operation(&manager);
+        
+        match result {
+            Ok(value) => {
+                // 操作成功,提交快照
+                manager.commit()?;
+                self.stats_successful.fetch_add(1, Ordering::Relaxed);
+                Ok(value)
+            }
+            Err(err) => {
+                // 操作失败,回滚
+                manager.rollback()?;
+                self.stats_failed.fetch_add(1, Ordering::Relaxed);
+                self.stats_rollback.fetch_add(1, Ordering::Relaxed);
+                Err(err)
+            }
+        }
+    }
+    
+    /// 带重试机制的事务执行
+    /// 
+    /// 在交易失败时自动重试,最多重试 max_retries 次
+    /// 
+    /// # 参数
+    /// - `operation`: 要执行的操作
+    /// - `max_retries`: 最大重试次数
+    /// 
+    /// # 返回
+    /// - `Ok(T)`: 操作成功的结果
+    /// - `Err(String)`: 所有重试都失败后的错误信息
+    pub fn execute_with_retry<T, F>(&self, mut operation: F, max_retries: u32) -> Result<T, String>
+    where
+        F: FnMut(&StateManager) -> Result<T, String>,
+    {
+        let mut attempts = 0;
+        let mut last_error = String::new();
+        
+        while attempts <= max_retries {
+            if attempts > 0 {
+                self.stats_retry.fetch_add(1, Ordering::Relaxed);
+            }
+            
+            let result = self.execute_with_snapshot(|manager| operation(manager));
+            
+            match result {
+                Ok(value) => return Ok(value),
+                Err(err) => {
+                    last_error = err;
+                    attempts += 1;
+                }
+            }
+        }
+        
+        Err(format!("Failed after {} attempts: {}", attempts, last_error))
+    }
+    
+    /// 获取当前存储状态
+    pub fn get_storage(&self) -> Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>> {
+        let manager = self.state_manager.lock().unwrap();
+        manager.get_storage()
+    }
+    
+    /// 获取当前事件列表
+    pub fn get_events(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
+        let manager = self.state_manager.lock().unwrap();
+        manager.get_events()
     }
 }
 
@@ -308,5 +486,482 @@ mod tests {
         
         // tx3 依赖 tx1
         assert_eq!(graph.get_dependencies(3), vec![1]);
+    }
+    
+    #[test]
+    fn test_scheduler_with_snapshot() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 成功的操作
+        let result = scheduler.execute_with_snapshot(|manager| {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key".to_vec(), b"value".to_vec());
+            Ok(42)
+        });
+        
+        assert_eq!(result, Ok(42));
+        
+        // 验证状态已保存
+        let storage_arc = scheduler.get_storage();
+        let storage = storage_arc.lock().unwrap();
+        assert_eq!(storage.get(&b"key".to_vec()), Some(&b"value".to_vec()));
+    }
+    
+    #[test]
+    fn test_scheduler_rollback_on_error() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 先设置初始状态
+        {
+            let storage_arc = scheduler.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"balance".to_vec(), b"100".to_vec());
+        }
+        
+        // 执行会失败的操作
+        let result: Result<(), String> = scheduler.execute_with_snapshot(|manager| {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"balance".to_vec(), b"50".to_vec());
+            
+            // 模拟失败
+            Err("Insufficient funds".to_string())
+        });
+        
+        assert!(result.is_err());
+        
+        // 验证状态已回滚
+        let storage_arc = scheduler.get_storage();
+        let storage = storage_arc.lock().unwrap();
+        assert_eq!(storage.get(&b"balance".to_vec()), Some(&b"100".to_vec()));
+    }
+    
+    #[test]
+    fn test_scheduler_nested_transactions() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 第一个事务成功
+        scheduler.execute_with_snapshot(|manager| {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"user1".to_vec(), b"data1".to_vec());
+            Ok(())
+        }).unwrap();
+        
+        // 第二个事务失败
+        let result: Result<(), String> = scheduler.execute_with_snapshot(|manager| {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"user2".to_vec(), b"data2".to_vec());
+            Err("Transaction failed".to_string())
+        });
+        
+        assert!(result.is_err());
+        
+        // 验证只有第一个事务的数据存在
+        let storage_arc = scheduler.get_storage();
+        let storage = storage_arc.lock().unwrap();
+        assert_eq!(storage.get(&b"user1".to_vec()), Some(&b"data1".to_vec()));
+        assert_eq!(storage.get(&b"user2".to_vec()), None);
+    }
+    
+    #[test]
+    fn test_execution_stats() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 执行一些成功的交易
+        for i in 0..3 {
+            scheduler.execute_with_snapshot(|manager| {
+                let storage_arc = manager.get_storage();
+                let mut storage = storage_arc.lock().unwrap();
+                storage.insert(format!("key{}", i).into_bytes(), b"value".to_vec());
+                Ok(())
+            }).unwrap();
+        }
+        
+        // 执行一些失败的交易
+        for _ in 0..2 {
+            let _: Result<(), String> = scheduler.execute_with_snapshot(|_manager| {
+                Err("Test error".to_string())
+            });
+        }
+        
+        let stats = scheduler.get_stats();
+        assert_eq!(stats.successful_txs, 3);
+        assert_eq!(stats.failed_txs, 2);
+        assert_eq!(stats.rollback_count, 2);
+        assert_eq!(stats.total_txs(), 5);
+        assert_eq!(stats.success_rate(), 0.6);
+    }
+    
+    #[test]
+    fn test_retry_mechanism() {
+        let scheduler = ParallelScheduler::new();
+        
+        let mut attempt_count = 0;
+        
+        // 模拟前两次失败,第三次成功
+        let result = scheduler.execute_with_retry(
+            |manager| {
+                attempt_count += 1;
+                
+                if attempt_count < 3 {
+                    Err(format!("Attempt {} failed", attempt_count))
+                } else {
+                    let storage_arc = manager.get_storage();
+                    let mut storage = storage_arc.lock().unwrap();
+                    storage.insert(b"key".to_vec(), b"success".to_vec());
+                    Ok(42)
+                }
+            },
+            5, // max_retries
+        );
+        
+        assert_eq!(result, Ok(42));
+        assert_eq!(attempt_count, 3);
+        
+        let stats = scheduler.get_stats();
+        assert_eq!(stats.retry_count, 2); // 重试了 2 次
+        assert_eq!(stats.successful_txs, 1);
+        assert_eq!(stats.rollback_count, 2); // 前两次失败回滚
+    }
+    
+    #[test]
+    fn test_retry_exhausted() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 模拟总是失败
+        let result: Result<i32, String> = scheduler.execute_with_retry(
+            |_manager| Err("Always fails".to_string()),
+            3, // max_retries
+        );
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed after 4 attempts"));
+        
+        let stats = scheduler.get_stats();
+        assert_eq!(stats.retry_count, 3);
+        assert_eq!(stats.failed_txs, 4); // 初次 + 3 次重试
+        assert_eq!(stats.rollback_count, 4);
+    }
+}
+
+// ============================================
+// 状态快照与回滚
+// ============================================
+
+/// 存储状态快照
+/// 
+/// 用于在交易执行失败时回滚到之前的状态
+#[derive(Debug, Clone)]
+pub struct StorageSnapshot {
+    /// 快照时的存储状态 (key -> value)
+    storage_state: HashMap<Vec<u8>, Vec<u8>>,
+    /// 快照时的事件列表
+    events: Vec<Vec<u8>>,
+}
+
+impl StorageSnapshot {
+    /// 创建空快照
+    pub fn new() -> Self {
+        Self {
+            storage_state: HashMap::new(),
+            events: Vec::new(),
+        }
+    }
+    
+    /// 从当前状态创建快照
+    pub fn from_storage(storage: &HashMap<Vec<u8>, Vec<u8>>, events: &[Vec<u8>]) -> Self {
+        Self {
+            storage_state: storage.clone(),
+            events: events.to_vec(),
+        }
+    }
+    
+    /// 获取快照的存储状态
+    pub fn get_storage_state(&self) -> &HashMap<Vec<u8>, Vec<u8>> {
+        &self.storage_state
+    }
+    
+    /// 获取快照的事件列表
+    pub fn get_events(&self) -> &[Vec<u8>] {
+        &self.events
+    }
+}
+
+/// 状态管理器
+/// 
+/// 管理存储状态的快照和回滚
+#[derive(Debug)]
+pub struct StateManager {
+    /// 当前存储状态
+    current_storage: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
+    /// 当前事件列表
+    current_events: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// 快照栈 (支持嵌套事务)
+    snapshots: Vec<StorageSnapshot>,
+}
+
+impl StateManager {
+    /// 创建新的状态管理器
+    pub fn new() -> Self {
+        Self {
+            current_storage: Arc::new(Mutex::new(HashMap::new())),
+            current_events: Arc::new(Mutex::new(Vec::new())),
+            snapshots: Vec::new(),
+        }
+    }
+    
+    /// 从现有状态创建管理器
+    pub fn from_storage(storage: HashMap<Vec<u8>, Vec<u8>>) -> Self {
+        Self {
+            current_storage: Arc::new(Mutex::new(storage)),
+            current_events: Arc::new(Mutex::new(Vec::new())),
+            snapshots: Vec::new(),
+        }
+    }
+    
+    /// 创建当前状态的快照
+    pub fn create_snapshot(&mut self) -> Result<(), String> {
+        let storage = self.current_storage.lock()
+            .map_err(|e| format!("Failed to lock storage: {}", e))?;
+        let events = self.current_events.lock()
+            .map_err(|e| format!("Failed to lock events: {}", e))?;
+        
+        let snapshot = StorageSnapshot::from_storage(&storage, &events);
+        self.snapshots.push(snapshot);
+        
+        Ok(())
+    }
+    
+    /// 回滚到最近的快照
+    pub fn rollback(&mut self) -> Result<(), String> {
+        if let Some(snapshot) = self.snapshots.pop() {
+            // 恢复存储状态
+            let mut storage = self.current_storage.lock()
+                .map_err(|e| format!("Failed to lock storage: {}", e))?;
+            *storage = snapshot.get_storage_state().clone();
+            
+            // 恢复事件列表
+            let mut events = self.current_events.lock()
+                .map_err(|e| format!("Failed to lock events: {}", e))?;
+            *events = snapshot.get_events().to_vec();
+            
+            Ok(())
+        } else {
+            Err("No snapshot available to rollback".to_string())
+        }
+    }
+    
+    /// 提交当前状态 (丢弃最近的快照)
+    pub fn commit(&mut self) -> Result<(), String> {
+        if self.snapshots.pop().is_some() {
+            Ok(())
+        } else {
+            Err("No snapshot available to commit".to_string())
+        }
+    }
+    
+    /// 获取当前存储状态的引用
+    pub fn get_storage(&self) -> Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>> {
+        Arc::clone(&self.current_storage)
+    }
+    
+    /// 获取当前事件列表的引用
+    pub fn get_events(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
+        Arc::clone(&self.current_events)
+    }
+    
+    /// 获取快照深度 (当前有多少个快照)
+    pub fn snapshot_depth(&self) -> usize {
+        self.snapshots.len()
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    
+    #[test]
+    fn test_snapshot_creation() {
+        let mut manager = StateManager::new();
+        
+        // 添加一些数据
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key1".to_vec(), b"value1".to_vec());
+            storage.insert(b"key2".to_vec(), b"value2".to_vec());
+        }
+        
+        // 创建快照
+        manager.create_snapshot().unwrap();
+        assert_eq!(manager.snapshot_depth(), 1);
+        
+        // 修改数据
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key1".to_vec(), b"new_value".to_vec());
+            storage.insert(b"key3".to_vec(), b"value3".to_vec());
+        }
+        
+        // 验证修改生效
+        {
+            let storage_arc = manager.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            assert_eq!(storage.get(&b"key1".to_vec()), Some(&b"new_value".to_vec()));
+            assert_eq!(storage.len(), 3);
+        }
+    }
+    
+    #[test]
+    fn test_rollback() {
+        let mut manager = StateManager::new();
+        
+        // 初始状态
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key1".to_vec(), b"value1".to_vec());
+        }
+        
+        // 创建快照
+        manager.create_snapshot().unwrap();
+        
+        // 修改数据
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key1".to_vec(), b"modified".to_vec());
+            storage.insert(b"key2".to_vec(), b"value2".to_vec());
+        }
+        
+        // 回滚
+        manager.rollback().unwrap();
+        
+        // 验证回滚成功
+        {
+            let storage_arc = manager.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            assert_eq!(storage.get(&b"key1".to_vec()), Some(&b"value1".to_vec()));
+            assert_eq!(storage.get(&b"key2".to_vec()), None); // key2 应该不存在
+            assert_eq!(storage.len(), 1);
+        }
+        assert_eq!(manager.snapshot_depth(), 0);
+    }
+    
+    #[test]
+    fn test_nested_snapshots() {
+        let mut manager = StateManager::new();
+        
+        // 第一层状态
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key".to_vec(), b"v1".to_vec());
+        }
+        manager.create_snapshot().unwrap();
+        
+        // 第二层状态
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key".to_vec(), b"v2".to_vec());
+        }
+        manager.create_snapshot().unwrap();
+        
+        // 第三层状态
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key".to_vec(), b"v3".to_vec());
+        }
+        
+        assert_eq!(manager.snapshot_depth(), 2);
+        
+        // 回滚到第二层
+        manager.rollback().unwrap();
+        {
+            let storage_arc = manager.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            assert_eq!(storage.get(&b"key".to_vec()), Some(&b"v2".to_vec()));
+        }
+        
+        // 回滚到第一层
+        manager.rollback().unwrap();
+        {
+            let storage_arc = manager.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            assert_eq!(storage.get(&b"key".to_vec()), Some(&b"v1".to_vec()));
+        }
+        
+        assert_eq!(manager.snapshot_depth(), 0);
+    }
+    
+    #[test]
+    fn test_commit() {
+        let mut manager = StateManager::new();
+        
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key".to_vec(), b"value1".to_vec());
+        }
+        manager.create_snapshot().unwrap();
+        
+        {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+            storage.insert(b"key".to_vec(), b"value2".to_vec());
+        }
+        
+        // 提交 (丢弃快照但保留当前状态)
+        manager.commit().unwrap();
+        assert_eq!(manager.snapshot_depth(), 0);
+        
+        // 当前状态应该保持 value2
+        {
+            let storage_arc = manager.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            assert_eq!(storage.get(&b"key".to_vec()), Some(&b"value2".to_vec()));
+        }
+        
+        // 无法回滚
+        assert!(manager.rollback().is_err());
+    }
+    
+    #[test]
+    fn test_snapshot_with_events() {
+        let mut manager = StateManager::new();
+        
+        // 添加事件
+        {
+            let events_arc = manager.get_events();
+            let mut events = events_arc.lock().unwrap();
+            events.push(b"event1".to_vec());
+        }
+        
+        manager.create_snapshot().unwrap();
+        
+        // 添加更多事件
+        {
+            let events_arc = manager.get_events();
+            let mut events = events_arc.lock().unwrap();
+            events.push(b"event2".to_vec());
+            events.push(b"event3".to_vec());
+        }
+        
+        // 回滚
+        manager.rollback().unwrap();
+        
+        // 验证只有 event1 存在
+        {
+            let events_arc = manager.get_events();
+            let events = events_arc.lock().unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0], b"event1");
+        }
     }
 }

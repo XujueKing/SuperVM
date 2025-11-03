@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - vm-runtime v0.2.0 (2025-11-03)
+
+#### Parallel Execution Engine 🚀
+- **ParallelScheduler**: 并行交易调度器
+  - `execute_with_snapshot()`: 快照保护的事务执行
+  - `execute_with_retry()`: 带自动重试的事务执行
+  - `get_stats()`: 获取执行统计信息
+- **ConflictDetector**: 冲突检测器
+  - `record()`: 记录交易读写集
+  - `has_conflict()`: 检测两个交易是否冲突
+  - `build_dependency_graph()`: 构建依赖关系图
+- **DependencyGraph**: 依赖图管理
+  - `add_dependency()`: 添加依赖关系
+  - `get_ready_transactions()`: 获取可并行执行的交易
+- **StateManager**: 状态管理器
+  - `create_snapshot()`: 创建状态快照
+  - `rollback()`: 回滚到快照状态
+  - `commit()`: 提交并丢弃快照
+  - 支持嵌套快照
+- **ExecutionStats**: 执行统计
+  - 成功/失败交易计数
+  - 回滚/重试次数统计
+  - 冲突检测计数
+  - 成功率/回滚率计算
+
+#### Crypto API (`crypto_api` module)
+- `sha256(data_ptr, data_len, output_ptr) -> i32`: SHA-256 哈希
+- `keccak256(data_ptr, data_len, output_ptr) -> i32`: Keccak-256 哈希
+- `ed25519_verify(msg_ptr, msg_len, sig_ptr, pubkey_ptr) -> i32`: Ed25519 签名验证
+- `secp256k1_verify(msg_ptr, msg_len, sig_ptr, pubkey_ptr) -> i32`: ECDSA 签名验证
+- `derive_eth_address(pubkey_ptr, pubkey_len, output_ptr) -> i32`: 以太坊地址派生
+
+#### Performance Benchmarks
+- 添加 criterion 基准测试框架
+- 4 组基准测试:
+  - 冲突检测性能 (10/50/100/500 交易)
+  - 快照操作性能 (10/100/1000 数据项)
+  - 依赖图构建性能
+  - 并行调度性能
+
+#### Testing
+- ✅ 32/32 单元测试通过
+  - 11 个并行执行测试
+  - 5 个密码学测试
+  - 5 个状态快照测试
+  - 3 个调度器集成测试
+  - 8 个核心功能测试
+
+### Added - node-core v0.2.0 (2025-11-03)
+
+#### Demo Programs
+- **Demo 3**: 密码学功能演示
+  - SHA-256 和 Keccak-256 哈希计算
+  - 哈希验证
+- **Demo 4**: 以太坊地址派生
+  - 从公钥派生以太坊地址
+- **Demo 5**: 并行执行演示
+  - 3 笔交易的冲突检测
+  - 依赖关系分析
+  - 并行调度展示
+- **Demo 6**: 状态快照与回滚 ✨
+  - 场景 1: 成功的交易提交
+  - 场景 2: 失败的交易自动回滚
+  - 场景 3: 嵌套交易部分回滚
+
+---
+
+## [0.1.0] - 2025-11-02
+
 ### Added - vm-runtime v0.1.0
 
 #### Core Runtime

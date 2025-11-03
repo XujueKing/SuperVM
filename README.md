@@ -1,6 +1,8 @@
 # SuperVM - WASM Runtime with Event System
 
-开发者: king
+开发者: 
+Rainbow Haruko(CHINA) / king(CHINA)
+Alan Tang(CHINA) / Xuxu(CHINA)
 
 SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作、链上下文访问和事件系统。
 
@@ -14,6 +16,13 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - 📦 Storage API: get/set/delete/scan 操作
   - ⛓️ Chain Context API: block_number, timestamp
   - 📣 Event System: emit_event, events_len, read_event
+  - 🔐 Crypto API: SHA-256, Keccak-256, ECDSA, Ed25519, 地址派生
+- **并行执行引擎** (NEW):
+  - 🚀 并行交易调度器 (ParallelScheduler)
+  - 🔍 冲突检测与依赖分析 (ConflictDetector)
+  - 📊 执行统计 (ExecutionStats)
+  - 🔄 自动重试机制 (execute_with_retry)
+  - 💾 状态快照与回滚 (StateManager)
 - **execute_with_context API**: 执行 WASM 函数并返回结果、事件和上下文
 
 ### 🚀 node-core
@@ -22,6 +31,10 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
 - **演示程序**: 
   - Demo 1: 简单的 add 函数
   - Demo 2: 完整的事件系统展示(存储 + 事件 + 链上下文)
+  - Demo 3: 密码学功能演示 (SHA-256, Keccak-256)
+  - Demo 4: 以太坊地址派生
+  - Demo 5: 并行执行与冲突检测
+  - Demo 6: 状态快照与回滚 (NEW)
 
 ## 快速开始
 
@@ -62,13 +75,40 @@ cargo test -p vm-runtime
 cargo test -p vm-runtime test_execute_with_context
 ```
 
-**测试覆盖:**
+**测试覆盖 (32/32 通过):**
+
+**核心功能:**
 - ✅ test_memory_storage - 存储实现测试
 - ✅ test_execute_add_via_wat - 基础 WASM 执行
 - ✅ test_storage - 存储 API 测试
 - ✅ test_host_functions - Host 函数调用
 - ✅ test_emit_event - 事件发送与读取
 - ✅ test_execute_with_context - 完整上下文执行
+
+**密码学功能:**
+- ✅ test_sha256 - SHA-256 哈希
+- ✅ test_keccak256 - Keccak-256 哈希
+- ✅ test_ed25519_verify - Ed25519 签名验证
+- ✅ test_secp256k1_verify - ECDSA 签名验证
+- ✅ test_derive_eth_address - 以太坊地址派生
+
+**并行执行引擎:**
+- ✅ test_read_write_set_conflicts - 读写集冲突检测
+- ✅ test_dependency_graph - 依赖图构建
+- ✅ test_conflict_detector - 冲突检测器
+- ✅ test_snapshot_creation - 快照创建
+- ✅ test_rollback - 状态回滚
+- ✅ test_nested_snapshots - 嵌套快照
+- ✅ test_commit - 快照提交
+- ✅ test_execution_stats - 执行统计
+- ✅ test_retry_mechanism - 自动重试
+- ✅ test_scheduler_with_snapshot - 调度器集成
+
+**基准测试:**
+```powershell
+# 运行性能基准测试
+cargo bench --bench parallel_benchmark
+```
 
 ## 使用示例
 
@@ -89,6 +129,37 @@ let wat = r#"
 let wasm = wat::parse_str(wat)?;
 let result = runtime.execute_add(&wasm, 7, 8)?;
 assert_eq!(result, 15);
+```
+
+### 并行执行与状态管理
+
+```rust
+use vm_runtime::{ParallelScheduler, ExecutionStats};
+
+// 创建并行调度器
+let scheduler = ParallelScheduler::new();
+
+// 使用快照保护执行交易
+let result = scheduler.execute_with_snapshot(|manager| {
+    let storage = manager.get_storage();
+    let mut storage = storage.lock().unwrap();
+    storage.insert(b"balance".to_vec(), b"100".to_vec());
+    Ok(()) // 成功则提交
+})?;
+
+// 使用自动重试机制
+let result = scheduler.execute_with_retry(
+    |manager| {
+        // 可能失败的操作
+        Ok(42)
+    },
+    max_retries: 3
+)?;
+
+// 获取执行统计
+let stats = scheduler.get_stats();
+println!("成功率: {:.2}%", stats.success_rate() * 100.0);
+println!("重试次数: {}", stats.retry_count);
 ```
 
 ### 使用事件系统
@@ -248,16 +319,29 @@ SuperVM/
 
 ## 开发状态
 
-当前版本: **v0.1.0** (PoC 阶段)
+当前版本: **v0.2.0** (活跃开发)
 
-- ✅ 基础 WASM 执行
+**已完成 ✅:**
+- ✅ 基础 WASM 执行引擎
 - ✅ 存储抽象与实现
-- ✅ Host functions (存储 + 链上下文 + 事件)
+- ✅ Host Functions (存储 + 链上下文 + 事件 + 密码学)
 - ✅ execute_with_context API
-- ✅ 完整单元测试覆盖
-- 🚧 编译器集成 (Solidity/AssemblyScript)
-- 📋 并行执行引擎
+- ✅ 并行执行引擎 (70% 完成)
+  - ✅ 冲突检测与依赖分析
+  - ✅ 状态快照与回滚
+  - ✅ 执行统计与监控
+  - ✅ 自动重试机制
+- ✅ 完整单元测试覆盖 (32 个测试)
+- ✅ 性能基准测试框架
+
+**进行中 🚧:**
+- 🚧 并行执行优化 (工作窃取、批量提交)
+- 🚧 性能基准测试报告
+
+**计划中 📋:**
+- 📋 编译器集成 (Solidity/AssemblyScript)
 - 📋 EVM 兼容层
+- 📋 生产环境部署
 
 详见 [CHANGELOG.md](CHANGELOG.md) 和 [ROADMAP.md](ROADMAP.md)。
 
@@ -271,6 +355,6 @@ MIT OR Apache-2.0
 
 ## 联系方式
 
-- 开发者: king
-- Email: king@example.com
+- 开发者: Rainbow Haruko / king
+- Email: iscrbank@gmail.com / leadbrand@me.com
 - 问题反馈: [GitHub Issues](https://github.com/XujueKing/SuperVM/issues)

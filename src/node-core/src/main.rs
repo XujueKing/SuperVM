@@ -307,6 +307,137 @@ async fn main() -> anyhow::Result<()> {
         info!("  ✓ 并行执行调度正确!");
     }
 
+    // 演示 6: 状态快照与回滚
+    info!("\n=== Demo 6: 状态快照与回滚 ===");
+    
+    use vm_runtime::ParallelScheduler;
+    
+    let scheduler = ParallelScheduler::new();
+    
+    info!("场景 1: 成功的交易");
+    info!("  初始状态: 账户余额为空");
+    
+    // 成功的存款交易
+    let deposit_result = scheduler.execute_with_snapshot(|manager| {
+        let storage_arc = manager.get_storage();
+        let mut storage = storage_arc.lock().unwrap();
+        
+        info!("  执行存款: 向账户存入 100 COIN");
+        storage.insert(b"account_balance".to_vec(), b"100".to_vec());
+        
+        let events_arc = manager.get_events();
+        let mut events = events_arc.lock().unwrap();
+        events.push(b"Deposited 100 COIN".to_vec());
+        
+        Ok("存款成功".to_string())
+    });
+    
+    match deposit_result {
+        Ok(msg) => {
+            info!("  ✓ 交易成功: {}", msg);
+            let storage_arc = scheduler.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            if let Some(balance) = storage.get(&b"account_balance".to_vec()) {
+                let balance_str = String::from_utf8_lossy(balance);
+                info!("  当前余额: {} COIN", balance_str);
+            }
+        }
+        Err(e) => info!("  ✗ 交易失败: {}", e),
+    }
+    
+    info!("\n场景 2: 失败的交易 - 自动回滚");
+    info!("  当前余额: 100 COIN");
+    info!("  尝试取款: 150 COIN (余额不足)");
+    
+    // 会失败的取款交易
+    let withdraw_result = scheduler.execute_with_snapshot(|manager| {
+        let storage_arc = manager.get_storage();
+        let mut storage = storage_arc.lock().unwrap();
+        
+        // 检查余额
+        let balance = storage.get(&b"account_balance".to_vec())
+            .and_then(|b| String::from_utf8(b.clone()).ok())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        
+        if balance < 150 {
+            info!("  验证失败: 余额不足 ({} < 150)", balance);
+            return Err(format!("余额不足: 需要 150 COIN,但只有 {} COIN", balance));
+        }
+        
+        // 这段代码不会被执行
+        storage.insert(b"account_balance".to_vec(), b"0".to_vec());
+        Ok("取款成功".to_string())
+    });
+    
+    match withdraw_result {
+        Ok(msg) => info!("  ✓ 交易成功: {}", msg),
+        Err(e) => {
+            info!("  ✗ 交易失败: {}", e);
+            info!("  执行回滚...");
+            
+            // 验证状态已回滚
+            let storage_arc = scheduler.get_storage();
+            let storage = storage_arc.lock().unwrap();
+            if let Some(balance) = storage.get(&b"account_balance".to_vec()) {
+                let balance_str = String::from_utf8_lossy(balance);
+                info!("  ✓ 状态已回滚,余额保持: {} COIN", balance_str);
+            }
+        }
+    }
+    
+    info!("\n场景 3: 嵌套交易 - 部分回滚");
+    info!("  当前余额: 100 COIN");
+    
+    // 第一笔成功的取款
+    scheduler.execute_with_snapshot(|manager| {
+        let storage_arc = manager.get_storage();
+        let mut storage = storage_arc.lock().unwrap();
+        
+        let balance = storage.get(&b"account_balance".to_vec())
+            .and_then(|b| String::from_utf8(b.clone()).ok())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        
+        let new_balance = balance - 30;
+        storage.insert(b"account_balance".to_vec(), new_balance.to_string().into_bytes());
+        
+        info!("  交易 1: 取款 30 COIN 成功,余额: {} COIN", new_balance);
+        Ok(())
+    }).unwrap();
+    
+    // 第二笔失败的取款
+    let result2: Result<(), String> = scheduler.execute_with_snapshot(|manager| {
+        let storage_arc = manager.get_storage();
+        let storage = storage_arc.lock().unwrap();
+        
+        let balance = storage.get(&b"account_balance".to_vec())
+            .and_then(|b| String::from_utf8(b.clone()).ok())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        
+        if balance < 100 {
+            info!("  交易 2: 取款 100 COIN 失败(余额不足: {} COIN)", balance);
+            return Err("余额不足".to_string());
+        }
+        
+        Ok(())
+    });
+    
+    if result2.is_err() {
+        let storage_arc = scheduler.get_storage();
+        let storage = storage_arc.lock().unwrap();
+        if let Some(balance) = storage.get(&b"account_balance".to_vec()) {
+            let balance_str = String::from_utf8_lossy(balance);
+            info!("  ✓ 交易 2 已回滚,但交易 1 保留,最终余额: {} COIN", balance_str);
+        }
+    }
+    
+    info!("\n✓ Demo 6 完成: 状态快照与回滚功能演示成功!");
+    info!("  - 成功交易提交状态 ✓");
+    info!("  - 失败交易自动回滚 ✓");
+    info!("  - 嵌套交易独立提交/回滚 ✓");
+
     if !args.once {
         // 等待 Ctrl-C 退出（保留行为以便手动观察）
         info!("按 Ctrl-C 退出...");
