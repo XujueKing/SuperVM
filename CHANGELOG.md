@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - vm-runtime v0.2.0 (2025-11-03)
+### Added - vm-runtime v0.3.0 (2025-11-03)
+
+#### Work-Stealing Scheduler ⚡
+- **WorkStealingScheduler**: 工作窃取调度器
+  - 基于 crossbeam-deque 和 rayon 的高性能任务调度
+  - 自动负载均衡: 空闲线程从忙碌线程窃取任务
+  - `submit_task()` / `submit_tasks()`: 提交任务到全局队列
+  - `execute_all()`: 并行执行所有任务
+  - 支持任务优先级 (0-255)
+  - 集成 ParallelScheduler 进行状态管理
+- **Task**: 任务定义
+  - `tx_id`: 交易标识符
+  - `priority`: 任务优先级
+- **性能提升**:
+  - 减少线程空闲时间
+  - 提高 CPU 利用率
+  - 支持大规模任务处理 (测试 1000+ 任务)
+
+#### Testing 🧪
+- 新增 3 个工作窃取测试:
+  - `test_work_stealing_basic`: 基础工作窃取
+  - `test_work_stealing_with_priorities`: 优先级调度
+  - `test_work_stealing_with_errors`: 错误处理
+- 总测试数: **35/35 通过** ✅
+
+#### Documentation 📚
+- 更新 `docs/parallel-execution.md`:
+  - 添加 WorkStealingScheduler 详细说明
+  - 工作窃取算法原理
+  - API 使用示例
+  - 性能优化建议
+
+#### Examples 💡
+- **Demo 7**: 工作窃取调度器演示 (`demo7_work_stealing.rs`)
+  - 基础工作窃取
+  - 优先级调度
+  - 大规模任务处理 (1000 任务)
+  - 与 ParallelScheduler 集成
+
+## [0.2.0] - 2025-11-03
+
+### Added - vm-runtime v0.2.0
 
 #### Parallel Execution Engine 🚀
 - **ParallelScheduler**: 并行交易调度器

@@ -13,7 +13,7 @@ pub mod parallel;
 pub use storage::{Storage, MemoryStorage};
 pub use parallel::{
     ReadWriteSet, ExecutionResult, ParallelScheduler, ConflictDetector, DependencyGraph, TxId,
-    StorageSnapshot, StateManager, ExecutionStats
+    StorageSnapshot, StateManager, ExecutionStats, WorkStealingScheduler, Task
 };
 use host::{HostState, storage_api, chain_api, crypto_api};
 

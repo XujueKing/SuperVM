@@ -220,6 +220,47 @@ pub struct ParallelScheduler {
 
 ---
 
+### 7. WorkStealingScheduler (工作窃取调度器)
+
+**用途**: 使用工作窃取算法实现负载均衡的并行调度
+
+```rust
+pub struct WorkStealingScheduler {
+    injector: Arc<Injector<Task>>,       // 全局任务队列
+    stealers: Vec<Stealer<Task>>,        // 窃取器列表
+    scheduler: Arc<ParallelScheduler>,   // 底层调度器
+    num_workers: usize,                  // 工作线程数
+}
+
+pub struct Task {
+    pub tx_id: TxId,
+    pub priority: u8,  // 0-255,越大优先级越高
+}
+```
+
+**工作原理**:
+1. 每个工作线程有自己的**本地队列** (FIFO)
+2. 线程首先从本地队列获取任务
+3. 本地队列为空时,从**全局队列**批量获取
+4. 全局队列也为空时,从其他线程**窃取**任务
+5. 使用 Rayon 线程池实现并行执行
+
+**核心方法**:
+- `new(num_workers)`: 创建调度器
+- `submit_task(task)`: 提交单个任务
+- `submit_tasks(tasks)`: 批量提交任务
+- `execute_all<F>(executor)`: 并行执行所有任务
+- `get_scheduler()`: 获取底层 ParallelScheduler
+- `get_stats()`: 获取执行统计
+
+**优势**:
+- ✅ **负载均衡**: 自动平衡线程间的工作量
+- ✅ **高吞吐量**: 减少线程空闲时间
+- ✅ **可扩展性**: 支持任意数量的工作线程
+- ✅ **优先级支持**: 可按优先级调度任务
+
+---
+
 ## API 参考
 
 ### 基础使用
@@ -287,6 +328,32 @@ let ready_txs = scheduler.get_parallel_batch(&all_txs);
 
 // ready_txs 包含所有可以并行执行的交易
 println!("可并行执行: {:?}", ready_txs);
+```
+
+### 工作窃取调度
+
+```rust
+use vm_runtime::{WorkStealingScheduler, Task};
+
+// 创建工作窃取调度器 (4 个工作线程)
+let scheduler = WorkStealingScheduler::new(Some(4));
+
+// 提交任务
+let tasks = vec![
+    Task::new(1, 255),  // 高优先级
+    Task::new(2, 128),  // 中优先级
+    Task::new(3, 50),   // 低优先级
+];
+scheduler.submit_tasks(tasks);
+
+// 并行执行所有任务
+let result = scheduler.execute_all(|tx_id| {
+    // 执行任务逻辑
+    println!("Processing transaction {}", tx_id);
+    Ok(())
+})?;
+
+println!("Executed: {:?}", result);
 ```
 
 ---

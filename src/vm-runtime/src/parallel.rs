@@ -5,6 +5,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use crossbeam_deque::{Injector, Stealer, Worker};
+use rayon::prelude::*;
 
 /// 交易标识符
 pub type TxId = u64;
@@ -401,6 +403,169 @@ impl ParallelScheduler {
     pub fn get_events(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
         let manager = self.state_manager.lock().unwrap();
         manager.get_events()
+    }
+}
+
+/// 工作窃取任务
+#[derive(Debug, Clone)]
+pub struct Task {
+    pub tx_id: TxId,
+    pub priority: u8,  // 任务优先级 (0-255, 值越大优先级越高)
+}
+
+impl Task {
+    pub fn new(tx_id: TxId, priority: u8) -> Self {
+        Self { tx_id, priority }
+    }
+}
+
+/// 工作窃取调度器
+/// 
+/// 使用工作窃取算法进行负载均衡:
+/// - 每个工作线程有自己的本地队列 (Worker)
+/// - 空闲线程可以从其他线程的队列"窃取"任务 (Stealer)
+/// - 全局队列 (Injector) 用于任务注入和负载均衡
+pub struct WorkStealingScheduler {
+    /// 全局任务队列
+    injector: Arc<Injector<Task>>,
+    /// 底层并行调度器
+    scheduler: Arc<ParallelScheduler>,
+    /// 工作线程数量
+    num_workers: usize,
+}
+
+impl WorkStealingScheduler {
+    /// 创建新的工作窃取调度器
+    /// 
+    /// # 参数
+    /// - `num_workers`: 工作线程数量,默认使用 CPU 核心数
+    pub fn new(num_workers: Option<usize>) -> Self {
+        let num_workers = num_workers.unwrap_or_else(|| num_cpus::get());
+        
+        Self {
+            injector: Arc::new(Injector::new()),
+            scheduler: Arc::new(ParallelScheduler::new()),
+            num_workers,
+        }
+    }
+    
+    /// 提交任务到全局队列
+    pub fn submit_task(&self, task: Task) {
+        self.injector.push(task);
+    }
+    
+    /// 批量提交任务
+    pub fn submit_tasks(&self, tasks: Vec<Task>) {
+        for task in tasks {
+            self.injector.push(task);
+        }
+    }
+    
+    /// 执行所有任务
+    /// 
+    /// 使用 rayon 线程池并行执行任务,每个线程:
+    /// 1. 从自己的本地队列获取任务
+    /// 2. 如果本地队列为空,尝试从全局队列获取
+    /// 3. 如果全局队列也为空,从其他线程窃取任务
+    pub fn execute_all<F>(&self, executor: F) -> Result<Vec<TxId>, String>
+    where
+        F: Fn(TxId) -> Result<(), String> + Send + Sync,
+    {
+        let executed = Arc::new(Mutex::new(Vec::new()));
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        
+        // 创建工作线程和它们的本地队列
+        let workers: Vec<Worker<Task>> = (0..self.num_workers)
+            .map(|_| Worker::new_fifo())
+            .collect();
+        
+        // 收集窃取器
+        let stealers: Vec<Stealer<Task>> = workers
+            .iter()
+            .map(|w| w.stealer())
+            .collect();
+        
+        let injector = Arc::clone(&self.injector);
+        let executor = Arc::new(executor);
+        
+        // 使用 rayon 并行执行
+        workers.into_par_iter().enumerate().for_each(|(worker_id, worker)| {
+            let executed = Arc::clone(&executed);
+            let errors = Arc::clone(&errors);
+            let executor = Arc::clone(&executor);
+            
+            loop {
+                // 尝试从本地队列获取任务
+                let task = worker.pop().or_else(|| {
+                    // 本地队列为空,尝试从全局队列获取
+                    loop {
+                        match injector.steal_batch_and_pop(&worker) {
+                            crossbeam_deque::Steal::Success(t) => return Some(t),
+                            crossbeam_deque::Steal::Empty => break,
+                            crossbeam_deque::Steal::Retry => continue,
+                        }
+                    }
+                    
+                    // 全局队列也为空,尝试从其他线程窃取
+                    stealers.iter().enumerate()
+                        .filter(|(id, _)| *id != worker_id)
+                        .find_map(|(_, stealer)| {
+                            loop {
+                                match stealer.steal_batch_and_pop(&worker) {
+                                    crossbeam_deque::Steal::Success(t) => return Some(t),
+                                    crossbeam_deque::Steal::Empty => return None,
+                                    crossbeam_deque::Steal::Retry => continue,
+                                }
+                            }
+                        })
+                });
+                
+                match task {
+                    Some(task) => {
+                        // 执行任务
+                        match executor(task.tx_id) {
+                            Ok(()) => {
+                                executed.lock().unwrap().push(task.tx_id);
+                            }
+                            Err(e) => {
+                                errors.lock().unwrap().push((task.tx_id, e));
+                            }
+                        }
+                    }
+                    None => break, // 没有更多任务
+                }
+            }
+        });
+        
+        // 检查是否有错误
+        let error_list = errors.lock().unwrap();
+        if !error_list.is_empty() {
+            return Err(format!("Execution failed for {} tasks", error_list.len()));
+        }
+        
+        let result = executed.lock().unwrap().clone();
+        Ok(result)
+    }
+    
+    /// 获取底层并行调度器
+    pub fn get_scheduler(&self) -> Arc<ParallelScheduler> {
+        Arc::clone(&self.scheduler)
+    }
+    
+    /// 获取执行统计
+    pub fn get_stats(&self) -> ExecutionStats {
+        self.scheduler.get_stats()
+    }
+}
+
+// 添加 num_cpus 的简单实现 (如果没有依赖)
+mod num_cpus {
+    use std::thread;
+    
+    pub fn get() -> usize {
+        thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4) // 默认 4 个线程
     }
 }
 
@@ -963,5 +1128,71 @@ mod snapshot_tests {
             assert_eq!(events.len(), 1);
             assert_eq!(events[0], b"event1");
         }
+    }
+    
+    #[test]
+    fn test_work_stealing_basic() {
+        let ws_scheduler = WorkStealingScheduler::new(Some(4));
+        
+        // 提交 10 个任务
+        let tasks: Vec<Task> = (1..=10)
+            .map(|i| Task::new(i, 100))
+            .collect();
+        
+        ws_scheduler.submit_tasks(tasks);
+        
+        // 执行所有任务
+        let executed_count = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let executed_count_clone = Arc::clone(&executed_count);
+        
+        let result = ws_scheduler.execute_all(move |tx_id| {
+            executed_count_clone.fetch_add(1, Ordering::Relaxed);
+            println!("Executing tx {}", tx_id);
+            Ok(())
+        });
+        
+        assert!(result.is_ok());
+        assert_eq!(executed_count.load(Ordering::Relaxed), 10);
+    }
+    
+    #[test]
+    fn test_work_stealing_with_priorities() {
+        let ws_scheduler = WorkStealingScheduler::new(Some(2));
+        
+        // 提交不同优先级的任务
+        ws_scheduler.submit_task(Task::new(1, 255)); // 高优先级
+        ws_scheduler.submit_task(Task::new(2, 128)); // 中优先级
+        ws_scheduler.submit_task(Task::new(3, 50));  // 低优先级
+        
+        let executed = Arc::new(Mutex::new(Vec::new()));
+        let executed_clone = Arc::clone(&executed);
+        
+        let result = ws_scheduler.execute_all(move |tx_id| {
+            executed_clone.lock().unwrap().push(tx_id);
+            Ok(())
+        });
+        
+        assert!(result.is_ok());
+        assert_eq!(executed.lock().unwrap().len(), 3);
+    }
+    
+    #[test]
+    fn test_work_stealing_with_errors() {
+        let ws_scheduler = WorkStealingScheduler::new(Some(2));
+        
+        // 提交会失败的任务
+        ws_scheduler.submit_task(Task::new(1, 100));
+        ws_scheduler.submit_task(Task::new(2, 100));
+        
+        let result = ws_scheduler.execute_all(|tx_id| {
+            if tx_id == 2 {
+                Err("Simulated error".to_string())
+            } else {
+                Ok(())
+            }
+        });
+        
+        // 应该返回错误
+        assert!(result.is_err());
     }
 }

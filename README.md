@@ -17,8 +17,9 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - ⛓️ Chain Context API: block_number, timestamp
   - 📣 Event System: emit_event, events_len, read_event
   - 🔐 Crypto API: SHA-256, Keccak-256, ECDSA, Ed25519, 地址派生
-- **并行执行引擎** (NEW):
+- **并行执行引擎**:
   - 🚀 并行交易调度器 (ParallelScheduler)
+  - ⚡ 工作窃取调度器 (WorkStealingScheduler) - NEW
   - 🔍 冲突检测与依赖分析 (ConflictDetector)
   - 📊 执行统计 (ExecutionStats)
   - 🔄 自动重试机制 (execute_with_retry)
@@ -34,7 +35,8 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - Demo 3: 密码学功能演示 (SHA-256, Keccak-256)
   - Demo 4: 以太坊地址派生
   - Demo 5: 并行执行与冲突检测
-  - Demo 6: 状态快照与回滚 (NEW)
+  - Demo 6: 状态快照与回滚
+  - Demo 7: 工作窃取调度器 (NEW ⚡)
 
 ## 快速开始
 
@@ -75,7 +77,7 @@ cargo test -p vm-runtime
 cargo test -p vm-runtime test_execute_with_context
 ```
 
-**测试覆盖 (32/32 通过):**
+**测试覆盖 (35/35 通过):**
 
 **核心功能:**
 - ✅ test_memory_storage - 存储实现测试
@@ -103,6 +105,9 @@ cargo test -p vm-runtime test_execute_with_context
 - ✅ test_execution_stats - 执行统计
 - ✅ test_retry_mechanism - 自动重试
 - ✅ test_scheduler_with_snapshot - 调度器集成
+- ✅ test_work_stealing_basic - 工作窃取基础
+- ✅ test_work_stealing_with_priorities - 优先级调度
+- ✅ test_work_stealing_with_errors - 错误处理
 
 **基准测试:**
 ```powershell
@@ -160,6 +165,33 @@ let result = scheduler.execute_with_retry(
 let stats = scheduler.get_stats();
 println!("成功率: {:.2}%", stats.success_rate() * 100.0);
 println!("重试次数: {}", stats.retry_count);
+```
+
+### 工作窃取调度器
+
+```rust
+use vm_runtime::{WorkStealingScheduler, Task};
+
+// 创建工作窃取调度器 (4 个工作线程)
+let scheduler = WorkStealingScheduler::new(Some(4));
+
+// 提交任务 (支持优先级)
+let tasks = vec![
+    Task::new(1, 255),  // 高优先级
+    Task::new(2, 128),  // 中优先级
+    Task::new(3, 50),   // 低优先级
+];
+scheduler.submit_tasks(tasks);
+
+// 并行执行所有任务
+let result = scheduler.execute_all(|tx_id| {
+    println!("Processing transaction {}", tx_id);
+    Ok(())
+})?;
+
+// 获取统计信息
+let stats = scheduler.get_stats();
+println!("成功: {}, 失败: {}", stats.successful_txs, stats.failed_txs);
 ```
 
 ### 使用事件系统
@@ -319,23 +351,24 @@ SuperVM/
 
 ## 开发状态
 
-当前版本: **v0.2.0** (活跃开发)
+当前版本: **v0.3.0** (活跃开发)
 
 **已完成 ✅:**
 - ✅ 基础 WASM 执行引擎
 - ✅ 存储抽象与实现
 - ✅ Host Functions (存储 + 链上下文 + 事件 + 密码学)
 - ✅ execute_with_context API
-- ✅ 并行执行引擎 (70% 完成)
+- ✅ 并行执行引擎 (85% 完成)
   - ✅ 冲突检测与依赖分析
   - ✅ 状态快照与回滚
   - ✅ 执行统计与监控
   - ✅ 自动重试机制
-- ✅ 完整单元测试覆盖 (32 个测试)
+  - ✅ 工作窃取调度器 (NEW)
+- ✅ 完整单元测试覆盖 (35 个测试)
 - ✅ 性能基准测试框架
 
 **进行中 🚧:**
-- 🚧 并行执行优化 (工作窃取、批量提交)
+- 🚧 批量提交优化
 - 🚧 性能基准测试报告
 
 **计划中 📋:**

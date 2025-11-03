@@ -1820,10 +1820,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
+ "crossbeam-deque",
  "ed25519-dalek",
  "hex",
  "k256",
  "log",
+ "rayon",
  "sha2",
  "sha3",
  "thiserror",
