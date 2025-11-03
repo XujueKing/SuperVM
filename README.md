@@ -81,7 +81,7 @@ cargo test -p vm-runtime
 cargo test -p vm-runtime test_execute_with_context
 ```
 
-**测试覆盖 (54/54 通过):**
+**测试覆盖 (59/59 通过):**
 
 **核心功能:**
 - ✅ test_memory_storage - 存储实现测试
@@ -135,6 +135,13 @@ cargo test -p vm-runtime test_execute_with_context
 - ✅ test_scheduler_mvcc_basic_commit - MVCC调度器基础提交
 - ✅ test_scheduler_mvcc_abort_on_error - MVCC调度器错误回滚
 - ✅ test_scheduler_mvcc_read_only_fast_path - MVCC调度器只读路径
+
+**MVCC 垃圾回收:**
+- ✅ test_gc_version_cleanup - 版本清理正确性
+- ✅ test_gc_preserves_active_transaction_visibility - 保护活跃事务可见性
+- ✅ test_gc_no_active_transactions - 无活跃事务时的清理
+- ✅ test_gc_multiple_keys - 多键 GC
+- ✅ test_gc_stats_accumulation - GC 统计累计
 
 **基准测试:**
 ```powershell
@@ -295,6 +302,41 @@ assert!(t4.commit().is_err());
 - ✅ 原子时间戳 (AtomicU64)，消除时间戳分配瓶颈
 - ✅ 提交时按键排序加锁，避免死锁
 - ✅ 快照隔离 (Snapshot Isolation) 语义
+- ✅ 垃圾回收 (GC)：自动清理旧版本，控制内存增长
+
+**垃圾回收 (v0.6.0 NEW)**:
+```rust
+use vm_runtime::{MvccStore, GcConfig};
+
+// 创建带 GC 配置的 MVCC 存储
+let config = GcConfig {
+    max_versions_per_key: 10,      // 每个键最多保留 10 个版本
+    enable_time_based_gc: false,   // 暂不启用基于时间的 GC
+    version_ttl_secs: 3600,        // 版本过期时间（秒）
+};
+let store = MvccStore::new_with_config(config);
+
+// ... 执行一些事务 ...
+
+// 手动触发 GC
+let cleaned = store.gc()?;
+println!("清理了 {} 个旧版本", cleaned);
+
+// 获取 GC 统计
+let stats = store.get_gc_stats();
+println!("GC 执行次数: {}", stats.gc_count);
+println!("总清理版本数: {}", stats.versions_cleaned);
+
+// 监控存储状态
+println!("当前总版本数: {}", store.total_versions());
+println!("当前键数量: {}", store.total_keys());
+```
+
+**GC 策略**:
+- 保留每个键的最新版本（无论配置如何）
+- 保留所有活跃事务可见的版本（基于水位线）
+- 根据 `max_versions_per_key` 限制清理超量版本
+- 自动跟踪活跃事务，防止清理仍在使用的版本
 
 ### 使用事件系统
 

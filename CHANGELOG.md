@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - vm-runtime v0.5.0 (2025-11-04)
+### Added - vm-runtime v0.6.0 (2025-11-04)
+
+#### MVCC Garbage Collection 🗑️
+- **GcConfig**: 可配置的垃圾回收策略
+  - `max_versions_per_key`: 每个键最多保留的版本数（默认 10）
+  - `enable_time_based_gc`: 是否启用基于时间的 GC（默认 false）
+  - `version_ttl_secs`: 版本过期时间（秒）
+- **MvccStore GC 功能**:
+  - `gc()`: 手动触发垃圾回收，清理不再需要的旧版本
+  - `get_gc_stats()`: 获取 GC 统计信息（执行次数、清理版本数、清理键数）
+  - `get_min_active_ts()`: 获取活跃事务的最小时间戳（水位线）
+  - `set_gc_config()`: 动态更新 GC 配置
+  - `total_versions()`: 获取当前总版本数（监控用）
+  - `total_keys()`: 获取当前键数量（监控用）
+- **活跃事务跟踪**:
+  - 自动注册和注销活跃事务（通过 begin/drop）
+  - GC 保护活跃事务可见的所有版本
+  - 基于水位线的智能清理策略
+- **GC 清理策略**:
+  - 保留每个键的最新版本（无条件）
+  - 保留所有活跃事务可见的版本（基于 min_active_ts）
+  - 根据 max_versions_per_key 限制清理超量版本
+  - 避免清理仍在使用的版本，确保正确性
+
+#### Testing 🧪
+- 新增 5 个 GC 测试:
+  - `test_gc_version_cleanup`: 版本清理正确性
+  - `test_gc_preserves_active_transaction_visibility`: 保护活跃事务可见性
+  - `test_gc_no_active_transactions`: 无活跃事务时的清理
+  - `test_gc_multiple_keys`: 多键 GC
+  - `test_gc_stats_accumulation`: GC 统计累计
+- 总测试数: **59/59 通过** ✅
+
+#### Benchmarks 📊
+- 新增 `mvcc_gc` 基准组:
+  - `gc_throughput`: 不同版本数下的 GC 吞吐量
+  - `read_with_gc`: GC 对读取性能的影响
+  - `write_with_gc`: GC 对写入性能的影响
+  - `gc_with_active_transactions`: 活跃事务对 GC 的影响
+
+#### API Changes 🔧
+- `MvccStore::new_with_config(config: GcConfig)`: 创建带 GC 配置的存储
+- 导出新类型: `GcConfig`, `GcStats`
+- `Txn` 自动在 Drop 时注销活跃事务
+
+#### Performance 🚀
+- **内存控制**: 通过定期 GC 控制内存增长
+- **智能清理**: 仅清理不再需要的版本，不影响活跃事务
+- **低开销**: GC 使用写锁，不阻塞读操作
+
+## [0.5.0] - 2025-11-04
+
+### Added - vm-runtime v0.5.0
 
 #### MVCC Multi-Version Concurrency Control 🔐
 - **MvccStore**: 多版本并发控制存储实现
@@ -63,7 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `test_scheduler_mvcc_basic_commit`: MVCC调度器基础提交
   - `test_scheduler_mvcc_abort_on_error`: MVCC调度器错误回滚
   - `test_scheduler_mvcc_read_only_fast_path`: MVCC调度器只读路径
-- 总测试数: **54/54 通过** ✅
+- 总测试数: **54/54 通过** ✅ (v0.5.0 基础)
 
 #### Dependencies 📦
 - 新增 `dashmap ^6.1`: 高性能并发哈希表

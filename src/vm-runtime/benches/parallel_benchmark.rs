@@ -372,6 +372,133 @@ fn bench_mvcc_scheduler(c: &mut Criterion) {
     group.finish();
 }
 
+/// 基准测试: MVCC 垃圾回收性能
+fn bench_mvcc_gc(c: &mut Criterion) {
+    use vm_runtime::{MvccStore, GcConfig};
+    use std::sync::Arc;
+    
+    let mut group = c.benchmark_group("mvcc_gc");
+    
+    // 基准 1: GC 吞吐量（不同版本数）
+    for versions_per_key in [5, 10, 20, 50].iter() {
+        group.bench_with_input(
+            BenchmarkId::new("gc_throughput", versions_per_key),
+            versions_per_key,
+            |b, &count| {
+                let config = GcConfig {
+                    max_versions_per_key: 3,
+                    enable_time_based_gc: false,
+                    version_ttl_secs: 3600,
+                };
+                let store = Arc::new(MvccStore::new_with_config(config));
+                
+                // 预填充：100 个键，每个键 count 个版本
+                for key_id in 0..100 {
+                    for ver in 0..count {
+                        let mut txn = store.begin();
+                        txn.write(
+                            format!("key{}", key_id).into_bytes(),
+                            format!("v{}", ver).into_bytes(),
+                        );
+                        txn.commit().unwrap();
+                    }
+                }
+                
+                b.iter(|| {
+                    black_box(store.gc().unwrap());
+                });
+            },
+        );
+    }
+    
+    // 基准 2: GC 对读取性能的影响
+    group.bench_function("read_with_gc", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 5,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        
+        // 预填充
+        for i in 0..100 {
+            let mut txn = store.begin();
+            txn.write(format!("key{}", i).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+        }
+        
+        let mut counter = 0;
+        
+        b.iter(|| {
+            // 读取
+            let txn = store.begin_read_only();
+            for i in 0..10 {
+                black_box(txn.read(&format!("key{}", i).into_bytes()));
+            }
+            drop(txn);
+            
+            // 每 10 次读取执行一次 GC
+            counter += 1;
+            if counter % 10 == 0 {
+                store.gc().unwrap();
+            }
+        });
+    });
+    
+    // 基准 3: GC 对写入性能的影响
+    group.bench_function("write_with_gc", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 5,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        
+        let mut counter = 0;
+        
+        b.iter(|| {
+            // 写入
+            let mut txn = store.begin();
+            txn.write(format!("key{}", counter % 100).into_bytes(), b"value".to_vec());
+            txn.commit().unwrap();
+            
+            // 每 20 次写入执行一次 GC
+            counter += 1;
+            if counter % 20 == 0 {
+                store.gc().unwrap();
+            }
+        });
+    });
+    
+    // 基准 4: 活跃事务对 GC 的影响
+    group.bench_function("gc_with_active_transactions", |b| {
+        let config = GcConfig {
+            max_versions_per_key: 3,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = Arc::new(MvccStore::new_with_config(config));
+        
+        // 预填充
+        for i in 0..100 {
+            for v in 0..10 {
+                let mut txn = store.begin();
+                txn.write(format!("key{}", i).into_bytes(), format!("v{}", v).into_bytes());
+                txn.commit().unwrap();
+            }
+        }
+        
+        // 创建一些长期活跃的事务
+        let _active_txns: Vec<_> = (0..5).map(|_| store.begin_read_only()).collect();
+        
+        b.iter(|| {
+            black_box(store.gc().unwrap());
+        });
+    });
+    
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_conflict_detection,
@@ -379,6 +506,7 @@ criterion_group!(
     bench_dependency_graph,
     bench_parallel_scheduling,
     bench_mvcc_operations,
-    bench_mvcc_scheduler
+    bench_mvcc_scheduler,
+    bench_mvcc_gc
 );
 criterion_main!(benches);

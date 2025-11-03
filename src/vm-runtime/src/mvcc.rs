@@ -1,18 +1,47 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}, Mutex};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-/// MVCC 存储实现（优化版）：
+/// GC 配置选项
+#[derive(Debug, Clone)]
+pub struct GcConfig {
+    /// 保留版本数量限制（每个键最多保留的版本数）
+    pub max_versions_per_key: usize,
+    /// 是否启用基于时间的 GC（清理过期版本）
+    pub enable_time_based_gc: bool,
+    /// 版本过期时间（秒），超过此时间的版本可被清理
+    pub version_ttl_secs: u64,
+}
+
+impl Default for GcConfig {
+    fn default() -> Self {
+        Self {
+            max_versions_per_key: 10, // 默认保留 10 个版本
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600, // 1小时
+        }
+    }
+}
+
+/// MVCC 存储实现（优化版 + GC）：
 /// - 使用 DashMap 实现每键粒度的并发控制，减少全局锁竞争
 /// - 每个键的版本链使用 RwLock 保护，允许并发读
 /// - 使用 AtomicU64 管理时间戳，避免锁竞争
 /// - 提交时仅锁定写集合涉及的键，最小化锁持有范围
+/// - 支持垃圾回收，清理不再需要的旧版本
 pub struct MvccStore {
     /// 每个 key 的版本链（按 ts 升序存放），使用 RwLock 允许并发读
     data: DashMap<Vec<u8>, RwLock<Vec<Version>>>,
     /// 全局递增时间戳（原子操作，无锁）
     ts: AtomicU64,
+    /// 活跃事务的最小 start_ts（水位线）
+    /// 用于 GC 决策：低于此时间戳的版本可能被清理
+    active_txns: Arc<Mutex<Vec<u64>>>,
+    /// GC 配置
+    gc_config: Arc<Mutex<GcConfig>>,
+    /// GC 统计信息
+    gc_stats: Arc<Mutex<GcStats>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,17 +50,41 @@ pub struct Version {
     pub value: Option<Vec<u8>>, // None 表示删除
 }
 
+/// GC 统计信息
+#[derive(Debug, Clone, Default)]
+pub struct GcStats {
+    /// GC 执行次数
+    pub gc_count: u64,
+    /// 清理的版本总数
+    pub versions_cleaned: u64,
+    /// 清理的键总数
+    pub keys_cleaned: u64,
+    /// 最后一次 GC 时间戳
+    pub last_gc_ts: u64,
+}
+
 impl MvccStore {
     pub fn new() -> Arc<Self> {
+        Self::new_with_config(GcConfig::default())
+    }
+
+    pub fn new_with_config(config: GcConfig) -> Arc<Self> {
         Arc::new(Self { 
             data: DashMap::new(),
             ts: AtomicU64::new(0),
+            active_txns: Arc::new(Mutex::new(Vec::new())),
+            gc_config: Arc::new(Mutex::new(config)),
+            gc_stats: Arc::new(Mutex::new(GcStats::default())),
         })
     }
 
     /// 开启一个事务，分配 start_ts（快照版本）
     pub fn begin(self: &Arc<Self>) -> Txn {
         let start_ts = self.ts.fetch_add(1, Ordering::SeqCst) + 1;
+        
+        // 注册活跃事务
+        self.active_txns.lock().unwrap().push(start_ts);
+        
         Txn {
             store: Arc::clone(self),
             start_ts,
@@ -49,6 +102,10 @@ impl MvccStore {
     /// - 性能更优，适合大量只读查询场景
     pub fn begin_read_only(self: &Arc<Self>) -> Txn {
         let start_ts = self.ts.fetch_add(1, Ordering::SeqCst) + 1;
+        
+        // 注册活跃事务（只读事务也需要注册，防止 GC 清理它可见的版本）
+        self.active_txns.lock().unwrap().push(start_ts);
+        
         Txn {
             store: Arc::clone(self),
             start_ts,
@@ -73,6 +130,111 @@ impl MvccStore {
                 .find(|v| v.ts <= start_ts)
                 .and_then(|v| v.value.clone())
         })
+    }
+
+    /// 注销活跃事务
+    fn unregister_txn(&self, start_ts: u64) {
+        let mut active = self.active_txns.lock().unwrap();
+        if let Some(pos) = active.iter().position(|&ts| ts == start_ts) {
+            active.remove(pos);
+        }
+    }
+
+    /// 获取活跃事务的最小 start_ts（水位线）
+    /// 
+    /// 返回 None 表示没有活跃事务
+    pub fn get_min_active_ts(&self) -> Option<u64> {
+        let active = self.active_txns.lock().unwrap();
+        active.iter().min().copied()
+    }
+
+    /// 更新 GC 配置
+    pub fn set_gc_config(&self, config: GcConfig) {
+        *self.gc_config.lock().unwrap() = config;
+    }
+
+    /// 获取 GC 统计信息
+    pub fn get_gc_stats(&self) -> GcStats {
+        self.gc_stats.lock().unwrap().clone()
+    }
+
+    /// 执行垃圾回收
+    /// 
+    /// 清理策略：
+    /// 1. 保留每个键的最新版本（无论是否有活跃事务）
+    /// 2. 对于有多个版本的键，根据配置清理旧版本：
+    ///    - 基于版本数量：超过 max_versions_per_key 的旧版本
+    ///    - 基于活跃事务：低于最小活跃事务 start_ts 的版本可被清理
+    /// 
+    /// 返回清理的版本总数
+    pub fn gc(&self) -> Result<u64, String> {
+        let config = self.gc_config.lock().unwrap().clone();
+        let min_active_ts = self.get_min_active_ts();
+        
+        let mut total_cleaned = 0u64;
+        let mut keys_cleaned = 0u64;
+        
+        // 遍历所有键，清理旧版本
+        for entry in self.data.iter() {
+            let _key = entry.key();
+            let versions_lock = entry.value();
+            let mut versions = versions_lock.write();
+            
+            if versions.len() <= 1 {
+                // 只有一个版本，不清理
+                continue;
+            }
+            
+            // 计算需要保留的版本数
+            let mut keep_count = versions.len();
+            
+            // 策略 1: 基于版本数量限制
+            if keep_count > config.max_versions_per_key {
+                keep_count = config.max_versions_per_key;
+            }
+            
+            // 策略 2: 基于活跃事务水位线
+            // 如果有活跃事务，保留它们可见的所有版本（ts <= min_active_ts 的最新版本必须保留）
+            if let Some(min_ts) = min_active_ts {
+                // 找到最老的活跃事务可见的版本索引
+                // 活跃事务能看到 ts <= start_ts 的版本，所以要保留第一个 ts <= min_ts 的版本及之后的所有版本
+                if let Some(first_visible_idx) = versions.iter().position(|v| v.ts <= min_ts) {
+                    let versions_needed = versions.len() - first_visible_idx;
+                    if versions_needed > keep_count {
+                        keep_count = versions_needed;
+                    }
+                }
+            }
+            
+            // 执行清理：保留最后 keep_count 个版本
+            let to_remove = versions.len().saturating_sub(keep_count);
+            if to_remove > 0 {
+                versions.drain(0..to_remove);
+                total_cleaned += to_remove as u64;
+                keys_cleaned += 1;
+            }
+        }
+        
+        // 更新统计信息
+        let mut stats = self.gc_stats.lock().unwrap();
+        stats.gc_count += 1;
+        stats.versions_cleaned += total_cleaned;
+        stats.keys_cleaned += keys_cleaned;
+        stats.last_gc_ts = self.ts.load(Ordering::SeqCst);
+        
+        Ok(total_cleaned)
+    }
+
+    /// 获取存储的总版本数（用于监控）
+    pub fn total_versions(&self) -> usize {
+        self.data.iter()
+            .map(|entry| entry.value().read().len())
+            .sum()
+    }
+
+    /// 获取存储的键数量
+    pub fn total_keys(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -167,7 +329,16 @@ impl Txn {
     }
 
     /// 放弃事务（丢弃本地写集合）
-    pub fn abort(self) {}
+    pub fn abort(self) {
+        // Drop trait 会自动注销
+    }
+}
+
+/// 在事务结束时自动注销活跃事务
+impl Drop for Txn {
+    fn drop(&mut self) {
+        self.store.unregister_txn(self.start_ts);
+    }
 }
 
 #[cfg(test)]
@@ -456,6 +627,184 @@ mod tests {
         println!("读写事务耗时: {:?}", rw_elapsed);
         // 只读事务应更快（通常快 20-50%）
         assert!(ro_elapsed < rw_elapsed * 2, "只读事务应有性能优势");
+    }
+
+    // ====================
+    // GC 测试
+    // ====================
+
+    #[test]
+    fn test_gc_version_cleanup() {
+        let config = GcConfig {
+            max_versions_per_key: 3,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 写入 5 个版本
+        for i in 0..5 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+
+        // GC 前应有 5 个版本
+        assert_eq!(store.total_versions(), 5);
+
+        // 执行 GC（max_versions_per_key=3，应清理 2 个旧版本）
+        let _cleaned = store.gc().unwrap();
+        assert_eq!(_cleaned, 2);
+
+        // GC 后应剩 3 个版本
+        assert_eq!(store.total_versions(), 3);
+
+        // 验证 GC 统计
+        let stats = store.get_gc_stats();
+        assert_eq!(stats.gc_count, 1);
+        assert_eq!(stats.versions_cleaned, 2);
+        assert_eq!(stats.keys_cleaned, 1);
+    }
+
+    #[test]
+    fn test_gc_preserves_active_transaction_visibility() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // v1
+        let mut t1 = store.begin();
+        t1.write(b"key".to_vec(), b"v1".to_vec());
+        t1.commit().unwrap();
+
+        // 开启一个长事务（持有 v1 的快照）
+        let long_txn = store.begin();
+        assert_eq!(long_txn.read(b"key").as_deref(), Some(b"v1".as_ref()));
+
+        // v2, v3, v4
+        for i in 2..=4 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+
+        // 现在有 4 个版本
+        assert_eq!(store.total_versions(), 4);
+
+        // 执行 GC：虽然 max_versions=2，但因为 long_txn 仍活跃，不应清理它可见的 v1
+        let _cleaned = store.gc().unwrap();
+        
+        // 应保留 long_txn.start_ts 可见的版本（v1） + 最新的版本
+        // 根据实现，应保留所有 ts >= min_active_ts 的版本
+        assert!(store.total_versions() >= 1, "至少保留活跃事务可见的版本");
+
+        // long_txn 仍能读取 v1
+        assert_eq!(long_txn.read(b"key").as_deref(), Some(b"v1".as_ref()));
+
+        // 提交 long_txn，它不再活跃
+        drop(long_txn);
+
+        // 再次 GC，现在可以更激进地清理
+        let _cleaned2 = store.gc().unwrap();
+        // 应清理到 max_versions_per_key=2
+        assert_eq!(store.total_versions(), 2);
+    }
+
+    #[test]
+    fn test_gc_no_active_transactions() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 写入 5 个版本（每次都提交并结束事务）
+        for i in 0..5 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+
+        // 没有活跃事务
+        assert_eq!(store.get_min_active_ts(), None);
+
+        // 执行 GC，应清理到 max_versions=2
+        let cleaned = store.gc().unwrap();
+        assert_eq!(cleaned, 3); // 清理 3 个旧版本
+        assert_eq!(store.total_versions(), 2);
+    }
+
+    #[test]
+    fn test_gc_multiple_keys() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 3 个键，每个写入 5 个版本
+        for key_id in 0..3 {
+            for ver in 0..5 {
+                let mut txn = store.begin();
+                txn.write(
+                    format!("key{}", key_id).into_bytes(),
+                    format!("v{}", ver).into_bytes(),
+                );
+                txn.commit().unwrap();
+            }
+        }
+
+        // 总共 15 个版本
+        assert_eq!(store.total_versions(), 15);
+        assert_eq!(store.total_keys(), 3);
+
+        // 执行 GC
+        let cleaned = store.gc().unwrap();
+        assert_eq!(cleaned, 9); // 每个键清理 3 个，共 9 个
+
+        // 剩余 6 个版本 (3 键 * 2 版本/键)
+        assert_eq!(store.total_versions(), 6);
+        
+        // GC 统计
+        let stats = store.get_gc_stats();
+        assert_eq!(stats.keys_cleaned, 3);
+        assert_eq!(stats.versions_cleaned, 9);
+    }
+
+    #[test]
+    fn test_gc_stats_accumulation() {
+        let config = GcConfig {
+            max_versions_per_key: 2,
+            enable_time_based_gc: false,
+            version_ttl_secs: 3600,
+        };
+        let store = MvccStore::new_with_config(config);
+
+        // 第一轮写入并 GC
+        for i in 0..4 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+        let cleaned1 = store.gc().unwrap();
+
+        // 第二轮写入并 GC
+        for i in 4..8 {
+            let mut txn = store.begin();
+            txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+            txn.commit().unwrap();
+        }
+        let cleaned2 = store.gc().unwrap();
+
+        // 验证统计累计
+        let stats = store.get_gc_stats();
+        assert_eq!(stats.gc_count, 2);
+        assert_eq!(stats.versions_cleaned, cleaned1 + cleaned2);
     }
 }
 

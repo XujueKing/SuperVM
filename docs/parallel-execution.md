@@ -1,7 +1,7 @@
 # 并行执行引擎设计文档
 
 作者: king  
-版本: v0.5.0  
+版本: v0.6.0  
 日期: 2025-11-04
 
 ## 目录
@@ -764,9 +764,195 @@ cargo bench --bench parallel_benchmark -- mvcc
 
 ## 未来优化
 
-### 短期 (v0.6.0)
-- [ ] MVCC 垃圾回收（旧版本清理）
-- [ ] MVCC 性能调优与压力测试
+### MVCC 垃圾回收 (v0.6.0) 🗑️
+
+#### 为什么需要 GC？
+
+MVCC 为每个键维护多个版本，随着事务的执行，版本数会不断增长。如果不清理旧版本：
+- **内存占用**持续增加
+- **查找性能**下降（版本链过长）
+- **存储开销**失控
+
+#### GC 配置
+
+```rust
+use vm_runtime::{MvccStore, GcConfig};
+
+let config = GcConfig {
+    max_versions_per_key: 10,      // 每个键最多保留 10 个版本
+    enable_time_based_gc: false,   // 基于时间的 GC（未来功能）
+    version_ttl_secs: 3600,        // 版本过期时间（秒）
+};
+
+let store = MvccStore::new_with_config(config);
+```
+
+#### 手动触发 GC
+
+```rust
+// 执行一次 GC
+let cleaned_count = store.gc()?;
+println!("清理了 {} 个旧版本", cleaned_count);
+
+// 获取 GC 统计
+let stats = store.get_gc_stats();
+println!("GC 执行次数: {}", stats.gc_count);
+println!("总清理版本数: {}", stats.versions_cleaned);
+println!("清理的键数: {}", stats.keys_cleaned);
+println!("最后 GC 时间戳: {}", stats.last_gc_ts);
+
+// 监控存储状态
+println!("当前总版本数: {}", store.total_versions());
+println!("当前键数量: {}", store.total_keys());
+println!("最小活跃事务时间戳: {:?}", store.get_min_active_ts());
+```
+
+#### GC 清理策略
+
+**保留规则**（优先级从高到低）:
+1. **最新版本**: 每个键的最新版本永远保留
+2. **活跃事务可见版本**: 所有活跃事务可能读到的版本必须保留
+3. **版本数量限制**: 根据 `max_versions_per_key` 清理超量旧版本
+
+**清理流程**:
+```
+对每个键的版本链:
+  1. 找到最小活跃事务 start_ts (水位线)
+  2. 保留 ts <= start_ts 的第一个版本及之后的所有版本
+  3. 在此基础上，根据 max_versions_per_key 限制进一步清理
+  4. 最新版本无条件保留
+```
+
+**示例**:
+```rust
+let store = MvccStore::new_with_config(GcConfig {
+    max_versions_per_key: 3,
+    ..Default::default()
+});
+
+// 写入 5 个版本: ts=1,2,3,4,5
+for i in 1..=5 {
+    let mut txn = store.begin();
+    txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+    txn.commit()?;
+}
+
+// 开启一个长事务（start_ts=6，能看到 ts<=6 的版本，即所有版本）
+let long_txn = store.begin();
+
+// 再写入 v6, v7
+for i in 6..=7 {
+    let mut txn = store.begin();
+    txn.write(b"key".to_vec(), format!("v{}", i).into_bytes());
+    txn.commit()?;
+}
+
+// 此时有 7 个版本，最小活跃 ts=6
+store.gc()?;
+
+// GC 后:
+// - 保留 ts=1 (long_txn 的水位线内第一个可见版本)
+// - 保留 ts=2,3,4,5,6,7 (都 >= min_active_ts)
+// - 所有版本都被保留，因为 long_txn 仍活跃
+
+drop(long_txn); // 结束长事务
+
+store.gc()?;
+
+// GC 后:
+// - 没有活跃事务，根据 max_versions_per_key=3
+// - 保留最新的 3 个版本: ts=5,6,7
+// - 清理 ts=1,2,3,4
+```
+
+#### 活跃事务跟踪
+
+MVCC 自动跟踪活跃事务:
+```rust
+// 开始事务时自动注册
+let txn1 = store.begin();
+let txn2 = store.begin_read_only();
+
+// 查询活跃事务水位线
+let min_ts = store.get_min_active_ts();
+println!("最小活跃 ts: {:?}", min_ts);
+
+// 事务结束时自动注销（Drop trait）
+drop(txn1);
+drop(txn2);
+
+// 现在没有活跃事务
+assert_eq!(store.get_min_active_ts(), None);
+```
+
+#### GC 最佳实践
+
+**1. 定期触发 GC**:
+```rust
+// 简单策略：每 N 个事务触发一次
+let mut tx_count = 0;
+loop {
+    // 执行事务...
+    tx_count += 1;
+    
+    if tx_count % 100 == 0 {
+        store.gc()?;
+    }
+}
+```
+
+**2. 基于版本数触发**:
+```rust
+// 版本数超过阈值时触发
+if store.total_versions() > 10000 {
+    println!("版本数过多，触发 GC");
+    let cleaned = store.gc()?;
+    println!("清理了 {} 个版本", cleaned);
+}
+```
+
+**3. 监控 GC 效果**:
+```rust
+let before_versions = store.total_versions();
+let cleaned = store.gc()?;
+let after_versions = store.total_versions();
+
+println!("GC 前: {} 版本", before_versions);
+println!("清理: {} 版本", cleaned);
+println!("GC 后: {} 版本", after_versions);
+println!("压缩率: {:.2}%", 
+    cleaned as f64 / before_versions as f64 * 100.0);
+```
+
+**4. 避免在事务中触发 GC**:
+```rust
+// ❌ 不好 - 可能清理当前事务需要的版本
+let txn = store.begin();
+store.gc()?; // 危险！
+txn.read(b"key");
+
+// ✅ 好 - 在事务之间触发
+drop(txn);
+store.gc()?;
+let txn2 = store.begin();
+```
+
+#### GC 性能影响
+
+运行 GC 基准测试:
+```bash
+cargo bench --bench parallel_benchmark -- mvcc_gc
+```
+
+**典型性能特征**:
+- **GC 吞吐量**: 每次 GC 可清理数千到数万个版本（毫秒级）
+- **读取影响**: GC 使用写锁，不阻塞读操作（并发读取不受影响）
+- **写入影响**: GC 期间新写入需要等待（但 GC 通常很快）
+- **活跃事务影响**: 活跃事务越多，可清理的版本越少
+
+### 短期 (v0.7.0)
+- [ ] MVCC 自动 GC（后台线程定期清理）
+- [ ] MVCC 压力测试与调优
 - [ ] 交易优先级调度策略强化
 
 ### 中期 (v0.7.0)
@@ -788,6 +974,17 @@ cargo bench --bench parallel_benchmark -- mvcc
 - [Sui 并行执行模型](https://docs.sui.io/learn/sui-execution)
 - [PostgreSQL MVCC](https://www.postgresql.org/docs/current/mvcc.html)
 - [CockroachDB Transaction Layer](https://www.cockroachlabs.com/docs/stable/architecture/transaction-layer.html)
+
+---
+
+## 更新历史
+
+- **v0.6.0 (2025-11-04)**: 添加 MVCC 垃圾回收
+- **v0.5.0 (2025-11-04)**: MVCC 核心实现 + 只读优化 + 调度器集成
+- **v0.4.0 (2025-11-04)**: 批量操作优化
+- **v0.3.0 (2025-11-03)**: 工作窃取调度器
+- **v0.2.0 (2025-11-03)**: 执行统计 + 自动重试
+- **v0.1.0 (2025-11-02)**: 并行执行引擎初版
 
 ---
 
