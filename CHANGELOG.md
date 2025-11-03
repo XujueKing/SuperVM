@@ -7,7 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - vm-runtime v0.3.0 (2025-11-03)
+### Added - vm-runtime v0.4.0 (2025-11-04)
+
+#### Batch Operations Optimization 📦
+- **StateManager 批量操作**:
+  - `batch_write()`: 批量写入,减少锁争用
+  - `batch_read()`: 批量读取,一次性获取多个键
+  - `batch_delete()`: 批量删除
+  - `batch_emit_events()`: 批量发送事件
+  - **性能提升**: 相比单个操作,批量写入可提升数倍性能
+- **ParallelScheduler 批量执行**:
+  - `execute_batch()`: 批量执行交易,共享一个快照
+  - 原子性保证: 批次中任何交易失败,整个批次回滚
+  - `batch_write()` / `batch_read()` / `batch_delete()`: 直接批量操作接口
+  - 减少快照创建/提交开销
+  
+#### Testing 🧪
+- 新增 6 个批量操作测试:
+  - `test_batch_write`: 批量写入
+  - `test_batch_read`: 批量读取
+  - `test_batch_delete`: 批量删除
+  - `test_batch_emit_events`: 批量事件
+  - `test_execute_batch`: 批量执行成功
+  - `test_execute_batch_rollback`: 批量失败回滚
+- 总测试数: **41/41 通过** ✅
+
+#### Documentation 📚
+- 更新文档说明批量操作 API
+
+#### Examples 💡
+- **Demo 8**: 批量操作演示 (`demo8_batch_operations.rs`)
+  - 批量写入性能对比 (1000 条记录)
+  - 批量读取示例
+  - 批量执行交易
+  - 批量失败自动回滚
+
+## [0.3.0] - 2025-11-03
+
+### Added - vm-runtime v0.3.0
 
 #### Work-Stealing Scheduler ⚡
 - **WorkStealingScheduler**: 工作窃取调度器

@@ -404,6 +404,69 @@ impl ParallelScheduler {
         let manager = self.state_manager.lock().unwrap();
         manager.get_events()
     }
+    
+    /// 批量执行交易
+    /// 
+    /// 将多个交易作为一个批次执行,减少快照创建/提交开销
+    /// 
+    /// # 参数
+    /// - `operations`: 交易操作列表,每个返回 Result<T, String>
+    /// 
+    /// # 返回
+    /// - `Ok(Vec<T>)`: 所有交易成功的结果列表
+    /// - `Err(String)`: 如果任何交易失败,回滚整个批次
+    pub fn execute_batch<T, F>(&self, operations: Vec<F>) -> Result<Vec<T>, String>
+    where
+        F: FnOnce(&StateManager) -> Result<T, String>,
+        T: Send,
+    {
+        let mut manager = self.state_manager.lock().unwrap();
+        
+        // 创建批次快照
+        manager.create_snapshot()?;
+        
+        let mut results = Vec::new();
+        
+        // 执行所有操作
+        for operation in operations {
+            match operation(&manager) {
+                Ok(result) => {
+                    results.push(result);
+                }
+                Err(e) => {
+                    // 任何失败都回滚整个批次
+                    manager.rollback()?;
+                    self.stats_failed.fetch_add(1, Ordering::Relaxed);
+                    self.stats_rollback.fetch_add(1, Ordering::Relaxed);
+                    return Err(format!("Batch execution failed: {}", e));
+                }
+            }
+        }
+        
+        // 所有操作成功,提交批次
+        manager.commit()?;
+        self.stats_successful.fetch_add(results.len() as u64, Ordering::Relaxed);
+        
+        Ok(results)
+    }
+    
+    /// 批量写入存储
+    pub fn batch_write(&self, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<usize, String> {
+        let manager = self.state_manager.lock().unwrap();
+        manager.batch_write(writes)
+    }
+    
+    /// 批量读取存储
+    pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, String> {
+        let manager = self.state_manager.lock().unwrap();
+        manager.batch_read(keys)
+    }
+    
+    /// 批量删除存储
+    pub fn batch_delete(&self, keys: &[Vec<u8>]) -> Result<usize, String> {
+        let manager = self.state_manager.lock().unwrap();
+        manager.batch_delete(keys)
+    }
 }
 
 /// 工作窃取任务
@@ -928,6 +991,84 @@ impl StateManager {
         }
     }
     
+    /// 批量写入存储 (减少锁争用)
+    /// 
+    /// # 参数
+    /// - `writes`: 要写入的键值对列表
+    /// 
+    /// # 返回
+    /// 写入成功返回 Ok(写入数量)
+    pub fn batch_write(&self, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<usize, String> {
+        let mut storage = self.current_storage.lock()
+            .map_err(|e| format!("Failed to lock storage: {}", e))?;
+        
+        let count = writes.len();
+        for (key, value) in writes {
+            storage.insert(key, value);
+        }
+        
+        Ok(count)
+    }
+    
+    /// 批量读取存储 (减少锁争用)
+    /// 
+    /// # 参数
+    /// - `keys`: 要读取的键列表
+    /// 
+    /// # 返回
+    /// 键值对列表,如果某个键不存在则不包含在结果中
+    pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, String> {
+        let storage = self.current_storage.lock()
+            .map_err(|e| format!("Failed to lock storage: {}", e))?;
+        
+        let mut results = Vec::new();
+        for key in keys {
+            if let Some(value) = storage.get(key) {
+                results.push((key.clone(), value.clone()));
+            }
+        }
+        
+        Ok(results)
+    }
+    
+    /// 批量删除存储 (减少锁争用)
+    /// 
+    /// # 参数
+    /// - `keys`: 要删除的键列表
+    /// 
+    /// # 返回
+    /// 删除的数量
+    pub fn batch_delete(&self, keys: &[Vec<u8>]) -> Result<usize, String> {
+        let mut storage = self.current_storage.lock()
+            .map_err(|e| format!("Failed to lock storage: {}", e))?;
+        
+        let mut count = 0;
+        for key in keys {
+            if storage.remove(key).is_some() {
+                count += 1;
+            }
+        }
+        
+        Ok(count)
+    }
+    
+    /// 批量发送事件 (减少锁争用)
+    /// 
+    /// # 参数
+    /// - `events`: 要发送的事件列表
+    /// 
+    /// # 返回
+    /// 发送的事件数量
+    pub fn batch_emit_events(&self, events: Vec<Vec<u8>>) -> Result<usize, String> {
+        let mut event_list = self.current_events.lock()
+            .map_err(|e| format!("Failed to lock events: {}", e))?;
+        
+        let count = events.len();
+        event_list.extend(events);
+        
+        Ok(count)
+    }
+    
     /// 获取当前存储状态的引用
     pub fn get_storage(&self) -> Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>> {
         Arc::clone(&self.current_storage)
@@ -1128,6 +1269,189 @@ mod snapshot_tests {
             assert_eq!(events.len(), 1);
             assert_eq!(events[0], b"event1");
         }
+    }
+    
+    #[test]
+    fn test_batch_write() {
+        let manager = StateManager::new();
+        
+        // 批量写入
+        let writes = vec![
+            (b"key1".to_vec(), b"value1".to_vec()),
+            (b"key2".to_vec(), b"value2".to_vec()),
+            (b"key3".to_vec(), b"value3".to_vec()),
+        ];
+        
+        let count = manager.batch_write(writes).unwrap();
+        assert_eq!(count, 3);
+        
+        // 验证写入
+        let storage = manager.get_storage();
+        let storage = storage.lock().unwrap();
+        assert_eq!(storage.get(&b"key1".to_vec()), Some(&b"value1".to_vec()));
+        assert_eq!(storage.get(&b"key2".to_vec()), Some(&b"value2".to_vec()));
+        assert_eq!(storage.get(&b"key3".to_vec()), Some(&b"value3".to_vec()));
+    }
+    
+    #[test]
+    fn test_batch_read() {
+        let manager = StateManager::new();
+        
+        // 先写入数据
+        {
+            let storage = manager.get_storage();
+            let mut storage = storage.lock().unwrap();
+            storage.insert(b"key1".to_vec(), b"value1".to_vec());
+            storage.insert(b"key2".to_vec(), b"value2".to_vec());
+            storage.insert(b"key3".to_vec(), b"value3".to_vec());
+        }
+        
+        // 批量读取
+        let keys = vec![
+            b"key1".to_vec(),
+            b"key2".to_vec(),
+            b"key_not_exist".to_vec(),
+        ];
+        
+        let results = manager.batch_read(&keys).unwrap();
+        assert_eq!(results.len(), 2); // 只返回存在的键
+        
+        // 验证结果
+        assert!(results.iter().any(|(k, v)| k == &b"key1".to_vec() && v == &b"value1".to_vec()));
+        assert!(results.iter().any(|(k, v)| k == &b"key2".to_vec() && v == &b"value2".to_vec()));
+    }
+    
+    #[test]
+    fn test_batch_delete() {
+        let manager = StateManager::new();
+        
+        // 先写入数据
+        {
+            let storage = manager.get_storage();
+            let mut storage = storage.lock().unwrap();
+            storage.insert(b"key1".to_vec(), b"value1".to_vec());
+            storage.insert(b"key2".to_vec(), b"value2".to_vec());
+            storage.insert(b"key3".to_vec(), b"value3".to_vec());
+        }
+        
+        // 批量删除
+        let keys = vec![
+            b"key1".to_vec(),
+            b"key2".to_vec(),
+            b"key_not_exist".to_vec(),
+        ];
+        
+        let count = manager.batch_delete(&keys).unwrap();
+        assert_eq!(count, 2); // 只删除存在的键
+        
+        // 验证删除
+        let storage = manager.get_storage();
+        let storage = storage.lock().unwrap();
+        assert!(!storage.contains_key(&b"key1".to_vec()));
+        assert!(!storage.contains_key(&b"key2".to_vec()));
+        assert!(storage.contains_key(&b"key3".to_vec()));
+    }
+    
+    #[test]
+    fn test_batch_emit_events() {
+        let manager = StateManager::new();
+        
+        // 批量发送事件
+        let events = vec![
+            b"event1".to_vec(),
+            b"event2".to_vec(),
+            b"event3".to_vec(),
+        ];
+        
+        let count = manager.batch_emit_events(events).unwrap();
+        assert_eq!(count, 3);
+        
+        // 验证事件
+        let event_list = manager.get_events();
+        let event_list = event_list.lock().unwrap();
+        assert_eq!(event_list.len(), 3);
+        assert_eq!(event_list[0], b"event1");
+        assert_eq!(event_list[1], b"event2");
+        assert_eq!(event_list[2], b"event3");
+    }
+    
+    #[test]
+    fn test_execute_batch() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 批量执行交易
+        let operations = vec![
+            Box::new(|manager: &StateManager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(b"tx1".to_vec(), b"result1".to_vec());
+                Ok(1)
+            }) as Box<dyn FnOnce(&StateManager) -> Result<i32, String>>,
+            Box::new(|manager: &StateManager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(b"tx2".to_vec(), b"result2".to_vec());
+                Ok(2)
+            }),
+            Box::new(|manager: &StateManager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(b"tx3".to_vec(), b"result3".to_vec());
+                Ok(3)
+            }),
+        ];
+        
+        let results = scheduler.execute_batch(operations).unwrap();
+        assert_eq!(results, vec![1, 2, 3]);
+        
+        // 验证所有交易都已提交
+        let storage = scheduler.get_storage();
+        let storage = storage.lock().unwrap();
+        assert_eq!(storage.get(&b"tx1".to_vec()), Some(&b"result1".to_vec()));
+        assert_eq!(storage.get(&b"tx2".to_vec()), Some(&b"result2".to_vec()));
+        assert_eq!(storage.get(&b"tx3".to_vec()), Some(&b"result3".to_vec()));
+        
+        // 验证统计
+        let stats = scheduler.get_stats();
+        assert_eq!(stats.successful_txs, 3);
+    }
+    
+    #[test]
+    fn test_execute_batch_rollback() {
+        let scheduler = ParallelScheduler::new();
+        
+        // 批量执行,其中一个失败
+        let operations = vec![
+            Box::new(|manager: &StateManager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(b"tx1".to_vec(), b"result1".to_vec());
+                Ok(1)
+            }) as Box<dyn FnOnce(&StateManager) -> Result<i32, String>>,
+            Box::new(|_manager: &StateManager| {
+                Err("Simulated failure".to_string())
+            }),
+            Box::new(|manager: &StateManager| {
+                let storage = manager.get_storage();
+                let mut storage = storage.lock().unwrap();
+                storage.insert(b"tx3".to_vec(), b"result3".to_vec());
+                Ok(3)
+            }),
+        ];
+        
+        let result = scheduler.execute_batch(operations);
+        assert!(result.is_err());
+        
+        // 验证所有交易都已回滚
+        let storage = scheduler.get_storage();
+        let storage = storage.lock().unwrap();
+        assert!(!storage.contains_key(&b"tx1".to_vec()));
+        assert!(!storage.contains_key(&b"tx3".to_vec()));
+        
+        // 验证统计
+        let stats = scheduler.get_stats();
+        assert_eq!(stats.failed_txs, 1);
+        assert_eq!(stats.rollback_count, 1);
     }
     
     #[test]

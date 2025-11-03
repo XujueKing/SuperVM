@@ -19,7 +19,8 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - 🔐 Crypto API: SHA-256, Keccak-256, ECDSA, Ed25519, 地址派生
 - **并行执行引擎**:
   - 🚀 并行交易调度器 (ParallelScheduler)
-  - ⚡ 工作窃取调度器 (WorkStealingScheduler) - NEW
+  - ⚡ 工作窃取调度器 (WorkStealingScheduler)
+  - 📦 批量操作优化 (batch_write/read/delete/execute) - NEW
   - 🔍 冲突检测与依赖分析 (ConflictDetector)
   - 📊 执行统计 (ExecutionStats)
   - 🔄 自动重试机制 (execute_with_retry)
@@ -36,7 +37,8 @@ SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作�
   - Demo 4: 以太坊地址派生
   - Demo 5: 并行执行与冲突检测
   - Demo 6: 状态快照与回滚
-  - Demo 7: 工作窃取调度器 (NEW ⚡)
+  - Demo 7: 工作窃取调度器
+  - Demo 8: 批量操作优化 (NEW 📦)
 
 ## 快速开始
 
@@ -77,7 +79,7 @@ cargo test -p vm-runtime
 cargo test -p vm-runtime test_execute_with_context
 ```
 
-**测试覆盖 (35/35 通过):**
+**测试覆盖 (41/41 通过):**
 
 **核心功能:**
 - ✅ test_memory_storage - 存储实现测试
@@ -108,6 +110,12 @@ cargo test -p vm-runtime test_execute_with_context
 - ✅ test_work_stealing_basic - 工作窃取基础
 - ✅ test_work_stealing_with_priorities - 优先级调度
 - ✅ test_work_stealing_with_errors - 错误处理
+- ✅ test_batch_write - 批量写入
+- ✅ test_batch_read - 批量读取
+- ✅ test_batch_delete - 批量删除
+- ✅ test_batch_emit_events - 批量事件
+- ✅ test_execute_batch - 批量执行
+- ✅ test_execute_batch_rollback - 批量回滚
 
 **基准测试:**
 ```powershell
@@ -192,6 +200,34 @@ let result = scheduler.execute_all(|tx_id| {
 // 获取统计信息
 let stats = scheduler.get_stats();
 println!("成功: {}, 失败: {}", stats.successful_txs, stats.failed_txs);
+```
+
+### 批量操作
+
+```rust
+use vm_runtime::ParallelScheduler;
+
+let scheduler = ParallelScheduler::new();
+
+// 批量写入 (减少锁争用)
+let writes = vec![
+    (b"key1".to_vec(), b"value1".to_vec()),
+    (b"key2".to_vec(), b"value2".to_vec()),
+    (b"key3".to_vec(), b"value3".to_vec()),
+];
+scheduler.batch_write(writes)?;
+
+// 批量读取
+let keys = vec![b"key1".to_vec(), b"key2".to_vec()];
+let results = scheduler.batch_read(&keys)?;
+
+// 批量执行交易 (原子性: 全部成功或全部回滚)
+let operations = vec![
+    Box::new(|manager| { /* 交易 1 */ Ok(1) }),
+    Box::new(|manager| { /* 交易 2 */ Ok(2) }),
+    Box::new(|manager| { /* 交易 3 */ Ok(3) }),
+];
+let results = scheduler.execute_batch(operations)?;
 ```
 
 ### 使用事件系统
