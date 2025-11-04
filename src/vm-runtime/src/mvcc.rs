@@ -100,6 +100,12 @@ pub struct MvccStore {
     auto_gc_running: Arc<AtomicBool>,
     /// 自动 GC 停止信号
     auto_gc_stop: Arc<AtomicBool>,
+    /// 近期提交事务计数（用于估算 TPS）
+    recent_tx_count: Arc<AtomicU64>,
+    /// 近期 GC 清理的版本数
+    recent_gc_cleaned: Arc<AtomicU64>,
+    /// 自适应 GC 策略
+    adaptive_strategy: Arc<Mutex<AdaptiveGcStrategy>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,6 +143,9 @@ impl MvccStore {
             gc_stats: Arc::new(Mutex::new(GcStats::default())),
             auto_gc_running: Arc::new(AtomicBool::new(false)),
             auto_gc_stop: Arc::new(AtomicBool::new(false)),
+            recent_tx_count: Arc::new(AtomicU64::new(0)),
+            recent_gc_cleaned: Arc::new(AtomicU64::new(0)),
+            adaptive_strategy: Arc::new(Mutex::new(AdaptiveGcStrategy::default())),
         });
         
         // 如果配置了自动 GC，启动后台线程
@@ -328,17 +337,27 @@ impl MvccStore {
         // 启动后台线程
         let store_clone = Arc::clone(&store);
         thread::spawn(move || {
-            let threshold = auto_gc_config.version_threshold;
+            let mut threshold = auto_gc_config.version_threshold;
+            let adaptive = auto_gc_config.enable_adaptive;
+            let mut current_interval = auto_gc_config.interval_secs;
+            let strategy = store_clone.adaptive_strategy.lock().unwrap().clone();
+            drop(strategy);
+
+            // 上一次观测值
+            let mut last_tx = store_clone.recent_tx_count.load(Ordering::Relaxed);
+            let mut last_versions = store_clone.total_versions() as u64;
 
             // 如果配置了启动时运行，先执行一次
             if auto_gc_config.run_on_start {
-                let _ = store_clone.gc();
+                if let Ok(cleaned) = store_clone.gc() {
+                    store_clone.recent_gc_cleaned.fetch_add(cleaned as u64, Ordering::Relaxed);
+                }
             }
 
             // 循环执行 GC
             while !store_clone.auto_gc_stop.load(Ordering::SeqCst) {
                 // 等待间隔时间（可中断）
-                for _ in 0..(auto_gc_config.interval_secs * 10) {
+                for _ in 0..(current_interval * 10) {
                     if store_clone.auto_gc_stop.load(Ordering::SeqCst) {
                         break;
                     }
@@ -349,15 +368,57 @@ impl MvccStore {
                     break;
                 }
 
-                // 检查是否需要触发 GC
+                // 自适应：根据近期 TPS 与版本增长调整 interval 与 threshold
+                if adaptive {
+                    let strat = store_clone.adaptive_strategy.lock().unwrap().clone();
+                    let tx_now = store_clone.recent_tx_count.load(Ordering::Relaxed);
+                    let tx_delta = tx_now.saturating_sub(last_tx);
+                    last_tx = tx_now;
+
+                    let versions_now = store_clone.total_versions() as u64;
+                    let versions_delta = versions_now.saturating_sub(last_versions);
+                    last_versions = versions_now;
+
+                    let cleaned = store_clone.recent_gc_cleaned.swap(0, Ordering::Relaxed);
+
+                    // 简单启发式：
+                    // - 高 TPS 或版本增长快 -> 缩短间隔，降低阈值
+                    // - 低 TPS 且增长慢且 GC 清理少 -> 拉长间隔，提升阈值
+                    let high_load = tx_delta > 1_000 || versions_delta > 5_000;
+                    let low_load = tx_delta < 100 && versions_delta < 500 && cleaned < 100;
+
+                    if high_load {
+                        current_interval = current_interval.saturating_sub(1).max(strat.min_interval_secs);
+                        threshold = threshold.saturating_sub(100).max(strat.min_threshold);
+                    } else if low_load {
+                        current_interval = (current_interval + 1).min(strat.max_interval_secs);
+                        threshold = (threshold + 100).min(strat.max_threshold);
+                    } else {
+                        // 回归基线的微调
+                        if current_interval > strat.base_interval_secs {
+                            current_interval -= (current_interval - strat.base_interval_secs).min(1);
+                        } else if current_interval < strat.base_interval_secs {
+                            current_interval += (strat.base_interval_secs - current_interval).min(1);
+                        }
+                        if threshold > strat.base_threshold {
+                            threshold -= (threshold - strat.base_threshold).min(50);
+                        } else if threshold < strat.base_threshold {
+                            threshold += (strat.base_threshold - threshold).min(50);
+                        }
+                    }
+                }
+
+                // 检查是否需要触发 GC（threshold=0 表示总是定时执行）
                 let should_run = if threshold > 0 {
                     store_clone.total_versions() >= threshold
                 } else {
-                    true // threshold=0 表示总是定时执行
+                    true
                 };
 
                 if should_run {
-                    let _ = store_clone.gc();
+                    if let Ok(cleaned) = store_clone.gc() {
+                        store_clone.recent_gc_cleaned.fetch_add(cleaned as u64, Ordering::Relaxed);
+                    }
                 }
             }
 
@@ -460,6 +521,8 @@ impl Txn {
         // 只读事务快速路径：直接返回 start_ts，无需任何操作
         if self.read_only {
             self.committed = true;
+            // 计数 TPS
+            self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
             return Ok(self.start_ts);
         }
 
@@ -488,6 +551,8 @@ impl Txn {
         }
 
         self.committed = true;
+        // 计数 TPS
+        self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
         Ok(commit_ts)
     }
 
