@@ -10,13 +10,17 @@ mod host;
 mod crypto;
 pub mod parallel;
 pub mod mvcc;
+pub mod parallel_mvcc;  // v0.9.0: 新的基于 MVCC 的并行调度器
 
 pub use storage::{Storage, MemoryStorage};
 pub use parallel::{
     ReadWriteSet, ExecutionResult, ParallelScheduler, ConflictDetector, DependencyGraph, TxId,
     StorageSnapshot, StateManager, ExecutionStats, WorkStealingScheduler, Task
 };
-pub use mvcc::{MvccStore, Version, Txn, GcConfig, GcStats, AutoGcConfig, AdaptiveGcStrategy};
+pub use mvcc::{MvccStore, Version, Txn, GcConfig, GcStats, AutoGcConfig, AdaptiveGcStrategy, AutoGcRuntime};
+pub use parallel_mvcc::{
+    MvccScheduler, MvccSchedulerConfig, MvccSchedulerStats, TxnResult, BatchTxnResult
+};
 use host::{HostState, storage_api, chain_api, crypto_api};
 
 /// VM 运行时的主要接口
