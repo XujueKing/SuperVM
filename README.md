@@ -448,6 +448,23 @@ let store = Arc::new(MvccStore::new_with_config(config));
   - 延长 GC 间隔 (基准 60s → 最大 300s)
   - 提高触发阈值 (基准 1000 → 最大 5000)
   - 减少无效 GC，节省资源
+
+**运行时观测** (v0.8.0+):
+```rust
+// 实时查看当前 GC 参数（包括自适应调整后的值）
+if let Some(runtime) = store.get_auto_gc_runtime() {
+    println!("自适应模式: {}", runtime.enable_adaptive);
+    println!("当前间隔: {}s", runtime.interval_secs);
+    println!("当前阈值: {}", runtime.version_threshold);
+}
+
+// 结合 GC 统计评估效果
+let stats = store.get_gc_stats();
+println!("GC 执行次数: {}", stats.gc_count);
+println!("清理版本数: {}", stats.versions_cleaned);
+```
+
+> 📖 详细说明请参考: [GC 运行时可观测性文档](docs/gc-observability.md)
 - **正常负载**:
   - 逐渐回归基准值
   - 保持稳定状态
@@ -642,6 +659,17 @@ SuperVM/
 - 📋 生产环境部署
 
 详见 [CHANGELOG.md](CHANGELOG.md) 和 [ROADMAP.md](ROADMAP.md)。
+
+## 文档资源
+
+- 📖 [API 文档](docs/API.md) - Host Functions API 参考
+- 📖 [并行执行设计](docs/parallel-execution.md) - 并行调度器与冲突检测
+- 📖 [压力测试与调优指南](docs/stress-testing-guide.md) - MVCC 压力测试与自适应 GC (v0.8.0)
+- 📖 [GC 运行时可观测性](docs/gc-observability.md) - 实时监控 GC 参数 (v0.8.0)
+- 📖 [变更日志](CHANGELOG.md) - 版本历史与更新
+- 📖 [贡献指南](CONTRIBUTING.md) - 如何参与开发
+- 📖 [开发者文档](DEVELOPER.md) - 开发流程与规范
+- 📖 [项目路线图](ROADMAP.md) - 未来规划与进展
 
 ## 贡献指南
 

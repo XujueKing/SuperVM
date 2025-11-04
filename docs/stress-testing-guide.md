@@ -241,6 +241,37 @@ cargo test -p vm-runtime --test mvcc_stress_test test_adaptive_gc -- --nocapture
 - 版本数被有效控制
 - 低负载时 GC 频率降低
 
+### 运行时观测
+
+**实时查看 GC 参数**（v0.8.0+）:
+
+```rust
+if let Some(runtime) = store.get_auto_gc_runtime() {
+    println!(
+        "自适应模式: {}, 当前间隔: {}s, 当前阈值: {}",
+        runtime.enable_adaptive,
+        runtime.interval_secs,
+        runtime.version_threshold
+    );
+}
+```
+
+结合 GC 统计评估效果:
+
+```rust
+let stats = store.get_gc_stats();
+let runtime = store.get_auto_gc_runtime().unwrap();
+println!(
+    "GC 执行 {} 次, 清理 {} 版本, 当前间隔 {}s, 当前阈值 {}",
+    stats.gc_count,
+    stats.versions_cleaned,
+    runtime.interval_secs,
+    runtime.version_threshold
+);
+```
+
+> 📖 详细说明请参考: [GC 运行时可观测性文档](gc-observability.md)
+
 ---
 
 ## 性能调优建议
