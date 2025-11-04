@@ -27,6 +27,8 @@ pub struct AutoGcConfig {
     pub version_threshold: usize,
     /// 是否在启动时立即执行一次 GC
     pub run_on_start: bool,
+    /// 是否启用自适应 GC（根据负载动态调整参数）
+    pub enable_adaptive: bool,
 }
 
 impl Default for AutoGcConfig {
@@ -35,6 +37,31 @@ impl Default for AutoGcConfig {
             interval_secs: 60,      // 每 60 秒
             version_threshold: 1000, // 超过 1000 个版本
             run_on_start: false,
+            enable_adaptive: false,
+        }
+    }
+}
+
+/// 自适应 GC 策略（占位类型，当前实现中未启用动态调整）
+#[derive(Debug, Clone)]
+pub struct AdaptiveGcStrategy {
+    pub base_interval_secs: u64,
+    pub min_interval_secs: u64,
+    pub max_interval_secs: u64,
+    pub base_threshold: usize,
+    pub min_threshold: usize,
+    pub max_threshold: usize,
+}
+
+impl Default for AdaptiveGcStrategy {
+    fn default() -> Self {
+        Self {
+            base_interval_secs: 60,
+            min_interval_secs: 10,
+            max_interval_secs: 300,
+            base_threshold: 1000,
+            min_threshold: 500,
+            max_threshold: 5000,
         }
     }
 }
@@ -976,6 +1003,7 @@ mod tests {
                 interval_secs: 1,      // 每 1 秒
                 version_threshold: 0,  // 不使用阈值，定时执行
                 run_on_start: false,
+                enable_adaptive: false,
             }),
         };
         let store = MvccStore::new_with_config(config);
@@ -1023,6 +1051,7 @@ mod tests {
                 interval_secs: 1,      // 每 1 秒检查
                 version_threshold: 10, // 超过 10 个版本触发
                 run_on_start: false,
+                enable_adaptive: false,
             }),
         };
         let store = MvccStore::new_with_config(config);
@@ -1071,6 +1100,7 @@ mod tests {
                 interval_secs: 60,     // 长间隔，不会在测试期间再次运行
                 version_threshold: 0,
                 run_on_start: true,    // 启动时立即运行
+                enable_adaptive: false,
             }),
         };
 
@@ -1129,6 +1159,7 @@ mod tests {
             interval_secs: 1,
             version_threshold: 0,
             run_on_start: false,
+            enable_adaptive: false,
         }));
 
         let result = store.start_auto_gc();
@@ -1165,6 +1196,7 @@ mod tests {
                 interval_secs: 1,
                 version_threshold: 20,
                 run_on_start: false,
+                enable_adaptive: false,
             }),
         };
         let store = Arc::new(MvccStore::new_with_config(config));

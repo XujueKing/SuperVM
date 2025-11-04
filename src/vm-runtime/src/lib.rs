@@ -16,7 +16,7 @@ pub use parallel::{
     ReadWriteSet, ExecutionResult, ParallelScheduler, ConflictDetector, DependencyGraph, TxId,
     StorageSnapshot, StateManager, ExecutionStats, WorkStealingScheduler, Task
 };
-pub use mvcc::{MvccStore, Version, Txn, GcConfig, GcStats, AutoGcConfig};
+pub use mvcc::{MvccStore, Version, Txn, GcConfig, GcStats, AutoGcConfig, AdaptiveGcStrategy};
 use host::{HostState, storage_api, chain_api, crypto_api};
 
 /// VM 运行时的主要接口
