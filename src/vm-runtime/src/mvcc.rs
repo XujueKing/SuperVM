@@ -106,6 +106,10 @@ pub struct MvccStore {
     recent_gc_cleaned: Arc<AtomicU64>,
     /// 自适应 GC 策略
     adaptive_strategy: Arc<Mutex<AdaptiveGcStrategy>>,
+    /// 当前运行中的 GC 间隔（秒）
+    current_gc_interval_secs: Arc<AtomicU64>,
+    /// 当前运行中的版本阈值
+    current_gc_threshold: Arc<AtomicU64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,6 +131,14 @@ pub struct GcStats {
     pub last_gc_ts: u64,
 }
 
+/// 自动 GC 运行时参数的快照
+#[derive(Debug, Clone)]
+pub struct AutoGcRuntime {
+    pub enable_adaptive: bool,
+    pub interval_secs: u64,
+    pub version_threshold: usize,
+}
+
 impl MvccStore {
     pub fn new() -> Arc<Self> {
         Self::new_with_config(GcConfig::default())
@@ -146,6 +158,8 @@ impl MvccStore {
             recent_tx_count: Arc::new(AtomicU64::new(0)),
             recent_gc_cleaned: Arc::new(AtomicU64::new(0)),
             adaptive_strategy: Arc::new(Mutex::new(AdaptiveGcStrategy::default())),
+            current_gc_interval_secs: Arc::new(AtomicU64::new(config.auto_gc.as_ref().map(|c| c.interval_secs).unwrap_or(0))),
+            current_gc_threshold: Arc::new(AtomicU64::new(config.auto_gc.as_ref().map(|c| c.version_threshold as u64).unwrap_or(0))),
         });
         
         // 如果配置了自动 GC，启动后台线程
@@ -234,6 +248,16 @@ impl MvccStore {
     /// 获取 GC 统计信息
     pub fn get_gc_stats(&self) -> GcStats {
         self.gc_stats.lock().unwrap().clone()
+    }
+
+    /// 返回自动 GC 的运行时参数（当前 interval 与阈值），若未配置自动 GC 则返回 None
+    pub fn get_auto_gc_runtime(&self) -> Option<AutoGcRuntime> {
+        let cfg = self.gc_config.lock().unwrap().auto_gc.clone();
+        cfg.map(|c| AutoGcRuntime {
+            enable_adaptive: c.enable_adaptive,
+            interval_secs: self.current_gc_interval_secs.load(Ordering::Relaxed),
+            version_threshold: self.current_gc_threshold.load(Ordering::Relaxed) as usize,
+        })
     }
 
     /// 执行垃圾回收
@@ -347,6 +371,10 @@ impl MvccStore {
             let mut last_tx = store_clone.recent_tx_count.load(Ordering::Relaxed);
             let mut last_versions = store_clone.total_versions() as u64;
 
+            // 初始化导出观测值
+            store_clone.current_gc_interval_secs.store(current_interval, Ordering::Relaxed);
+            store_clone.current_gc_threshold.store(threshold as u64, Ordering::Relaxed);
+
             // 如果配置了启动时运行，先执行一次
             if auto_gc_config.run_on_start {
                 if let Ok(cleaned) = store_clone.gc() {
@@ -406,6 +434,9 @@ impl MvccStore {
                             threshold += (strat.base_threshold - threshold).min(50);
                         }
                     }
+                    // 刷新观测值
+                    store_clone.current_gc_interval_secs.store(current_interval, Ordering::Relaxed);
+                    store_clone.current_gc_threshold.store(threshold as u64, Ordering::Relaxed);
                 }
 
                 // 检查是否需要触发 GC（threshold=0 表示总是定时执行）

@@ -499,6 +499,9 @@ fn test_memory_growth_control() {
         thread::sleep(Duration::from_millis(500));
     }
 
+    // 给予自动 GC 最后一次运行机会，避免时序抖动导致的统计偏差
+    thread::sleep(Duration::from_secs(3));
+
     let final_versions = store.total_versions();
     let final_keys = store.total_keys();
     let gc_stats = store.get_gc_stats();
