@@ -244,6 +244,46 @@ println!("成功率: {:.2}%", stats.success_rate() * 100.0);
 println!("重试次数: {}", stats.retry_count);
 ```
 
+### 基于 MVCC 的并行调度器 (v0.9.0 NEW 🎯)
+
+无需手动冲突检测与快照管理，使用 MVCC 原生事务隔离与写写冲突检测，支持自动重试与批量操作。
+
+```rust
+use vm_runtime::{MvccScheduler, MvccSchedulerConfig};
+use anyhow::Result;
+
+// 创建带自适应 GC 的 MVCC 调度器
+let scheduler = MvccScheduler::new_with_config(MvccSchedulerConfig::default());
+
+// 执行单个事务（自动重试）
+let result = scheduler.execute_txn(1, |txn| {
+    txn.write(b"key".to_vec(), b"value".to_vec());
+    Ok(42)
+});
+assert!(result.success);
+
+// 并行批量事务
+let txns: Vec<_> = (0..8)
+    .map(|i| (i as u64, |txn: &mut vm_runtime::Txn| -> Result<i32> {
+        let key = format!("k{}", i).into_bytes();
+        txn.write(key, b"v".to_vec());
+        Ok(i as i32)
+    }))
+    .collect();
+
+let batch = scheduler.execute_batch(txns);
+println!("successful={}, failed={}, conflicts={}", batch.successful, batch.failed, batch.conflicts);
+
+// 快照只读
+let value = scheduler.read_only(|txn| Ok(txn.read(b"key").map(|v| v.to_vec())) )?;
+assert_eq!(value, Some(b"value".to_vec()));
+
+// 批量写/读/删
+let ts = scheduler.batch_write(vec![(b"a".to_vec(), b"1".to_vec())])?;
+let vals = scheduler.batch_read(&[b"a".to_vec()]);
+let _ = scheduler.batch_delete(vec![b"a".to_vec()])?;
+```
+
 ### 工作窃取调度器
 
 ```rust
