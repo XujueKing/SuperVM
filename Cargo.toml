@@ -1,7 +1,10 @@
-﻿[workspace]
+[workspace]
 members = [
     "src/vm-runtime",
-    "src/node-core"
+    "src/node-core",
+    "privacy-test",
+    "zk-groth16-test",
+    "halo2-eval",
 ]
 resolver = "2"
 
@@ -12,4 +15,4 @@ authors = ["king <king@example.com>"]
 description = "SuperVM - WASM-first VM PoC and workspace"
 readme = "README-PoC.md"
 repository = "https://github.com/king/supervm"
-license = "MIT OR Apache-2.0"
+license = "GPL-3.0-or-later"

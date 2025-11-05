@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 // 开发者：king
 // Developer: king
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 // 开发者：king
 // Developer: king
 
@@ -74,7 +77,7 @@ pub mod storage_api {
         key_len: i32,
     ) -> Result<i64> {
         // clone the Memory handle to avoid holding an immutable borrow on caller
-        let memory = caller.data().memory.clone()
+        let memory = caller.data().memory
             .ok_or_else(|| anyhow!("No memory exported"))?;
 
         // 读取 key
@@ -107,7 +110,7 @@ pub mod storage_api {
         value_ptr: i32,
         value_len: i32,
     ) -> Result<i32> {
-        let memory = caller.data().memory.clone()
+        let memory = caller.data().memory
             .ok_or_else(|| anyhow!("No memory exported"))?;
 
         let data = caller.data().last_get.clone().ok_or_else(|| anyhow!("No cached value"))?;
@@ -132,7 +135,7 @@ pub mod storage_api {
     ) -> Result<i32> {
         // clone the Memory handle to avoid holding an immutable borrow while we later
         // mutably borrow `caller` to write into memory
-        let memory = caller.data().memory.clone()
+        let memory = caller.data().memory
             .ok_or_else(|| anyhow!("No memory exported"))?;
             
     // 读取 key 和 value
@@ -157,7 +160,7 @@ pub mod storage_api {
         key_ptr: i32,
         key_len: i32,
     ) -> Result<i32> {
-        let memory = caller.data().memory.clone()
+        let memory = caller.data().memory
             .ok_or_else(|| anyhow!("No memory exported"))?;
             
         // 读取 key
@@ -198,7 +201,7 @@ pub mod chain_api {
         ptr: i32,
         len: i32,
     ) -> Result<i32> {
-        let memory = caller.data().memory.clone()
+        let memory = caller.data().memory
             .ok_or_else(|| anyhow!("No memory exported"))?;
 
     let data = read_memory(&memory, &caller, ptr, len)?;
@@ -224,7 +227,7 @@ pub mod chain_api {
     ) -> Result<i32> {
         // clone Memory to avoid holding an immutable borrow of caller across the
         // subsequent mutable borrow when writing into guest memory
-        let memory = caller.data().memory.clone()
+        let memory = caller.data().memory
             .ok_or_else(|| anyhow!("No memory exported"))?;
 
         if index < 0 {
@@ -260,7 +263,7 @@ pub mod chain_api {
             data_len: i32,
             output_ptr: i32,
         ) -> Result<i32> {
-            let memory = caller.data().memory.clone()
+            let memory = caller.data().memory
                 .ok_or_else(|| anyhow!("No memory exported"))?;
         
             // 读取输入数据
@@ -289,7 +292,7 @@ pub mod chain_api {
             data_len: i32,
             output_ptr: i32,
         ) -> Result<i32> {
-            let memory = caller.data().memory.clone()
+            let memory = caller.data().memory
                 .ok_or_else(|| anyhow!("No memory exported"))?;
         
             // 读取输入数据
@@ -320,7 +323,7 @@ pub mod chain_api {
             pubkey_ptr: i32,
             pubkey_len: i32,
         ) -> Result<i32> {
-            let memory = caller.data().memory.clone()
+            let memory = caller.data().memory
                 .ok_or_else(|| anyhow!("No memory exported"))?;
         
             // 读取数据
@@ -352,7 +355,7 @@ pub mod chain_api {
             sig_ptr: i32,
             pubkey_ptr: i32,
         ) -> Result<i32> {
-            let memory = caller.data().memory.clone()
+            let memory = caller.data().memory
                 .ok_or_else(|| anyhow!("No memory exported"))?;
         
             // 读取数据
@@ -382,7 +385,7 @@ pub mod chain_api {
             sig_ptr: i32,
             output_ptr: i32,
         ) -> Result<i32> {
-            let memory = caller.data().memory.clone()
+            let memory = caller.data().memory
                 .ok_or_else(|| anyhow!("No memory exported"))?;
         
             // 读取数据
@@ -414,7 +417,7 @@ pub mod chain_api {
             pubkey_len: i32,
             output_ptr: i32,
         ) -> Result<i32> {
-            let memory = caller.data().memory.clone()
+            let memory = caller.data().memory
                 .ok_or_else(|| anyhow!("No memory exported"))?;
 
             let pubkey = read_memory(&memory, &caller, pubkey_ptr, pubkey_len)?;

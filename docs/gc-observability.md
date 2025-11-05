@@ -1,18 +1,18 @@
-# GC 运行时可观测性
+# GC 杩愯鏃跺彲瑙傛祴鎬?
 
-适用版本: v0.8.0+
+閫傜敤鐗堟湰: v0.8.0+
 
-本文档介绍如何在运行时观察 Auto GC 的关键参数与状态，帮助你在压测或生产中快速诊断与调优。
+鏈枃妗ｄ粙缁嶅浣曞湪杩愯鏃惰瀵?Auto GC 鐨勫叧閿弬鏁颁笌鐘舵€侊紝甯姪浣犲湪鍘嬫祴鎴栫敓浜т腑蹇€熻瘖鏂笌璋冧紭銆?
 
-## 能力概览
+## 鑳藉姏姒傝
 
-- 实时获取当前 GC 周期与阈值（包含自适应调整后的值）
-- 确认是否启用了自适应 GC
-- 搭配 GC 统计（次数、清理版本数）进行效果评估
+- 瀹炴椂鑾峰彇褰撳墠 GC 鍛ㄦ湡涓庨槇鍊硷紙鍖呭惈鑷€傚簲璋冩暣鍚庣殑鍊硷級
+- 纭鏄惁鍚敤浜嗚嚜閫傚簲 GC
+- 鎼厤 GC 缁熻锛堟鏁般€佹竻鐞嗙増鏈暟锛夎繘琛屾晥鏋滆瘎浼?
 
 ## API
 
-通过 `MvccStore::get_auto_gc_runtime()` 获取快照：
+閫氳繃 `MvccStore::get_auto_gc_runtime()` 鑾峰彇蹇収锛?
 
 ```rust
 use vm_runtime::{MvccStore, GcConfig, AutoGcConfig};
@@ -37,19 +37,19 @@ if let Some(rt) = store.get_auto_gc_runtime() {
 }
 ```
 
-返回结构（只读快照）：
+杩斿洖缁撴瀯锛堝彧璇诲揩鐓э級锛?
 
 ```rust
 pub struct AutoGcRuntime {
     pub enable_adaptive: bool,
-    pub interval_secs: u64,       // 当前生效的间隔（可能被自适应调整）
-    pub version_threshold: u64,   // 当前生效的阈值（可能被自适应调整）
+    pub interval_secs: u64,       // 褰撳墠鐢熸晥鐨勯棿闅旓紙鍙兘琚嚜閫傚簲璋冩暣锛?
+    pub version_threshold: u64,   // 褰撳墠鐢熸晥鐨勯槇鍊硷紙鍙兘琚嚜閫傚簲璋冩暣锛?
 }
 ```
 
-> 注：当未配置 `auto_gc` 时，`get_auto_gc_runtime()` 返回 `None`。
+> 娉細褰撴湭閰嶇疆 `auto_gc` 鏃讹紝`get_auto_gc_runtime()` 杩斿洖 `None`銆?
 
-## 与 GC 统计联合使用
+## 涓?GC 缁熻鑱斿悎浣跨敤
 
 ```rust
 let stats = store.get_gc_stats();
@@ -59,13 +59,13 @@ println!(
 );
 ```
 
-结合 `AutoGcRuntime` 可以判断：
-- 调整后的间隔/阈值是否与期望一致
-- 在某个区间内 GC 是否有效（清理率）
+缁撳悎 `AutoGcRuntime` 鍙互鍒ゆ柇锛?
+- 璋冩暣鍚庣殑闂撮殧/闃堝€兼槸鍚︿笌鏈熸湜涓€鑷?
+- 鍦ㄦ煇涓尯闂村唴 GC 鏄惁鏈夋晥锛堟竻鐞嗙巼锛?
 
-## 典型用法：压测观测点
+## 鍏稿瀷鐢ㄦ硶锛氬帇娴嬭娴嬬偣
 
-在压测循环或阶段性 sleep 处插入观测：
+鍦ㄥ帇娴嬪惊鐜垨闃舵鎬?sleep 澶勬彃鍏ヨ娴嬶細
 
 ```rust
 if let Some(rt) = store.get_auto_gc_runtime() {
@@ -77,16 +77,20 @@ if let Some(rt) = store.get_auto_gc_runtime() {
 }
 ```
 
-## 排错建议
+## 鎺掗敊寤鸿
 
-- 版本数居高不下：
-  - 检查 `interval_secs` 是否过大、`version_threshold` 是否过高
-  - 确认是否启用了 `enable_adaptive`
-- GC 清理率过低：
-  - 适当降低阈值或缩短间隔
-  - 检查是否存在长事务阻挡历史版本回收
+- 鐗堟湰鏁板眳楂樹笉涓嬶細
+  - 妫€鏌?`interval_secs` 鏄惁杩囧ぇ銆乣version_threshold` 鏄惁杩囬珮
+  - 纭鏄惁鍚敤浜?`enable_adaptive`
+- GC 娓呯悊鐜囪繃浣庯細
+  - 閫傚綋闄嶄綆闃堝€兼垨缂╃煭闂撮殧
+  - 妫€鏌ユ槸鍚﹀瓨鍦ㄩ暱浜嬪姟闃绘尅鍘嗗彶鐗堟湰鍥炴敹
 
-## 相关文档
+## 鐩稿叧鏂囨。
 
-- 压力测试与调优指南: ./stress-testing-guide.md
-- 并行执行设计: ./parallel-execution.md
+- 鍘嬪姏娴嬭瘯涓庤皟浼樻寚鍗? ./stress-testing-guide.md
+- 骞惰鎵ц璁捐: ./parallel-execution.md
+
+
+
+

@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use vm_runtime::{ReadWriteSet, ConflictDetector, ParallelScheduler};
+use vm_runtime::{ReadWriteSet, ConflictDetector, ParallelScheduler, Txn};
 use std::collections::HashSet;
 
 /// 生成不冲突的交易读写集
@@ -229,7 +229,7 @@ fn bench_mvcc_operations(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            let txn = store.begin_read_only();
+            let mut txn = store.begin_read_only();
             for i in 0..10 {
                 black_box(txn.read(&format!("key_{}", i).into_bytes()));
             }
@@ -248,7 +248,7 @@ fn bench_mvcc_operations(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            let txn = store.begin();
+            let mut txn = store.begin();
             for i in 0..10 {
                 black_box(txn.read(&format!("key_{}", i).into_bytes()));
             }
@@ -330,7 +330,7 @@ fn bench_mvcc_scheduler(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            scheduler.execute_with_mvcc_read_only(|txn| {
+            scheduler.execute_with_mvcc_read_only(|txn: &mut Txn| {
                 for i in 0..10 {
                     black_box(txn.read(&format!("key_{}", i).into_bytes()));
                 }
@@ -433,7 +433,7 @@ fn bench_mvcc_gc(c: &mut Criterion) {
         
         b.iter(|| {
             // 读取
-            let txn = store.begin_read_only();
+            let mut txn = store.begin_read_only();
             for i in 0..10 {
                 black_box(txn.read(&format!("key{}", i).into_bytes()));
             }
@@ -538,6 +538,7 @@ fn bench_auto_gc_impact(c: &mut Criterion) {
                 interval_secs: 1,
                 version_threshold: 50,
                 run_on_start: false,
+                enable_adaptive: false,
             }),
         };
         let store = Arc::new(MvccStore::new_with_config(config));
@@ -571,7 +572,7 @@ fn bench_auto_gc_impact(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            let txn = store.begin_read_only();
+            let mut txn = store.begin_read_only();
             for i in 0..10 {
                 black_box(txn.read(&format!("key{}", i).into_bytes()));
             }
@@ -587,6 +588,7 @@ fn bench_auto_gc_impact(c: &mut Criterion) {
                 interval_secs: 1,
                 version_threshold: 50,
                 run_on_start: false,
+                enable_adaptive: false,
             }),
         };
         let store = Arc::new(MvccStore::new_with_config(config));
@@ -599,7 +601,7 @@ fn bench_auto_gc_impact(c: &mut Criterion) {
         }
         
         b.iter(|| {
-            let txn = store.begin_read_only();
+            let mut txn = store.begin_read_only();
             for i in 0..10 {
                 black_box(txn.read(&format!("key{}", i).into_bytes()));
             }

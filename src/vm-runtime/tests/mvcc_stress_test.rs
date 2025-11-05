@@ -299,7 +299,7 @@ fn test_high_contention_hotspot() {
     stats.print_report();
 
     // 验证最终值正确性
-    let final_txn = store.begin_read_only();
+    let mut final_txn = store.begin_read_only();
     for i in 0..num_hotspot_keys {
         let key = format!("hot_{}", i);
         if let Some(value) = final_txn.read(key.as_bytes()) {
@@ -404,7 +404,7 @@ fn test_long_running_stability() {
                 let key = format!("key_{}", key_idx);
 
                 // 50% 读，50% 写
-                if key_idx % 2 == 0 {
+                if key_idx.is_multiple_of(2) {
                     let _ = txn.read(key.as_bytes());
                 } else {
                     rng = rng.wrapping_mul(1103515245).wrapping_add(12345);

@@ -1,4 +1,4 @@
-﻿---
+---
 name: Bug report
 about: 报告 bug 或不可预期行为
 title: "[bug] <简短描述>"

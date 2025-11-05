@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 use std::collections::HashMap;
 use std::sync::{Arc, atomic::{AtomicU64, AtomicBool, Ordering}, Mutex};
 use std::thread;
@@ -110,6 +113,9 @@ pub struct MvccStore {
     current_gc_interval_secs: Arc<AtomicU64>,
     /// 当前运行中的版本阈值
     current_gc_threshold: Arc<AtomicU64>,
+    /// 全局提交锁（确保多键事务的原子性）
+    /// 所有写事务在 commit 时必须持有此锁
+    commit_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,6 +166,7 @@ impl MvccStore {
             adaptive_strategy: Arc::new(Mutex::new(AdaptiveGcStrategy::default())),
             current_gc_interval_secs: Arc::new(AtomicU64::new(config.auto_gc.as_ref().map(|c| c.interval_secs).unwrap_or(0))),
             current_gc_threshold: Arc::new(AtomicU64::new(config.auto_gc.as_ref().map(|c| c.version_threshold as u64).unwrap_or(0))),
+            commit_lock: Arc::new(Mutex::new(())),
         });
         
         // 如果配置了自动 GC，启动后台线程
@@ -181,6 +188,7 @@ impl MvccStore {
             store: Arc::clone(self),
             start_ts,
             writes: HashMap::new(),
+            reads: std::collections::HashSet::new(),
             committed: false,
             read_only: false,
         }
@@ -202,6 +210,7 @@ impl MvccStore {
             store: Arc::clone(self),
             start_ts,
             writes: HashMap::new(),
+            reads: std::collections::HashSet::new(),
             committed: false,
             read_only: true,
         }
@@ -364,8 +373,7 @@ impl MvccStore {
             let mut threshold = auto_gc_config.version_threshold;
             let adaptive = auto_gc_config.enable_adaptive;
             let mut current_interval = auto_gc_config.interval_secs;
-            let strategy = store_clone.adaptive_strategy.lock().unwrap().clone();
-            drop(strategy);
+            let _strategy = store_clone.adaptive_strategy.lock().unwrap().clone();
 
             // 上一次观测值
             let mut last_tx = store_clone.recent_tx_count.load(Ordering::Relaxed);
@@ -378,7 +386,7 @@ impl MvccStore {
             // 如果配置了启动时运行，先执行一次
             if auto_gc_config.run_on_start {
                 if let Ok(cleaned) = store_clone.gc() {
-                    store_clone.recent_gc_cleaned.fetch_add(cleaned as u64, Ordering::Relaxed);
+                    store_clone.recent_gc_cleaned.fetch_add(cleaned, Ordering::Relaxed);
                 }
             }
 
@@ -448,7 +456,7 @@ impl MvccStore {
 
                 if should_run {
                     if let Ok(cleaned) = store_clone.gc() {
-                        store_clone.recent_gc_cleaned.fetch_add(cleaned as u64, Ordering::Relaxed);
+                        store_clone.recent_gc_cleaned.fetch_add(cleaned, Ordering::Relaxed);
                     }
                 }
             }
@@ -497,13 +505,18 @@ pub struct Txn {
     store: Arc<MvccStore>,
     pub start_ts: u64,
     writes: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    /// 读集合：记录所有读取过的键，用于检测 read-write conflict
+    reads: std::collections::HashSet<Vec<u8>>,
     committed: bool,
     read_only: bool,
 }
 
 impl Txn {
     /// 读取在 start_ts 及以前可见的值
-    pub fn read(&self, key: &[u8]) -> Option<Vec<u8>> {
+    pub fn read(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+        // 记录到读集合（用于后续冲突检测）
+        self.reads.insert(key.to_vec());
+        
         // 优先返回当前事务未提交的写（写读自己）
         if let Some(v) = self.writes.get(key) {
             return v.clone();
@@ -557,27 +570,54 @@ impl Txn {
             return Ok(self.start_ts);
         }
 
+        // **全局提交锁方案**: 确保多键事务的原子性
+        // 虽然会降低并发性能，但保证了正确性
+        // TODO: 未来可考虑 Solana 风格的细粒度账户锁（需重构数据结构）
+        let _commit_guard = self.store.commit_lock.lock().unwrap();
+        
+        // **同时持有 active_txns 锁，阻止新事务在 commit 写入期间开始**
+        // 这确保了事务要么看到 commit 前的所有值，要么看到 commit 后的所有值
+        // 避免看到部分写入的中间状态（Write Skew 的另一种形式）
+        let _active_guard = self.store.active_txns.lock().unwrap();
+
         let commit_ts = self.store.next_ts();
 
         // 按键排序以避免死锁
         let mut sorted_keys: Vec<_> = self.writes.keys().cloned().collect();
         sorted_keys.sort();
 
-        // 阶段1：冲突检测（只需读锁）
+        // **三阶段提交**：检测读冲突 → 检测写冲突 → 写入
+        // 阶段0：检测读集合中**所有键**是否被修改（包括写集合里的键！）
+        // 这是防止 Write Skew 的关键：事务基于旧读值计算新写值时，如果读值已过期则拒绝
+        for key in &self.reads {
+            if let Some(entry) = self.store.data.get(key) {
+                let versions = entry.value().read();
+                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
+                    return Err(format!("read-write conflict on key {:?}", 
+                        String::from_utf8_lossy(key)));
+                }
+            }
+        }
+        
+        // 阶段1：检测写集合的 write-write conflict（冗余检查，但保持一致性）
+        // 注意：写集合中的键已经在阶段0检测过读写冲突，这里再检测一次写写冲突
         for key in &sorted_keys {
             if let Some(entry) = self.store.data.get(key) {
                 let versions = entry.value().read();
                 if versions.iter().rev().any(|v| v.ts > self.start_ts) {
-                    return Err(format!("write-write conflict on key {:?}", String::from_utf8_lossy(key)));
+                    return Err(format!("write-write conflict on key {:?}", 
+                        String::from_utf8_lossy(key)));
                 }
             }
         }
-
-        // 阶段2：写入新版本（获取写锁）
-        for key in sorted_keys {
-            let value = self.writes.remove(&key).unwrap();
-            let entry = self.store.data.entry(key).or_insert_with(|| RwLock::new(Vec::new()));
+        
+        // 阶段2：写入新版本（持有全局锁，确保原子性）
+        for key in &sorted_keys {
+            let entry = self.store.data.entry(key.clone())
+                .or_insert_with(|| RwLock::new(Vec::new()));
+            
             let mut versions = entry.value().write();
+            let value = self.writes.get(key).unwrap().clone();
             versions.push(Version { ts: commit_ts, value });
         }
 
@@ -585,6 +625,7 @@ impl Txn {
         // 计数 TPS
         self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
         Ok(commit_ts)
+        // 全局提交锁在此处自动释放
     }
 
     /// 放弃事务（丢弃本地写集合）
@@ -651,11 +692,11 @@ mod tests {
         let ts0 = t0.commit().unwrap();
 
         // T1 在看到 ts0 后开始，读取应为 v0
-        let t1 = store.begin();
+        let mut t1 = store.begin();
         assert_eq!(t1.read(b"k").as_deref(), Some(b"v0".as_ref()));
 
         // T2 先开始（拿到更早的 start_ts），此时读取仍是 v0
-        let t2 = store.begin();
+        let mut t2 = store.begin();
         assert_eq!(t2.read(b"k").as_deref(), Some(b"v0".as_ref()));
 
         // T3 写入 v1 并提交
@@ -669,7 +710,7 @@ mod tests {
         assert_eq!(t2.read(b"k").as_deref(), Some(b"v0".as_ref()));
 
         // 新开 T4，应看到最新 v1
-        let t4 = store.begin();
+        let mut t4 = store.begin();
         assert_eq!(t4.read(b"k").as_deref(), Some(b"v1".as_ref()));
 
         // 直接用读接口校验不同时间点的可见性
@@ -718,7 +759,7 @@ mod tests {
             .map(|_tid| {
                 let store_clone = Arc::clone(&store);
                 thread::spawn(move || {
-                    let txn = store_clone.begin();
+                    let mut txn = store_clone.begin();
                     for i in 0..10 {
                         let key = format!("key{}", i).into_bytes();
                         let val = txn.read(&key);
@@ -758,7 +799,7 @@ mod tests {
         }
 
         // 验证：所有写入都成功
-        let verify_txn = store.begin();
+        let mut verify_txn = store.begin();
         for tid in 0..8 {
             for i in 0..5 {
                 let key = format!("key_{}_{}", tid, i).into_bytes();
@@ -811,7 +852,7 @@ mod tests {
         t0.commit().unwrap();
 
         // 只读事务可以读取
-        let ro_txn = store.begin_read_only();
+        let mut ro_txn = store.begin_read_only();
         assert!(ro_txn.is_read_only());
         let start_ts = ro_txn.start_ts;
         assert_eq!(ro_txn.read(b"k1").as_deref(), Some(b"v1".as_ref()));
@@ -859,7 +900,7 @@ mod tests {
                 let store_clone = Arc::clone(&store);
                 thread::spawn(move || {
                     for _ in 0..100 {
-                        let txn = store_clone.begin_read_only();
+                        let mut txn = store_clone.begin_read_only();
                         for i in 0..10 {
                             let _ = txn.read(&format!("key{}", i).into_bytes());
                         }
@@ -881,7 +922,7 @@ mod tests {
                 let store_clone = Arc::clone(&store);
                 thread::spawn(move || {
                     for _ in 0..100 {
-                        let txn = store_clone.begin();
+                        let mut txn = store_clone.begin();
                         for i in 0..10 {
                             let _ = txn.read(&format!("key{}", i).into_bytes());
                         }
@@ -956,7 +997,7 @@ mod tests {
         t1.commit().unwrap();
 
         // 开启一个长事务（持有 v1 的快照）
-        let long_txn = store.begin();
+        let mut long_txn = store.begin();
         assert_eq!(long_txn.read(b"key").as_deref(), Some(b"v1".as_ref()));
 
         // v2, v3, v4
@@ -1328,7 +1369,7 @@ mod tests {
         println!("GC stats: {:?}", stats);
 
         // 可以正常读取
-        let txn = store.begin();
+        let mut txn = store.begin();
         let _ = txn.read(b"key_0_0");
 
         store.stop_auto_gc();

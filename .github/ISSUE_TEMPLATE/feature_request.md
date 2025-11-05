@@ -1,4 +1,4 @@
-﻿---
+---
 name: Feature request
 about: 提议新功能或改进
 title: "[feature] <简短描述>"

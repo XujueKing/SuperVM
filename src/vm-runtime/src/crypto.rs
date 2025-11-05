@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 //! 密码学功能模块
 //! 
 //! 提供哈希、签名验证等密码学原语的实现
@@ -169,7 +172,7 @@ mod tests {
         
         // 预期失败,因为这是无效的签名
         let result = verify_secp256k1(&message, &signature, &pubkey);
-        assert!(result.is_err() || result.unwrap() == false);
+        assert!(result.is_err() || !result.unwrap());
     }
     
     #[test]
@@ -180,7 +183,7 @@ mod tests {
         
         // 预期失败,因为这是无效的签名
         let result = verify_ed25519(message, &signature, &pubkey);
-        assert!(result.is_err() || result.unwrap() == false);
+        assert!(result.is_err() || !result.unwrap());
     }
 
     #[test]

@@ -51,7 +51,7 @@ fn test_mvcc_scheduler_high_concurrency() {
                 match &op {
                     Op::Write(key) => {
                         let val = txn
-                            .read(&key)
+                            .read(key)
                             .and_then(|v| String::from_utf8(v.clone()).ok())
                             .and_then(|s| s.parse::<i64>().ok())
                             .unwrap_or(0);
@@ -60,7 +60,7 @@ fn test_mvcc_scheduler_high_concurrency() {
                         Ok(new_val as i32)
                     }
                     Op::Read(key) => {
-                        let _ = txn.read(&key);
+                        let _ = txn.read(key);
                         Ok(0)
                     }
                 }
@@ -82,9 +82,10 @@ fn test_mvcc_scheduler_high_concurrency() {
     println!("运行时间: {:.2} 秒", dur.as_secs_f64());
     println!("吞吐量: {:.2} TPS", tps);
 
-    // 断言：高成功率 + 合理 TPS（这台机型/CI 可能波动，设置较宽松阈值）
+    // 断言：高成功率 + 合理 TPS
+    // 注意：使用全局提交锁后，性能从177K降至~40K TPS，但保证了正确性
     assert!(success_rate > 95.0, "success_rate too low: {:.2}%", success_rate);
-    assert!(tps > 50_000.0, "TPS too low: {:.2}", tps);
+    assert!(tps > 20_000.0, "TPS too low: {:.2}", tps);
 }
 
 #[test]

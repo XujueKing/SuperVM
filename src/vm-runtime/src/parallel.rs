@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 //! 并行执行引擎
 //! 
 //! 提供交易并行执行、冲突检测、状态管理等功能
@@ -11,6 +14,9 @@ use crate::mvcc::{MvccStore, Txn};
 
 /// 交易标识符
 pub type TxId = u64;
+
+/// Type alias for batch read result (key-value pairs)
+type KeyValuePairs = Vec<(Vec<u8>, Vec<u8>)>;
 
 /// 账户地址
 pub type Address = Vec<u8>;
@@ -98,6 +104,12 @@ pub struct DependencyGraph {
     dependencies: HashMap<TxId, Vec<TxId>>,
 }
 
+impl Default for DependencyGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DependencyGraph {
     pub fn new() -> Self {
         Self {
@@ -109,7 +121,7 @@ impl DependencyGraph {
     pub fn add_dependency(&mut self, tx_id: TxId, depends_on: TxId) {
         self.dependencies
             .entry(tx_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(depends_on);
     }
     
@@ -146,6 +158,12 @@ impl DependencyGraph {
 pub struct ConflictDetector {
     /// 已分析的交易读写集
     analyzed: HashMap<TxId, ReadWriteSet>,
+}
+
+impl Default for ConflictDetector {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConflictDetector {
@@ -256,6 +274,12 @@ pub struct ParallelScheduler {
     stats_conflict: Arc<AtomicU64>,
     /// 可选的 MVCC 存储后端
     mvcc_store: Option<Arc<MvccStore>>,
+}
+
+impl Default for ParallelScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ParallelScheduler {
@@ -455,15 +479,15 @@ impl ParallelScheduler {
     /// 使用 MVCC 只读事务执行（快速路径）
     pub fn execute_with_mvcc_read_only<T, F>(&self, operation: F) -> Result<T, String>
     where
-        F: FnOnce(&Txn) -> Result<T, String>,
+        F: FnOnce(&mut Txn) -> Result<T, String>,
     {
         let store = self
             .mvcc_store
             .as_ref()
             .ok_or_else(|| "MVCC store is not configured".to_string())?;
 
-        let txn = store.begin_read_only();
-        match operation(&txn) {
+        let mut txn = store.begin_read_only();
+        match operation(&mut txn) {
             Ok(v) => {
                 // 只读事务提交为快速路径
                 let _ = txn.commit()?;
@@ -524,20 +548,53 @@ impl ParallelScheduler {
     
     /// 批量写入存储
     pub fn batch_write(&self, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<usize, String> {
-        let manager = self.state_manager.lock().unwrap();
-        manager.batch_write(writes)
+        if let Some(store) = &self.mvcc_store {
+            let mut txn = store.begin();
+            let count = writes.len();
+            for (k, v) in writes {
+                txn.write(k, v);
+            }
+            txn.commit()?;
+            Ok(count)
+        } else {
+            let manager = self.state_manager.lock().unwrap();
+            manager.batch_write(writes)
+        }
     }
     
     /// 批量读取存储
-    pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, String> {
-        let manager = self.state_manager.lock().unwrap();
-        manager.batch_read(keys)
+    pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<KeyValuePairs, String> {
+        if let Some(store) = &self.mvcc_store {
+            let mut txn = store.begin_read_only();
+            let mut results = Vec::new();
+            for k in keys {
+                if let Some(v) = txn.read(k) {
+                    results.push((k.clone(), v.clone()));
+                }
+            }
+            // 只读事务快速提交
+            let _ = txn.commit()?;
+            Ok(results)
+        } else {
+            let manager = self.state_manager.lock().unwrap();
+            manager.batch_read(keys)
+        }
     }
     
     /// 批量删除存储
     pub fn batch_delete(&self, keys: &[Vec<u8>]) -> Result<usize, String> {
-        let manager = self.state_manager.lock().unwrap();
-        manager.batch_delete(keys)
+        if let Some(store) = &self.mvcc_store {
+            let mut txn = store.begin();
+            let count = keys.len();
+            for k in keys {
+                txn.delete(k.clone());
+            }
+            txn.commit()?;
+            Ok(count)
+        } else {
+            let manager = self.state_manager.lock().unwrap();
+            manager.batch_delete(keys)
+        }
     }
 }
 
@@ -575,7 +632,7 @@ impl WorkStealingScheduler {
     /// # 参数
     /// - `num_workers`: 工作线程数量,默认使用 CPU 核心数
     pub fn new(num_workers: Option<usize>) -> Self {
-        let num_workers = num_workers.unwrap_or_else(|| num_cpus::get());
+        let num_workers = num_workers.unwrap_or_else(num_cpus::get);
         
         Self {
             injector: Arc::new(Injector::new()),
@@ -962,6 +1019,12 @@ pub struct StorageSnapshot {
     events: Vec<Vec<u8>>,
 }
 
+impl Default for StorageSnapshot {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StorageSnapshot {
     /// 创建空快照
     pub fn new() -> Self {
@@ -1001,6 +1064,12 @@ pub struct StateManager {
     current_events: Arc<Mutex<Vec<Vec<u8>>>>,
     /// 快照栈 (支持嵌套事务)
     snapshots: Vec<StorageSnapshot>,
+}
+
+impl Default for StateManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StateManager {
@@ -1089,7 +1158,7 @@ impl StateManager {
     /// 
     /// # 返回
     /// 键值对列表,如果某个键不存在则不包含在结果中
-    pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, String> {
+    pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<KeyValuePairs, String> {
         let storage = self.current_storage.lock()
             .map_err(|e| format!("Failed to lock storage: {}", e))?;
         
@@ -1612,7 +1681,7 @@ mod snapshot_tests {
         assert!(result.is_ok());
 
         // 只读事务应能看到最新值
-        let ro = mvcc.begin_read_only();
+        let mut ro = mvcc.begin_read_only();
         assert_eq!(ro.read(b"k").as_deref(), Some(b"v".as_ref()));
     }
 
@@ -1632,7 +1701,7 @@ mod snapshot_tests {
         assert!(result.is_err());
 
         // 读不到未提交的写
-        let ro = mvcc.begin_read_only();
+        let mut ro = mvcc.begin_read_only();
         assert_eq!(ro.read(b"kk"), None);
     }
 
@@ -1651,7 +1720,7 @@ mod snapshot_tests {
         }).unwrap();
 
         // 只读查询
-        let r = scheduler.execute_with_mvcc_read_only(|txn| {
+        let r = scheduler.execute_with_mvcc_read_only(|txn: &mut Txn| {
             Ok(txn.read(b"rk"))
         }).unwrap();
 

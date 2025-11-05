@@ -20,3 +20,9 @@ cargo run -p node-core
 ```powershell
 cargo test -p vm-runtime
 ```
+
+---
+
+## License
+
+本仓库代码以 GPL-3.0-or-later 许可协议发布，详见根目录 `LICENSE`。

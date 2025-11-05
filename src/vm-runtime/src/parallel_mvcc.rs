@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 //! 基于 MVCC 的并行执行引擎 (v0.9.0)
 //! 
 //! 这个模块将 MVCC 作为底层存储引擎，实现高性能的并行事务执行。
@@ -311,10 +314,10 @@ impl MvccScheduler {
     /// 操作结果
     pub fn read_only<F, R>(&self, f: F) -> Result<R>
     where
-        F: FnOnce(&Txn) -> Result<R>,
+        F: FnOnce(&mut Txn) -> Result<R>,
     {
-        let txn = self.store.begin_read_only();
-        f(&txn)
+        let mut txn = self.store.begin_read_only();
+        f(&mut txn)
     }
     
     /// 批量写入 (单个事务)
@@ -342,7 +345,7 @@ impl MvccScheduler {
     /// # 返回
     /// 读取到的值列表 (Some表示存在, None表示不存在)
     pub fn batch_read(&self, keys: &[Vec<u8>]) -> Vec<Option<Vec<u8>>> {
-        let txn = self.store.begin_read_only();
+        let mut txn = self.store.begin_read_only();
         
         keys.iter()
             .map(|key| txn.read(key).map(|v| v.to_vec()))
