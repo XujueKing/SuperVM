@@ -1,72 +1,72 @@
-# zkSNARK 鎶€鏈瘎浼版姤鍛?
+# zkSNARK 技术评估报告
 **Phase 2 Week 3-4**
 
-## 鐩爣
+## 目标
 
-璇勪及涓绘祦 zkSNARK 搴撳湪 SuperVM Privacy Layer 涓殑閫傜敤鎬э紝涓?Week 5-8 鐨勯浂鐭ヨ瘑璇佹槑瀹炵幇鎻愪緵鎶€鏈€夊瀷渚濇嵁銆?
+评估主流 zkSNARK 库在 SuperVM Privacy Layer 中的适用性，为 Week 5-8 的零知识证明实现提供技术选型依据。
 
-## 寰呰瘎浼板簱
+## 待评估库
 
 ### 1. bellman (Zcash - Groth16)
-- **椤圭洰**: https://github.com/zkcrypto/bellman
-- **璇佹槑绯荤粺**: Groth16
-- **鐗圭偣**: 
-  - 璇佹槑澶у皬: 鍥哄畾 ~128 bytes (3涓兢鍏冪礌)
-  - 楠岃瘉鏃堕棿: 鍥哄畾 ~5ms (3涓厤瀵硅繍绠?
-  - Trusted Setup: 闇€瑕?(涓€娆℃€? 浣嗛渶瑕佹瘡涓數璺崟鐙?Setup)
-  - 鎴愮啛搴? 楂?(Zcash Sapling 浣跨敤)
+- **项目**: https://github.com/zkcrypto/bellman
+- **证明系统**: Groth16
+- **特点**: 
+  - 证明大小: 固定 ~128 bytes (3个群元素)
+  - 验证时间: 固定 ~5ms (3个配对运算)
+  - Trusted Setup: 需要 (一次性, 但需要每个电路单独 Setup)
+  - 成熟度: 高 (Zcash Sapling 使用)
 
 ### 2. plonky2 (Polygon Zero - PLONK)
-- **椤圭洰**: https://github.com/0xPolygonZero/plonky2
-- **璇佹槑绯荤粺**: PLONK (Permutation-based)
-- **鐗圭偣**:
-  - 璇佹槑澶у皬: ~10KB (鍙栧喅浜庣數璺ぇ灏?
-  - 楠岃瘉鏃堕棿: ~10-50ms
-  - Trusted Setup: 闇€瑕?(浣嗛€氱敤, 涓€娆?Setup 鍙敤浜庢墍鏈夌數璺?
-  - 鎴愮啛搴? 楂?(Polygon zkEVM 浣跨敤)
+- **项目**: https://github.com/0xPolygonZero/plonky2
+- **证明系统**: PLONK (Permutation-based)
+- **特点**:
+  - 证明大小: ~10KB (取决于电路大小)
+  - 验证时间: ~10-50ms
+  - Trusted Setup: 需要 (但通用, 一次 Setup 可用于所有电路)
+  - 成熟度: 高 (Polygon zkEVM 使用)
 
 ### 3. halo2 (Electric Coin Company - Halo2)
-- **椤圭洰**: https://github.com/zcash/halo2
-- **璇佹槑绯荤粺**: Halo 2 (閫掑綊 SNARK)
-- **鐗圭偣**:
-  - 璇佹槑澶у皬: ~50KB (閫掑綊璇佹槑)
-  - 楠岃瘉鏃堕棿: ~100-200ms
-  - Trusted Setup: **涓嶉渶瑕?* (閫忔槑 Setup)
-  - 鎴愮啛搴? 涓?(Zcash Orchard 鍗囩骇浣跨敤)
+- **项目**: https://github.com/zcash/halo2
+- **证明系统**: Halo 2 (递归 SNARK)
+- **特点**:
+  - 证明大小: ~50KB (递归证明)
+  - 验证时间: ~100-200ms
+  - Trusted Setup: **不需要** (透明 Setup)
+  - 成熟度: 中 (Zcash Orchard 升级使用)
 
-### 4. arkworks (閫氱敤 zkSNARK 宸ュ叿搴?
-- **椤圭洰**: https://github.com/arkworks-rs/
-- **璇佹槑绯荤粺**: Groth16, Marlin, GM17 绛夊绉?
-- **鐗圭偣**:
-  - 妯″潡鍖栬璁? 鍙粍鍚堜笉鍚岃瘉鏄庣郴缁?
-  - 鎬ц兘浼樺寲鑹ソ
-  - 鏂囨。杈冨畬鍠?
+### 4. arkworks (通用 zkSNARK 工具库)
+- **项目**: https://github.com/arkworks-rs/
+- **证明系统**: Groth16, Marlin, GM17 等多种
+- **特点**:
+  - 模块化设计, 可组合不同证明系统
+  - 性能优化良好
+  - 文档较完善
 
 ### 5. halo2 (Zcash)
-- **椤圭洰**: https://github.com/zcash/halo2
-- **璇佹槑绯荤粺**: Halo 2锛堟洿閫氱敤鐨?PLONK 鍙樹綋锛屾敮鎸侀€掑綊锛?
-- **鐗圭偣**:
-  - 閫忔槑鎴栭€氱敤 Setup锛堟洿鐏垫椿锛?
-  - 鍘熺敓閫掑綊鍙嬪ソ
-  - API 鍋忓簳灞傦紙闇€瑕佽嚜瀹氫箟 Gate/Chip锛夛紝瀛︿範鏇茬嚎杈冮櫋
+- **项目**: https://github.com/zcash/halo2
+- **证明系统**: Halo 2（更通用的 PLONK 变体，支持递归）
+- **特点**:
+  - 透明或通用 Setup（更灵活）
+  - 原生递归友好
+  - API 偏底层（需要自定义 Gate/Chip），学习曲线较陡
 
 ---
 
-## 璇勪及缁村害
+## 评估维度
 
-### 1. 鎬ц兘瀵规瘮
+### 1. 性能对比
 
-| 鎸囨爣 | bellman (Groth16) | plonky2 (PLONK) | halo2 (Halo2) | arkworks (Groth16) |
+| 指标 | bellman (Groth16) | plonky2 (PLONK) | halo2 (Halo2) | arkworks (Groth16) |
 |------|-------------------|------------------|---------------|---------------------|
-| 璇佹槑鐢熸垚鏃堕棿 | ~2-5s | ~5-20s | ~10-30s | ~2-5s |
-| 楠岃瘉鏃堕棿 | ~5ms | ~10-50ms | ~100-200ms | ~5ms |
-| 璇佹槑澶у皬 | ~128 bytes | ~10KB | ~50KB | ~128 bytes |
-| Trusted Setup | 闇€瑕?姣忕數璺? | 闇€瑕?閫氱敤) | 涓嶉渶瑕?| 闇€瑕?姣忕數璺? |
-| 鍐呭瓨鍗犵敤 | 涓?(~2GB) | 楂?(~8GB) | 楂?(~16GB) | 涓?(~2GB) |
+| 证明生成时间 | ~2-5s | ~5-20s | ~10-30s | ~2-5s |
+| 验证时间 | ~5ms | ~10-50ms | ~100-200ms | ~5ms |
+| 证明大小 | ~128 bytes | ~10KB | ~50KB | ~128 bytes |
+| Trusted Setup | 需要(每电路) | 需要(通用) | 不需要 | 需要(每电路) |
+| 内存占用 | 中 (~2GB) | 高 (~8GB) | 高 (~16GB) | 中 (~2GB) |
 
-### 2. API 澶嶆潅搴?
+### 2. API 复杂度
 
-#### bellman 绀轰緥 (Groth16)
+#### bellman 示例 (Groth16)
 ```rust
 use bellman::{Circuit, ConstraintSystem, SynthesisError};
 use pairing::bn256::{Bn256, Fr};
@@ -80,7 +80,7 @@ impl<E: Engine> Circuit<E> for MyCircuit {
         self,
         cs: &mut CS
     ) -> Result<(), SynthesisError> {
-        // 绾︽潫鏋勫缓浠ｇ爜
+        // 约束构建代码
         let x = cs.alloc(|| "x", || {
             self.x.ok_or(SynthesisError::AssignmentMissing)
         })?;
@@ -98,9 +98,9 @@ impl<E: Engine> Circuit<E> for MyCircuit {
 }
 ```
 
-**澶嶆潅搴?*: 猸愨瓙猸?(涓瓑, 闇€瑕佹墜鍔ㄦ瀯寤?R1CS 绾︽潫)
+**复杂度**: ⭐⭐⭐ (中等, 需要手动构建 R1CS 约束)
 
-#### plonky2 绀轰緥 (PLONK)
+#### plonky2 示例 (PLONK)
 ```rust
 use plonky2::iop::witness::{PartialWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
@@ -121,9 +121,9 @@ builder.register_public_input(z);
 let data = builder.build::<C>();
 ```
 
-**澶嶆潅搴?*: 猸愨瓙 (杈冧綆, Builder 妯″紡, 浣嗙被鍨嬪弬鏁板鏉?
+**复杂度**: ⭐⭐ (较低, Builder 模式, 但类型参数复杂)
 
-#### halo2 绀轰緥 (Halo2)
+#### halo2 示例 (Halo2)
 ```rust
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -155,267 +155,263 @@ impl Circuit<Fp> for MyCircuit {
     }
     
     fn synthesize(&self, config: Self::Config, mut layouter: impl Layouter<Fp>) -> Result<(), Error> {
-        // 鐢佃矾瀹炵幇
+        // 电路实现
         Ok(())
     }
 }
 ```
 
-**澶嶆潅搴?*: 猸愨瓙猸愨瓙 (楂? 闇€瑕佺悊瑙?Layouter, Rotation, Gate 绛夋蹇?
+**复杂度**: ⭐⭐⭐⭐ (高, 需要理解 Layouter, Rotation, Gate 等概念)
 
-### 3. 绀惧尯鏀寔涓庣敓鎬?
+### 3. 社区支持与生态
 
-| 椤圭洰 | GitHub Stars | 鏈€杩戞洿鏂?| 鐢熶骇搴旂敤 | 鏂囨。璐ㄩ噺 | Rust 鐢熸€?|
+| 项目 | GitHub Stars | 最近更新 | 生产应用 | 文档质量 | Rust 生态 |
 |------|--------------|----------|----------|----------|-----------|
-| bellman | 700+ | 娲昏穬 | Zcash Sapling | 猸愨瓙猸?| 涓?|
-| plonky2 | 1.5K+ | 娲昏穬 | Polygon zkEVM | 猸愨瓙猸愨瓙 | 楂?|
-| halo2 | 700+ | 娲昏穬 | Zcash Orchard | 猸愨瓙猸愨瓙猸?| 楂?|
-| arkworks | 700+ | 娲昏穬 | Aleo, Mina | 猸愨瓙猸愨瓙 | 楂?|
+| bellman | 700+ | 活跃 | Zcash Sapling | ⭐⭐⭐ | 中 |
+| plonky2 | 1.5K+ | 活跃 | Polygon zkEVM | ⭐⭐⭐⭐ | 高 |
+| halo2 | 700+ | 活跃 | Zcash Orchard | ⭐⭐⭐⭐⭐ | 高 |
+| arkworks | 700+ | 活跃 | Aleo, Mina | ⭐⭐⭐⭐ | 高 |
 
-### 4. SuperVM 閫傞厤鎬у垎鏋?
+### 4. SuperVM 适配性分析
 
-#### 鍦烘櫙 1: 闅愯棌鍚堢害鐘舵€?(RingCT + zkSNARK)
-- **闇€姹?*: 璇佹槑 `危杈撳叆 = 危杈撳嚭 + 鎵嬬画璐筦 涓旀墍鏈夐噾棰?鈭?[0, 2^64-1]
-- **绾︽潫瑙勬ā**: ~10K 绾︽潫 (Bulletproofs 绾?5K 绾︽潫)
-- **鎺ㄨ崘**: **bellman (Groth16)** 鎴?**arkworks (Groth16)**
-  - 鐞嗙敱: 楠岃瘉鏃堕棿 ~5ms, 璇佹槑澶у皬 128 bytes, 閫傚悎閾句笂楠岃瘉
-  - Trusted Setup 鍙帴鍙?(涓€娆℃€? 鐢辩ぞ鍖哄畬鎴?
+#### 场景 1: 隐藏合约状态 (RingCT + zkSNARK)
+- **需求**: 证明 `Σ输入 = Σ输出 + 手续费` 且所有金额 ∈ [0, 2^64-1]
+- **约束规模**: ~10K 约束 (Bulletproofs 约 5K 约束)
+- **推荐**: **bellman (Groth16)** 或 **arkworks (Groth16)**
+  - 理由: 验证时间 ~5ms, 证明大小 128 bytes, 适合链上验证
+  - Trusted Setup 可接受 (一次性, 由社区完成)
 
-#### 鍦烘櫙 2: 閫氱敤鏅鸿兘鍚堢害闅愮 (zkVM)
-- **闇€姹?*: 璇佹槑鍚堢害鎵ц姝ｇ‘鎬? 鏀寔澶嶆潅閫昏緫
-- **绾︽潫瑙勬ā**: ~1M+ 绾︽潫
-- **鎺ㄨ崘**: **plonky2 (PLONK)** 鎴?**halo2 (Halo2)**
-  - 鐞嗙敱: 
-    - plonky2: 閫氱敤 Setup, 閫傚悎棰戠箒鏇存柊鐢佃矾
-    - halo2: 鏃?Trusted Setup, 閫掑綊璇佹槑鏀寔澶х數璺?
+#### 场景 2: 通用智能合约隐私 (zkVM)
+- **需求**: 证明合约执行正确性, 支持复杂逻辑
+- **约束规模**: ~1M+ 约束
+- **推荐**: **plonky2 (PLONK)** 或 **halo2 (Halo2)**
+  - 理由: 
+    - plonky2: 通用 Setup, 适合频繁更新电路
+    - halo2: 无 Trusted Setup, 递归证明支持大电路
 
-#### 鍦烘櫙 3: 璺ㄩ摼闅愮妗?(閫掑綊璇佹槑)
-- **闇€姹?*: 鑱氬悎澶氫釜璇佹槑, 鍑忓皯閾句笂楠岃瘉鎴愭湰
-- **鎺ㄨ崘**: **halo2 (Halo2)**
-  - 鐞嗙敱: 鍘熺敓鏀寔閫掑綊, 鍙皢 N 涓瘉鏄庤仛鍚堜负 1 涓?
+#### 场景 3: 跨链隐私桥 (递归证明)
+- **需求**: 聚合多个证明, 减少链上验证成本
+- **推荐**: **halo2 (Halo2)**
+  - 理由: 原生支持递归, 可将 N 个证明聚合为 1 个
 
 ---
 
-## 鎬ц兘鍩哄噯娴嬭瘯璁″垝涓庡垵姝ョ粨鏋?
+## 性能基准测试计划与初步结果
 
-### 褰撳墠瀹炵幇涓庣幆澧?
-- 搴撲笌鏇茬嚎锛歛rkworks锛坅rk-groth16 0.4 + ark-bls12-381 0.4锛?
-- 骞冲彴锛歐indows锛圥owerShell锛夛紝Rust stable
-- 宸插疄鐜扮數璺細
-  - Multiply锛坅*b=c锛夛細鍏紑 c锛涚害鏉?1 涓箻娉曢棬
-  - Range锛堜綅鍒嗚В锛?-bit锛夛細鍏紑 c=v锛涚害鏉熻嫢骞插竷灏旈棬 + 绾挎€х害鏉?
-- 浠ｇ爜浣嶇疆锛歚zk-groth16-test/`
+### 当前实现与环境
+- 库与曲线：arkworks（ark-groth16 0.4 + ark-bls12-381 0.4）
+- 平台：Windows（PowerShell），Rust stable
+- 已实现电路：
+  - Multiply（a*b=c）：公开 c；约束 1 个乘法门
+  - Range（位分解，8-bit）：公开 c=v；约束若干布尔门 + 线性约束
+- 代码位置：`zk-groth16-test/`
 
-### Groth16 鍩哄噯锛坅rkworks 0.4 + BLS12-381锛?
+### Groth16 基准（arkworks 0.4 + BLS12-381）
 
-| 鎿嶄綔 | 骞冲潎鑰楁椂 | 绾︽潫鏁?| 璇存槑 |
+| 操作 | 平均耗时 | 约束数 | 说明 |
 |------|---------|-------|------|
-| multiply_setup | 31.1 ms | ~1 | Trusted Setup锛?涓箻娉曠害鏉燂級|
-| multiply_prove | 5.2 ms | ~1 | 璇佹槑鐢熸垚锛坅=3, b=5, c=15锛墊
-| multiply_verify | 3.6 ms | ~1 | 楠岃瘉璇佹槑锛堝崟涓叕寮€杈撳叆锛墊
-| range_8bit_prove | 4.4 ms | ~10 | 8-bit 鑼冨洿璇佹槑鐢熸垚锛?2 < 2^8锛墊
-| **range_64bit_setup** | **19.6 ms** | **~70** | **64-bit 鑼冨洿璇佹槑 Trusted Setup** |
-| **range_64bit_prove** | **7.4 ms** | **~70** | **64-bit 鑼冨洿璇佹槑鐢熸垚锛坴=12345678901234锛?* |
-| pedersen_prove | 3.8 ms | ~2 | Pedersen 鎵胯璇佹槑锛坴=100, r=42锛墊
-| combined_setup | 26.8 ms | ~72 | Pedersen + 64-bit Range 缁勫悎鐢佃矾 Setup |
-| combined_prove | 10.0 ms | ~72 | Pedersen + 64-bit Range 缁勫悎鐢佃矾 Prove |
+| multiply_setup | 31.1 ms | ~1 | Trusted Setup（1个乘法约束）|
+| multiply_prove | 5.2 ms | ~1 | 证明生成（a=3, b=5, c=15）|
+| multiply_verify | 3.6 ms | ~1 | 验证证明（单个公开输入）|
+| range_8bit_prove | 4.4 ms | ~10 | 8-bit 范围证明生成（42 < 2^8）|
+| **range_64bit_setup** | **19.6 ms** | **~70** | **64-bit 范围证明 Trusted Setup** |
+| **range_64bit_prove** | **7.4 ms** | **~70** | **64-bit 范围证明生成（v=12345678901234）** |
+| pedersen_prove | 3.8 ms | ~2 | Pedersen 承诺证明（v=100, r=42）|
+| combined_setup | 26.8 ms | ~72 | Pedersen + 64-bit Range 组合电路 Setup |
+| combined_prove | 10.0 ms | ~72 | Pedersen + 64-bit Range 组合电路 Prove |
 
-**鐜**锛歐indows 10/PowerShell锛孯ust 1.x release 浼樺寲锛坄--release`锛夛紝寮€鍙戞満锛堝浠诲姟鑳屾櫙锛夈€?
+**环境**：Windows 10/PowerShell，Rust 1.x release 优化（`--release`），开发机（多任务背景）。
 
-**鍏抽敭瑙傚療**锛?
-1. **Setup 鏃堕棿**锛氱害鏉熸暟浠?1 鈫?70锛宻etup 鏃堕棿浠?31ms 鈫?19.6ms锛堜紭鍖栧悗鏇寸ǔ瀹氾級
-2. **璇佹槑鐢熸垚鎵╁睍鎬т紭寮?*锛氱害鏉熸暟 脳7锛?0 鈫?70锛夛紝璇佹槑鏃堕棿浠?脳1.7锛?.4ms 鈫?7.4ms锛?*浜氱嚎鎬у闀?*鉁?
-3. **楠岃瘉鏃堕棿**锛氭亽瀹?~3.6ms锛圙roth16 鐗规€э細3娆￠厤瀵癸紝涓嶉殢鐢佃矾澶嶆潅搴﹀闀匡級鉁?
-4. **璇佹槑澶у皬**锛?28 bytes锛?脳G1 + 1脳G2锛屾亽瀹氾級
+**关键观察**：
+1. **Setup 时间**：约束数从 1 → 70，setup 时间从 31ms → 19.6ms（优化后更稳定）
+2. **证明生成扩展性优异**：约束数 ×7（10 → 70），证明时间仅 ×1.7（4.4ms → 7.4ms）**亚线性增长**✨
+3. **验证时间**：恒定 ~3.6ms（Groth16 特性：3次配对，不随电路复杂度增长）✨
+4. **证明大小**：128 bytes（2×G1 + 1×G2，恒定）
 
-**涓庣悊璁洪鏈熷姣?*锛?
-- 楠岃瘉鏃堕棿绗﹀悎棰勬湡锛垀3.6ms锛夛紝鎺ヨ繎鐞嗚鍊硷紙3娆￠厤瀵癸級
-- 璇佹槑澶у皬绗﹀悎棰勬湡锛堟亽瀹?128 bytes锛?
-- Setup 涓庤瘉鏄庢椂闂村湪姝ｅ父鑼冨洿鍐咃紙寰绾ц繍绠?脳 绾︽潫鏁?+ 閰嶅寮€閿€锛?
+**与理论预期对比**：
+- 验证时间符合预期（~3.6ms），接近理论值（3次配对）
+- 证明大小符合预期（恒定 128 bytes）
+- Setup 与证明时间在正常范围内（微秒级运算 × 约束数 + 配对开销）
 
-**64-bit vs 8-bit 鑼冨洿璇佹槑鎬ц兘鍒嗘瀽**锛?
-| 鎸囨爣 | 8-bit | 64-bit | 澧為暱姣斾緥 | 鍒嗘瀽 |
+**64-bit vs 8-bit 范围证明性能分析**：
+| 指标 | 8-bit | 64-bit | 增长比例 | 分析 |
 |------|-------|--------|----------|------|
-| 绾︽潫鏁?| ~10 | ~70 | 脳7.0 | 浣嶅垎瑙ｇ嚎鎬у闀?|
-| Setup 鏃堕棿 | N/A | 19.6 ms | - | 鐙珛 setup |
-| Prove 鏃堕棿 | 4.4 ms | 7.4 ms | 脳1.7 | **浜氱嚎鎬у闀?*鉁?|
-| Verify 鏃堕棿 | ~3.6 ms | ~3.6 ms | 脳1.0 | **鎭掑畾鏃堕棿**鉁?|
-| 璇佹槑澶у皬 | 128 bytes | 128 bytes | 脳1.0 | **鎭掑畾澶у皬**鉁?|
+| 约束数 | ~10 | ~70 | ×7.0 | 位分解线性增长 |
+| Setup 时间 | N/A | 19.6 ms | - | 独立 setup |
+| Prove 时间 | 4.4 ms | 7.4 ms | ×1.7 | **亚线性增长**✨ |
+| Verify 时间 | ~3.6 ms | ~3.6 ms | ×1.0 | **恒定时间**✨ |
+| 证明大小 | 128 bytes | 128 bytes | ×1.0 | **恒定大小**✨ |
 
-**鍏抽敭鍙戠幇**锛?
-- **Groth16 鎵╁睍鎬ч獙璇佹垚鍔?*锛氱害鏉熸暟 7 鍊嶅闀匡紝璇佹槑鏃堕棿浠?1.7 鍊嶅闀?
-- **楠岃瘉鎴愭湰鍥哄畾**锛氭棤璁?8-bit 杩樻槸 64-bit锛岄獙璇佹椂闂存亽瀹?~3.6ms锛岃瘉鏄庡ぇ灏忔亽瀹?128 bytes
-- **瀹炵敤鎬ц瘎浼?*锛?4-bit 鑼冨洿璇佹槑锛堢湡瀹炲満鏅墍闇€锛塸rove 鏃堕棿浠?7.4ms锛屽畬鍏ㄦ弧瓒崇敓浜ч渶姹?
+**关键发现**：
+- **Groth16 扩展性验证成功**：约束数 7 倍增长，证明时间仅 1.7 倍增长
+- **验证成本固定**：无论 8-bit 还是 64-bit，验证时间恒定 ~3.6ms，证明大小恒定 128 bytes
+- **实用性评估**：64-bit 范围证明（真实场景所需）prove 时间仅 7.4ms，完全满足生产需求
 
-**鍚庣画浼樺寲鏂瑰悜**锛?
-- 鍦?Linux/鍥哄畾纭欢鐜閲嶆祴锛屽噺灏戣皟搴︽姈鍔?
-- 鎵归噺楠岃瘉浼樺寲锛堝涓瘉鏄庡悎骞堕獙璇佸彲鍧囨憡閰嶅鎴愭湰锛?
-- 鑰冭檻 GPU 鍔犻€燂紙MSM/閰嶅杩愮畻锛?
+**后续优化方向**：
+- 在 Linux/固定硬件环境重测，减少调度抖动
+- 批量验证优化（多个证明合并验证可均摊配对成本）
+- 考虑 GPU 加速（MSM/配对运算）
 
-娉細寮€鍙戞満闈炰弗璋ㄦ祴璇曠幆澧冿紝鏁版嵁浠呬緵鏁伴噺绾у弬鑰冿紱鐢熶骇閮ㄧ讲闇€鍦ㄧ洰鏍囧钩鍙伴噸娴嬨€?
+注：开发机非严谨测试环境，数据仅供数量级参考；生产部署需在目标平台重测。
 
-### 宸插疄鐜扮數璺紙zk-groth16-test 椤圭洰锛夆渽
+### 已实现电路（zk-groth16-test 项目）✅
 
-1. **MultiplyCircuit**锛氭渶灏忕ず渚嬶紙a*b=c锛夛紝~1 涓箻娉曠害鏉?
-2. **RangeProofCircuit (8-bit)**锛?-bit 鑼冨洿璇佹槑锛堜綅鍒嗚В + 甯冨皵绾︽潫锛夛紝~10 涓害鏉?
-3. **RangeProofCircuit (64-bit)**锛?4-bit 鑼冨洿璇佹槑锛堝畬鏁撮噾棰濊寖鍥达級锛寏70 涓害鏉?鉁?
-4. **PedersenCommitmentCircuit**锛氱畝鍖栫嚎鎬ф壙璇猴紙C = v + r*k锛夛紝~2 涓害鏉?
-   - 娉細瀹屾暣 Pedersen 闇€妞渾鏇茬嚎缇よ繍绠楋紱褰撳墠鐢ㄥ煙涔樻硶妯℃嫙绾挎€ф壙璇?
+1. **MultiplyCircuit**：最小示例（a*b=c），~1 个乘法约束
+2. **RangeProofCircuit (8-bit)**：8-bit 范围证明（位分解 + 布尔约束），~10 个约束
+3. **RangeProofCircuit (64-bit)**：64-bit 范围证明（完整金额范围），~70 个约束 ✨
+4. **PedersenCommitmentCircuit**：简化线性承诺（C = v + r*k），~2 个约束
+   - 注：完整 Pedersen 需椭圆曲线群运算；当前用域乘法模拟线性承诺
 
-**娴嬭瘯鐘舵€?*锛?
-- 鎵€鏈?4 涓數璺祴璇曢€氳繃 鉁?
-- 鎵€鏈?7 涓熀鍑嗘祴璇曞畬鎴?鉁?
-- 鎬ц兘鏁版嵁宸叉敹闆嗗苟楠岃瘉 鉁?
+**测试状态**：
+- 所有 4 个电路测试通过 ✅
+- 所有 7 个基准测试完成 ✅
+- 性能数据已收集并验证 ✅
 
-### Halo2 瀹炵幇涓庢€ц兘鏁版嵁锛坔alo2-eval 椤圭洰锛夆渽
-- Crate锛歚halo2-eval/`锛坔alo2_proofs 0.3 + halo2curves 0.6锛?
-- 鐢佃矾锛歁ultiply锛坅*b=c锛夛紝浣跨敤 PLONK-style Gate
-- 娴嬭瘯锛歁ockProver 閫氳繃 + KZG 鐪熷疄璇佹槑/楠岃瘉閫氳繃
+### Halo2 实现与性能数据（halo2-eval 项目）✅
+- Crate：`halo2-eval/`（halo2_proofs 0.3 + halo2curves 0.6）
+- 电路：Multiply（a*b=c），使用 PLONK-style Gate
+- 测试：MockProver 通过 + KZG 真实证明/验证通过
 
-**Halo2 鍩哄噯锛圞ZG/Bn256锛?*锛?
+**Halo2 基准（KZG/Bn256）**：
 
-| k鍊?| 鐢佃矾琛屾暟 | Setup+Keygen | Prove | Verify | 璇佹槑澶у皬 |
+| k值 | 电路行数 | Setup+Keygen | Prove | Verify | 证明大小 |
 |-----|---------|--------------|-------|--------|----------|
 | 6 | 64 | 49.5ms | 50.6ms | 3.3ms | 1600 bytes |
 | 8 | 256 | 85.6ms | 106.2ms | 4.8ms | 1728 bytes |
 | 10 | 1024 | 431.3ms | 186.8ms | 10.1ms | 1856 bytes |
 
-**涓?Groth16 瀵规瘮锛圕ombined 鐢佃矾锛寏72 绾︽潫锛?*锛?
-- Groth16: Setup=26.8ms | Prove=10.0ms | Verify=3.6ms | 璇佹槑澶у皬=128 bytes
-- Halo2 (k=8): Setup+Keygen=85.6ms | Prove=106.2ms | Verify=4.8ms | 璇佹槑澶у皬=1728 bytes
+**与 Groth16 对比（Combined 电路，~72 约束）**：
+- Groth16: Setup=26.8ms | Prove=10.0ms | Verify=3.6ms | 证明大小=128 bytes
+- Halo2 (k=8): Setup+Keygen=85.6ms | Prove=106.2ms | Verify=4.8ms | 证明大小=1728 bytes
 
-**鍏抽敭瑙傚療**锛?
-1. **璇佹槑澶у皬**锛欻alo2 璇佹槑 ~1.7KB锛坘=8锛夛紝Groth16 浠?128 bytes 鈫?**Groth16 灏?13.5脳** 鉁?
-2. **楠岃瘉鏃堕棿**锛欻alo2 ~4.8ms锛坘=8锛夛紝Groth16 ~3.6ms 鈫?**Groth16 蹇?1.3脳**
-3. **璇佹槑鏃堕棿**锛欻alo2 ~106ms锛坘=8锛夛紝Groth16 ~10ms 鈫?**Groth16 蹇?10.6脳** 鉁?
-4. **Setup鐏垫椿鎬?*锛欻alo2 閫氱敤 Setup锛堜竴娆″彲鐢ㄤ簬浠绘剰鐢佃矾锛夛紝Groth16 闇€涓烘瘡涓數璺崟鐙?Setup 鈫?**Halo2 浼樺娍**
-5. **鎵╁睍鎬?*锛欻alo2 璇佹槑鏃堕棿闅?k 鍊硷紙鐢佃矾澶嶆潅搴︼級澧為暱杈冨揩锛孏roth16 鏇寸ǔ瀹?
+**关键观察**：
+1. **证明大小**：Halo2 证明 ~1.7KB（k=8），Groth16 仅 128 bytes → **Groth16 小 13.5×** ✨
+2. **验证时间**：Halo2 ~4.8ms（k=8），Groth16 ~3.6ms → **Groth16 快 1.3×**
+3. **证明时间**：Halo2 ~106ms（k=8），Groth16 ~10ms → **Groth16 快 10.6×** ✨
+4. **Setup灵活性**：Halo2 通用 Setup（一次可用于任意电路），Groth16 需为每个电路单独 Setup → **Halo2 优势**
+5. **扩展性**：Halo2 证明时间随 k 值（电路复杂度）增长较快，Groth16 更稳定
 
-### Pedersen + Range 缁勫悎鐢佃矾锛堜笅涓€姝ワ級
-- **鐩爣**: 闅愯棌閲戦鐨勮寖鍥磋瘉鏄?
-- **鍏紑**: 鎵胯 `C = v*H + r*G`
-- **绉佹湁**: 閲戦 `v 鈭?[0, 2^64-1]`, 鐩插寲鍥犲瓙 `r`
-- **绾︽潫**: 
-  1. 鎵胯鎵撳紑姝ｇ‘锛坄C` 璁＄畻楠岃瘉锛?
-  2. 鑼冨洿妫€鏌ワ紙64-bit 浣嶅垎瑙?+ 64 涓竷灏旂害鏉燂級
-- **棰勪及**: ~72 绾︽潫锛?涓壙璇虹害鏉?+ 70涓寖鍥寸害鏉燂級锛岃瘉鏄庢椂闂?~7-8ms锛堝熀浜?64-bit range 瀹炴祴锛?
+### Pedersen + Range 组合电路（下一步）
+- **目标**: 隐藏金额的范围证明
+- **公开**: 承诺 `C = v*H + r*G`
+- **私有**: 金额 `v ∈ [0, 2^64-1]`, 盲化因子 `r`
+- **约束**: 
+  1. 承诺打开正确（`C` 计算验证）
+  2. 范围检查（64-bit 位分解 + 64 个布尔约束）
+- **预估**: ~72 约束（2个承诺约束 + 70个范围约束），证明时间 ~7-8ms（基于 64-bit range 实测）
 
-### 娴嬭瘯鎸囨爣
-1. 璇佹槑鐢熸垚鏃堕棿锛堝崟/鎵归噺锛?
-2. 楠岃瘉鏃堕棿锛堝崟/鎵归噺锛?
-3. 璇佹槑澶у皬锛圙roth16 鎭掑畾 128 bytes锛?
-4. 鍐呭瓨鍗犵敤宄板€?
+### 测试指标
+1. 证明生成时间（单/批量）
+2. 验证时间（单/批量）
+3. 证明大小（Groth16 恒定 128 bytes）
+4. 内存占用峰值
 
-### 瀹炴柦姝ラ
+### 实施步骤
 1. **Week 3**: 
-   - 鐮旂┒ Groth16 鍘熺悊 (R1CS, QAP, 閰嶅)
-   - 瀹炵幇 bellman 鍩哄噯娴嬭瘯
-   - 瀹炵幇 arkworks 鍩哄噯娴嬭瘯
+   - 研究 Groth16 原理 (R1CS, QAP, 配对)
+   - 实现 bellman 基准测试
+   - 实现 arkworks 基准测试
 2. **Week 4**:
-   - 鐮旂┒ PLONK 鍘熺悊 (缃崲璇佹槑, KZG 鎵胯)
-   - 瀹炵幇 plonky2 鍩哄噯娴嬭瘯
-   - 鐮旂┒ Halo2 鍘熺悊 (閫掑綊 SNARK, IPA)
-   - 缁煎悎瀵规瘮, 浜у嚭閫夊瀷鎶ュ憡
+   - 研究 PLONK 原理 (置换证明, KZG 承诺)
+   - 实现 plonky2 基准测试
+   - 研究 Halo2 原理 (递归 SNARK, IPA)
+   - 综合对比, 产出选型报告
 
 ---
 
-## 鍙傝€冭祫鏂?
+## 参考资料
 
 ### Groth16
-- 璁烘枃: "On the Size of Pairing-based Non-interactive Arguments" (2016)
-- 鏁欑▼: https://www.zeroknowledgeblog.com/index.php/groth16
+- 论文: "On the Size of Pairing-based Non-interactive Arguments" (2016)
+- 教程: https://www.zeroknowledgeblog.com/index.php/groth16
 
 ### PLONK
-- 璁烘枃: "PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge" (2019)
-- 鏁欑▼: https://vitalik.ca/general/2019/09/22/plonk.html
+- 论文: "PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge" (2019)
+- 教程: https://vitalik.ca/general/2019/09/22/plonk.html
 
 ### Halo2
-- 璁烘枃: "Recursive Proof Composition without a Trusted Setup" (2019)
-- 鏂囨。: https://zcash.github.io/halo2/
+- 论文: "Recursive Proof Composition without a Trusted Setup" (2019)
+- 文档: https://zcash.github.io/halo2/
 
-### Bulletproofs (瀵规瘮鍩哄噯)
-- 璁烘枃: "Bulletproofs: Short Proofs for Confidential Transactions and More" (2018)
-- 鎴戜滑鐨勫疄鐜? `docs/research/monero-study-notes.md` (Bulletproofs 绔犺妭)
+### Bulletproofs (对比基准)
+- 论文: "Bulletproofs: Short Proofs for Confidential Transactions and More" (2018)
+- 我们的实现: `docs/research/monero-study-notes.md` (Bulletproofs 章节)
 
 ---
 
-## 鎶€鏈€夊瀷缁撹 鉁?
+## 技术选型结论 ✅
 
-### Groth16 vs Halo2 鍏ㄩ潰瀵规瘮
+### Groth16 vs Halo2 全面对比
 
-| 缁村害 | Groth16 (arkworks) | Halo2 (halo2_proofs) | 浼樺娍鏂?|
+| 维度 | Groth16 (arkworks) | Halo2 (halo2_proofs) | 优势方 |
 |------|-------------------|----------------------|--------|
-| **璇佹槑澶у皬** | 128 bytes锛堟亽瀹氾級 | ~1.7KB锛坘=8锛?| 鉁?Groth16锛堝皬 13.5脳锛?|
-| **楠岃瘉鏃堕棿** | 3.6ms锛堟亽瀹氾級 | 4.8ms锛坘=8锛?| 鉁?Groth16锛堝揩 1.3脳锛?|
-| **璇佹槑鏃堕棿** | 10.0ms | 106.2ms锛坘=8锛?| 鉁?Groth16锛堝揩 10.6脳锛?|
-| **Setup 鐏垫椿鎬?* | 闇€涓烘瘡涓數璺崟鐙?Setup | 閫氱敤 Setup锛堜竴娆″嵆鍙級 | 鉁?Halo2 |
-| **Trusted Setup** | 闇€瑕?| 涓嶉渶瑕侊紙閫忔槑锛?| 鉁?Halo2 |
-| **閫掑綊璇佹槑** | 涓嶅師鐢熸敮鎸?| 鍘熺敓鏀寔 | 鉁?Halo2 |
-| **閾句笂楠岃瘉鎴愭湰** | 鏋佷綆锛圙as 鍙嬪ソ锛?| 杈冮珮 | 鉁?Groth16 |
-| **寮€鍙戝鏉傚害** | 涓紙R1CS 绾︽潫锛?| 楂橈紙鑷畾涔?Gate/Chip锛?| 鉁?Groth16 |
-| **鐢熸€佹垚鐔熷害** | 楂橈紙Zcash, Filecoin锛?| 涓紙Zcash Orchard锛?| 鉁?Groth16 |
+| **证明大小** | 128 bytes（恒定） | ~1.7KB（k=8） | ✅ Groth16（小 13.5×） |
+| **验证时间** | 3.6ms（恒定） | 4.8ms（k=8） | ✅ Groth16（快 1.3×） |
+| **证明时间** | 10.0ms | 106.2ms（k=8） | ✅ Groth16（快 10.6×） |
+| **Setup 灵活性** | 需为每个电路单独 Setup | 通用 Setup（一次即可） | ✅ Halo2 |
+| **Trusted Setup** | 需要 | 不需要（透明） | ✅ Halo2 |
+| **递归证明** | 不原生支持 | 原生支持 | ✅ Halo2 |
+| **链上验证成本** | 极低（Gas 友好） | 较高 | ✅ Groth16 |
+| **开发复杂度** | 中（R1CS 约束） | 高（自定义 Gate/Chip） | ✅ Groth16 |
+| **生态成熟度** | 高（Zcash, Filecoin） | 中（Zcash Orchard） | ✅ Groth16 |
 
-### SuperVM 鍦烘櫙鎺ㄨ崘
+### SuperVM 场景推荐
 
-#### 鍦烘櫙 1: 閾句笂闅愮浜ゆ槗锛圧ingCT锛夆渽 **鎺ㄨ崘 Groth16**
-- **闇€姹?*: 璇佹槑閲戦鑼冨洿 + 鎵胯姝ｇ‘鎬?
-- **浼樺厛绾?*: 璇佹槑澶у皬銆侀獙璇佹椂闂淬€丟as 鎴愭湰
-- **缁撹**: Groth16 璇佹槑灏?13.5脳銆侀獙璇佸揩 1.3脳锛岄潪甯搁€傚悎閾句笂楠岃瘉
-- **瀹炴柦**: 浣跨敤 arkworks 鐢熸€侊紝澶嶇敤宸插疄鐜扮殑 Combined 鐢佃矾
+#### 场景 1: 链上隐私交易（RingCT）✅ **推荐 Groth16**
+- **需求**: 证明金额范围 + 承诺正确性
+- **优先级**: 证明大小、验证时间、Gas 成本
+- **结论**: Groth16 证明小 13.5×、验证快 1.3×，非常适合链上验证
+- **实施**: 使用 arkworks 生态，复用已实现的 Combined 电路
 
-#### 鍦烘櫙 2: 璺ㄩ摼闅愮妗ワ紙閫掑綊璇佹槑锛夆渽 **鎺ㄨ崘 Halo2**
-- **闇€姹?*: 鑱氬悎澶氫釜璇佹槑锛屽噺灏戦摼涓婇獙璇佹鏁?
-- **浼樺厛绾?*: 閫掑綊鑳藉姏銆丼etup 鐏垫椿鎬?
-- **缁撹**: Halo2 鍘熺敓鏀寔閫掑綊锛屽彲灏?N 涓瘉鏄庤仛鍚堜负 1 涓?
-- **瀹炴柦**: 浣跨敤 halo2_proofs锛屽疄鐜伴€掑綊鐢佃矾
+#### 场景 2: 跨链隐私桥（递归证明）✅ **推荐 Halo2**
+- **需求**: 聚合多个证明，减少链上验证次数
+- **优先级**: 递归能力、Setup 灵活性
+- **结论**: Halo2 原生支持递归，可将 N 个证明聚合为 1 个
+- **实施**: 使用 halo2_proofs，实现递归电路
 
-#### 鍦烘櫙 3: 棰戠箒鏇存柊鐢佃矾锛坺kVM 寮€鍙戯級鉁?**鎺ㄨ崘 Halo2**
-- **闇€姹?*: 鐢佃矾蹇€熻凯浠ｏ紝閬垮厤姣忔閲嶆柊 Setup
-- **浼樺厛绾?*: 寮€鍙戞晥鐜囥€丼etup 鐏垫椿鎬?
-- **缁撹**: Halo2 閫氱敤 Setup锛屼竴娆″嵆鍙敤浜庝换鎰忕數璺?
-- **瀹炴柦**: 浣跨敤 halo2_proofs锛屽缓绔嬬數璺簱
+#### 场景 3: 频繁更新电路（zkVM 开发）✅ **推荐 Halo2**
+- **需求**: 电路快速迭代，避免每次重新 Setup
+- **优先级**: 开发效率、Setup 灵活性
+- **结论**: Halo2 通用 Setup，一次即可用于任意电路
+- **实施**: 使用 halo2_proofs，建立电路库
 
-#### 鍦烘櫙 4: 娣峰悎绛栫暐锛堟渶浼樻柟妗堬級鉁?
-- **閾句笂閮ㄥ垎**: 浣跨敤 Groth16锛堣瘉鏄庡皬銆侀獙璇佸揩銆丟as 浣庯級
-- **閾句笅鑱氬悎**: 浣跨敤 Halo2 閫掑綊锛堣仛鍚堝涓?Groth16 璇佹槑锛?
-- **寮€鍙戣凯浠?*: 浣跨敤 Halo2锛堝揩閫熷師鍨嬶級鈫?鐢熶骇浼樺寲涓?Groth16
+#### 场景 4: 混合策略（最优方案）✨
+- **链上部分**: 使用 Groth16（证明小、验证快、Gas 低）
+- **链下聚合**: 使用 Halo2 递归（聚合多个 Groth16 证明）
+- **开发迭代**: 使用 Halo2（快速原型）→ 生产优化为 Groth16
 
-### 鎺ㄨ崘鎶€鏈爤
-1. **Phase 2 鍘熷瀷 (Week 5-8)**: **arkworks (Groth16)**
-   - 浼樺娍: 璇佹槑灏?(128 bytes), 楠岃瘉蹇?(~5ms), 鎴愮啛绋冲畾
-   - 鍔ｅ娍: Trusted Setup (鍙帴鍙?
+### 推荐技术栈
+1. **Phase 2 原型 (Week 5-8)**: **arkworks (Groth16)**
+   - 优势: 证明小 (128 bytes), 验证快 (~5ms), 成熟稳定
+   - 劣势: Trusted Setup (可接受)
    
-2. **Phase 3 鐢熶骇 (Week 13+)**: **plonky2 (PLONK)** 鎴?**halo2 (Halo2)**
-   - plonky2: 閫氱敤 Setup, 閫傚悎蹇€熻凯浠?
-   - halo2: 鏃?Trusted Setup, 閫傚悎闀挎湡杩愯
+2. **Phase 3 生产 (Week 13+)**: **plonky2 (PLONK)** 或 **halo2 (Halo2)**
+   - plonky2: 通用 Setup, 适合快速迭代
+   - halo2: 无 Trusted Setup, 适合长期运行
 
-### 鎬ц兘棰勬湡
-- Groth16: 璇佹槑鐢熸垚 ~3s, 楠岃瘉 ~5ms, 璇佹槑澶у皬 128 bytes
-- PLONK: 璇佹槑鐢熸垚 ~10s, 楠岃瘉 ~30ms, 璇佹槑澶у皬 ~10KB
-- Halo2: 璇佹槑鐢熸垚 ~20s, 楠岃瘉 ~150ms, 璇佹槑澶у皬 ~50KB
+### 性能预期
+- Groth16: 证明生成 ~3s, 验证 ~5ms, 证明大小 128 bytes
+- PLONK: 证明生成 ~10s, 验证 ~30ms, 证明大小 ~10KB
+- Halo2: 证明生成 ~20s, 验证 ~150ms, 证明大小 ~50KB
 
-**瀵规瘮 Bulletproofs** (Monero 浣跨敤):
-- Bulletproofs: 璇佹槑鐢熸垚 ~50ms, 楠岃瘉 ~10ms, 璇佹槑澶у皬 ~700 bytes
-- zkSNARK 浼樺娍: 楠岃瘉鏇村揩 (5ms vs 10ms), 鍙€氱敤鍖?
-- zkSNARK 鍔ｅ娍: 璇佹槑鐢熸垚鎱?(3s vs 50ms)
-
----
-
-## 涓嬩竴姝ヨ鍔?
-
-1. 鉁?鍒涘缓璇勪及妗嗘灦鏂囨。 (褰撳墠鏂囦欢)
-2. 鈴?鐮旂┒ Groth16 鍘熺悊涓?R1CS 绾︽潫绯荤粺
-3. 鈴?鎼缓 bellman 娴嬭瘯椤圭洰
-4. 鈴?瀹炵幇 Pedersen Commitment 鐢佃矾 (bellman)
-5. 鈴?杩愯鍩哄噯娴嬭瘯骞惰褰曟暟鎹?
-6. 鈴?閲嶅姝ラ 3-5 (arkworks, plonky2)
-7. 鈴?浜у嚭鏈€缁堟妧鏈€夊瀷鎶ュ憡
+**对比 Bulletproofs** (Monero 使用):
+- Bulletproofs: 证明生成 ~50ms, 验证 ~10ms, 证明大小 ~700 bytes
+- zkSNARK 优势: 验证更快 (5ms vs 10ms), 可通用化
+- zkSNARK 劣势: 证明生成慢 (3s vs 50ms)
 
 ---
 
-*鏈枃妗ｉ殢鐮旂┒杩涘睍鎸佺画鏇存柊*  
-*鏈€鍚庢洿鏂? 2025-11-04*
+## 下一步行动
 
+1. ✅ 创建评估框架文档 (当前文件)
+2. ⏳ 研究 Groth16 原理与 R1CS 约束系统
+3. ⏳ 搭建 bellman 测试项目
+4. ⏳ 实现 Pedersen Commitment 电路 (bellman)
+5. ⏳ 运行基准测试并记录数据
+6. ⏳ 重复步骤 3-5 (arkworks, plonky2)
+7. ⏳ 产出最终技术选型报告
 
+---
 
-
+*本文档随研究进展持续更新*  
+*最后更新: 2025-11-04*

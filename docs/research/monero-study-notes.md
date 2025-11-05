@@ -1,43 +1,43 @@
-# Monero 婧愮爜瀛︿範绗旇
+# Monero 源码学习笔记
 
-**鐮旂┒鍛ㄦ湡**: Week 1-2 (2025-11-04 鑷?2025-11-17)  
-**浠撳簱璺緞**: `d:\WEB3_AI寮€鍙慭monero-research`  
-**瀛︿範鐩爣**: 鐞嗚В Ring Signature, Stealth Address, Key Image 瀹炵幇缁嗚妭
-
----
-
-## 馃搵 瀛︿範娓呭崟
-
-- [ ] Ring Signature 瀹炵幇
-- [ ] Stealth Address 鐢熸垚鏈哄埗
-- [ ] Key Image 闃插弻鑺?
-- [ ] RingCT 瀹屾暣浜ゆ槗娴佺▼
+**研究周期**: Week 1-2 (2025-11-04 至 2025-11-17)  
+**仓库路径**: `d:\WEB3_AI开发\monero-research`  
+**学习目标**: 理解 Ring Signature, Stealth Address, Key Image 实现细节
 
 ---
 
-## 馃攳 1. Ring Signature (鐜鍚?
+## 📋 学习清单
 
-### 1.1 鏍稿績鏂囦欢瀹氫綅
+- [ ] Ring Signature 实现
+- [ ] Stealth Address 生成机制
+- [ ] Key Image 防双花
+- [ ] RingCT 完整交易流程
 
-**鍏抽敭鏂囦欢**:
-- `src/ringct/rctSigs.cpp` - RingCT 绛惧悕瀹炵幇
-- `src/ringct/rctTypes.h` - RingCT 绫诲瀷瀹氫箟
-- `src/cryptonote_core/cryptonote_tx_utils.cpp` - 浜ゆ槗鏋勯€?
-- `src/crypto/crypto.cpp` - 鍩虹鍔犲瘑鍘熻
+---
 
-### 1.2 Ring Signature 绫诲瀷
+## 🔍 1. Ring Signature (环签名)
 
-Monero 鏀寔澶氱鐜鍚嶇畻娉?
+### 1.1 核心文件定位
 
-| 绠楁硶 | 寮曞叆鐗堟湰 | 绛惧悕澶у皬 | 楠岃瘉閫熷害 | 鐗圭偣 |
+**关键文件**:
+- `src/ringct/rctSigs.cpp` - RingCT 签名实现
+- `src/ringct/rctTypes.h` - RingCT 类型定义
+- `src/cryptonote_core/cryptonote_tx_utils.cpp` - 交易构造
+- `src/crypto/crypto.cpp` - 基础加密原语
+
+### 1.2 Ring Signature 类型
+
+Monero 支持多种环签名算法:
+
+| 算法 | 引入版本 | 签名大小 | 验证速度 | 特点 |
 |------|---------|---------|---------|------|
-| MLSAG | v7 (2016) | ~1.7 KB (ring=11) | 鎱?| 澶氬眰閾炬帴鍖垮悕缇ょ鍚?|
-| CLSAG | v12 (2020) | ~1.5 KB (ring=11) | 蹇?| 绠€娲侀摼鎺ュ尶鍚嶇兢绛惧悕 |
-| Triptych | 鎻愭涓?| ~1.2 KB | 鏇村揩 | 鍩轰簬瀵规暟澶у皬璇佹槑 |
+| MLSAG | v7 (2016) | ~1.7 KB (ring=11) | 慢 | 多层链接匿名群签名 |
+| CLSAG | v12 (2020) | ~1.5 KB (ring=11) | 快 | 简洁链接匿名群签名 |
+| Triptych | 提案中 | ~1.2 KB | 更快 | 基于对数大小证明 |
 
-**褰撳墠瀹炵幇**: CLSAG (鑷?v12 Monero 鍗忚)
+**当前实现**: CLSAG (自 v12 Monero 协议)
 
-### 1.3 CLSAG 绛惧悕缁撴瀯
+### 1.3 CLSAG 签名结构
 
 ```cpp
 // src/ringct/rctTypes.h (Monero)
@@ -49,71 +49,71 @@ struct clsag {
 };
 ```
 
-瀛楁瑙ｉ噴:
-- s: 鍝嶅簲鏍囬噺鍚戦噺锛岄暱搴︾瓑浜庣幆澶у皬 N銆傚搴旀瘡涓幆鎴愬憳鐨勫搷搴斿€硷紝鐢ㄤ簬闂悎鎸戞垬鐜€?
-- c1: 绗竴涓寫鎴樻爣閲忥紝浣滀负鏁翠釜 Fiat-Shamir 鎸戞垬閾剧殑璧风偣銆?
-- I: 瀵嗛挜闀滃儚 (Key Image)锛岀敱鐪熷疄绉侀挜 x 鍜屽叾鍏挜 P 缁?Hp(P) 鐢熸垚锛岀‘淇濆悓涓€杈撳嚭琚姳璐规椂鍙娴嬮噸澶嶏紝涓斾笉鏆撮湶鐪熷疄杈撳叆銆?
-- D: 鎵胯闀滃儚 (Commitment Key Image)锛屽皢鎵胯鍏崇郴缁戝畾杩涚鍚嶏紝鎶靛尽鈥淛anus/缁勫悎鈥濈被鏀诲嚮锛岀‘淇濈鍚嶅悓鏃堕摼鎺ュ埌鎵胯鐨勭洸鍥犲瓙鍏崇郴銆?
+字段解释:
+- s: 响应标量向量，长度等于环大小 N。对应每个环成员的响应值，用于闭合挑战环。
+- c1: 第一个挑战标量，作为整个 Fiat-Shamir 挑战链的起点。
+- I: 密钥镜像 (Key Image)，由真实私钥 x 和其公钥 P 经 Hp(P) 生成，确保同一输出被花费时可检测重复，且不暴露真实输入。
+- D: 承诺镜像 (Commitment Key Image)，将承诺关系绑定进签名，抵御“Janus/组合”类攻击，确保签名同时链接到承诺的盲因子关系。
 
-娉ㄦ剰:
-- I 鍦?prunable 搴忓垪鍖栦腑涓嶄繚瀛橈紝鍙緷鎹緭鍏ヤ笌鐜垚鍛橀噸寤猴紱D 浼氳搴忓垪鍖栦互渚涢獙璇併€?
+注意:
+- I 在 prunable 序列化中不保存，可依据输入与环成员重建；D 会被序列化以供验证。
 
-### 1.4 CLSAG 绛惧悕绠楁硶娴佺▼
+### 1.4 CLSAG 签名算法流程
 
-#### 绛惧悕鐢熸垚 (`CLSAG_Gen` + `proveRctCLSAGSimple`)
+#### 签名生成 (`CLSAG_Gen` + `proveRctCLSAGSimple`)
 
-**鍑芥暟瀹氫綅**: `src/ringct/rctSigs.cpp`
-- 鏍稿績鍑芥暟: `CLSAG_Gen()` (L1100-1300)
-- 绠€鍖栨帴鍙? `proveRctCLSAGSimple()` (L1800+)
+**函数定位**: `src/ringct/rctSigs.cpp`
+- 核心函数: `CLSAG_Gen()` (L1100-1300)
+- 简化接口: `proveRctCLSAGSimple()` (L1800+)
 
-**绠楁硶姝ラ**:
+**算法步骤**:
 
 ```cpp
-// 杈撳叆:
-// - message: 浜ゆ槗娑堟伅鍝堝笇
-// - P: 鐜垚鍛樺叕閽ュ悜閲?[P_0, P_1, ..., P_n]
-// - p: 鐪熷疄绉侀挜 (瀵瑰簲 P[l])
-// - C: 鎵胯鍚戦噺 [C_0, C_1, ..., C_n] (宸插噺鍘?C_offset)
-// - z: 鎵胯鐩插洜瀛?
-// - C_nonzero: 鍘熷鎵胯鍚戦噺 (鐢ㄤ簬鍝堝笇)
-// - C_offset: 鎵胯鍋忕Щ閲?(閫氬父鏄緭鍑烘壙璇?
-// - l: 鐪熷疄瀵嗛挜绱㈠紩 (secret index)
+// 输入:
+// - message: 交易消息哈希
+// - P: 环成员公钥向量 [P_0, P_1, ..., P_n]
+// - p: 真实私钥 (对应 P[l])
+// - C: 承诺向量 [C_0, C_1, ..., C_n] (已减去 C_offset)
+// - z: 承诺盲因子
+// - C_nonzero: 原始承诺向量 (用于哈希)
+// - C_offset: 承诺偏移量 (通常是输出承诺)
+// - l: 真实密钥索引 (secret index)
 
 clsag CLSAG_Gen(...) {
-    size_t n = P.size(); // 鐜ぇ灏?
+    size_t n = P.size(); // 环大小
     
-    // 姝ラ 1: 鐢熸垚瀵嗛挜闀滃儚
+    // 步骤 1: 生成密钥镜像
     ge_p3 H_p3;
     hash_to_p3(H_p3, P[l]);              // H = Hp(P[l])
     key H;
     ge_p3_tobytes(H.bytes, &H_p3);
     
-    key D;                                // 鎵胯瀵嗛挜闀滃儚
-    key I;                                // 绛惧悕瀵嗛挜闀滃儚
+    key D;                                // 承诺密钥镜像
+    key I;                                // 签名密钥镜像
     
-    // 姝ラ 2: 鍒濆鍖栭殢鏈哄€?(鐢辩‖浠惰澶囨垨杞欢鐢熸垚)
+    // 步骤 2: 初始化随机值 (由硬件设备或软件生成)
     key a, aG, aH;
     hwdev.clsag_prepare(p, z, I, D, H, a, aG, aH);
-    // 鍏朵腑: I = p * H, D = z * H, aG = a*G, aH = a*H
+    // 其中: I = p * H, D = z * H, aG = a*G, aH = a*H
     
-    // 姝ラ 3: 棰勮绠楀瘑閽ラ暅鍍?
+    // 步骤 3: 预计算密钥镜像
     geDsmp I_precomp, D_precomp;
     precomp(I_precomp.k, I);
     precomp(D_precomp.k, D);
     
-    sig.D = scalarmult8(D);               // D' = 8*D (cofactor 娓呴櫎)
+    sig.D = scalarmult8(D);               // D' = 8*D (cofactor 清除)
     
-    // 姝ラ 4: 璁＄畻鑱氬悎鍝堝笇 mu_P, mu_C (鍩熷垎绂?
+    // 步骤 4: 计算聚合哈希 mu_P, mu_C (域分离)
     keyV mu_P_to_hash(2*n+4);
     keyV mu_C_to_hash(2*n+4);
     
-    // 鍩熷垎绂绘爣绛?
+    // 域分离标签
     sc_0(mu_P_to_hash[0].bytes);
     memcpy(mu_P_to_hash[0].bytes, config::HASH_KEY_CLSAG_AGG_0, ...);
     sc_0(mu_C_to_hash[0].bytes);
     memcpy(mu_C_to_hash[0].bytes, config::HASH_KEY_CLSAG_AGG_1, ...);
     
-    // 濉厖鍏挜鍜屾壙璇?
+    // 填充公钥和承诺
     for (size_t i = 1; i < n+1; ++i) {
         mu_P_to_hash[i] = P[i-1];
         mu_C_to_hash[i] = P[i-1];
@@ -123,12 +123,12 @@ clsag CLSAG_Gen(...) {
     mu_P_to_hash[2*n+1] = I;
     mu_P_to_hash[2*n+2] = sig.D;
     mu_P_to_hash[2*n+3] = C_offset;
-    // mu_C_to_hash 鍚岀悊...
+    // mu_C_to_hash 同理...
     
     key mu_P = hash_to_scalar(mu_P_to_hash);
     key mu_C = hash_to_scalar(mu_C_to_hash);
     
-    // 姝ラ 5: 璁＄畻鍒濆鎸戞垬 c[l+1]
+    // 步骤 5: 计算初始挑战 c[l+1]
     keyV c_to_hash(2*n+5);  // domain, P, C, C_offset, message, L, R
     sc_0(c_to_hash[0].bytes);
     memcpy(c_to_hash[0].bytes, config::HASH_KEY_CLSAG_ROUND, ...);
@@ -145,81 +145,81 @@ clsag CLSAG_Gen(...) {
     key c;
     hwdev.clsag_hash(c_to_hash, c);
     
-    // 姝ラ 6: 鐜舰璁＄畻鎸戞垬鍜屽搷搴?
+    // 步骤 6: 环形计算挑战和响应
     sig.s = keyV(n);
     size_t i = (l + 1) % n;
-    if (i == 0) copy(sig.c1, c);  // 淇濆瓨 c1
+    if (i == 0) copy(sig.c1, c);  // 保存 c1
     
     key c_new, L, R, c_p, c_c;
     geDsmp P_precomp, C_precomp, H_precomp;
     ge_p3 Hi_p3;
     
     while (i != l) {
-        // 涓洪潪绉樺瘑绱㈠紩鐢熸垚闅忔満鍝嶅簲
+        // 为非秘密索引生成随机响应
         sig.s[i] = skGen();
         
         sc_mul(c_p.bytes, mu_P.bytes, c.bytes);  // c_p = c * mu_P
         sc_mul(c_c.bytes, mu_C.bytes, c.bytes);  // c_c = c * mu_C
         
-        // 棰勮绠楃偣
+        // 预计算点
         precomp(P_precomp.k, P[i]);
         precomp(C_precomp.k, C[i]);
         
-        // 璁＄畻 L = s[i]*G + c_p*P[i] + c_c*C[i]
+        // 计算 L = s[i]*G + c_p*P[i] + c_c*C[i]
         addKeys_aGbBcC(L, sig.s[i], c_p, P_precomp.k, c_c, C_precomp.k);
         
-        // 璁＄畻 R = s[i]*Hp(P[i]) + c_p*I + c_c*D
+        // 计算 R = s[i]*Hp(P[i]) + c_p*I + c_c*D
         hash_to_p3(Hi_p3, P[i]);
         ge_dsm_precomp(H_precomp.k, &Hi_p3);
         addKeys_aAbBcC(R, sig.s[i], H_precomp.k, c_p, I_precomp.k, c_c, D_precomp.k);
         
-        // 璁＄畻涓嬩竴涓寫鎴?
+        // 计算下一个挑战
         c_to_hash[2*n+3] = L;
         c_to_hash[2*n+4] = R;
         hwdev.clsag_hash(c_to_hash, c_new);
         copy(c, c_new);
         
         i = (i + 1) % n;
-        if (i == 0) copy(sig.c1, c);  // 淇濆瓨鐜捣鐐?
+        if (i == 0) copy(sig.c1, c);  // 保存环起点
     }
     
-    // 姝ラ 7: 璁＄畻鐪熷疄绱㈠紩鐨勫搷搴?(闂悎鐜?
+    // 步骤 7: 计算真实索引的响应 (闭合环)
     // s[l] = a - c*(p*mu_P + z*mu_C) mod l
     hwdev.clsag_sign(c, a, p, z, mu_P, mu_C, sig.s[l]);
     
-    // 娓呯悊鏁忔劅鏁版嵁
+    // 清理敏感数据
     memwipe(&a, sizeof(key));
     
-    return sig;  // 杩斿洖 (s, c1, I, D)
+    return sig;  // 返回 (s, c1, I, D)
 }
 ```
 
-#### 绛惧悕楠岃瘉 (`verRctCLSAGSimple`)
+#### 签名验证 (`verRctCLSAGSimple`)
 
-**鍑芥暟瀹氫綅**: `src/ringct/rctSigs.cpp:L2900+`
+**函数定位**: `src/ringct/rctSigs.cpp:L2900+`
 
-**楠岃瘉姝ラ**:
+**验证步骤**:
 
 ```cpp
 bool verRctCLSAGSimple(const key &message, const clsag &sig, 
                        const ctkeyV &pubs, const key &C_offset) {
     const size_t n = pubs.size();
     
-    // 姝ラ 1: 鏁版嵁瀹屾暣鎬ф鏌?
+    // 步骤 1: 数据完整性检查
     CHECK(n >= 1);
     CHECK(n == sig.s.size());
     for (size_t i = 0; i < n; ++i)
-        CHECK(sc_check(sig.s[i].bytes) == 0);  // 鏍囬噺鍚堟硶鎬?
+        CHECK(sc_check(sig.s[i].bytes) == 0);  // 标量合法性
     CHECK(sc_check(sig.c1.bytes) == 0);
-    CHECK(!(sig.I == identity()));  // Key Image 涓嶈兘鏄崟浣嶅厓
+    CHECK(!(sig.I == identity()));  // Key Image 不能是单位元
     
-    // 姝ラ 2: 棰勫鐞嗘壙璇哄亸绉?
+    // 步骤 2: 预处理承诺偏移
     ge_p3 C_offset_p3;
     ge_frombytes_vartime(&C_offset_p3, C_offset.bytes);
     ge_cached C_offset_cached;
     ge_p3_to_cached(&C_offset_cached, &C_offset_p3);
     
-    // 姝ラ 3: 棰勮绠楀瘑閽ラ暅鍍?
+    // 步骤 3: 预计算密钥镜像
     key D_8 = scalarmult8(sig.D);
     CHECK(!(D_8 == identity()));
     
@@ -227,19 +227,19 @@ bool verRctCLSAGSimple(const key &message, const clsag &sig,
     precomp(I_precomp.k, sig.I);
     precomp(D_precomp.k, D_8);
     
-    // 姝ラ 4: 閲嶅缓鑱氬悎鍝堝笇 mu_P, mu_C (涓庣鍚嶆椂鐩稿悓)
+    // 步骤 4: 重建聚合哈希 mu_P, mu_C (与签名时相同)
     keyV mu_P_to_hash(2*n+4);
     keyV mu_C_to_hash(2*n+4);
-    // ... (濉厖閫昏緫鍚岀鍚?
+    // ... (填充逻辑同签名)
     key mu_P = hash_to_scalar(mu_P_to_hash);
     key mu_C = hash_to_scalar(mu_C_to_hash);
     
-    // 姝ラ 5: 璁剧疆杞鍝堝笇
+    // 步骤 5: 设置轮次哈希
     keyV c_to_hash(2*n+5);
-    // ... (濉厖閫昏緫鍚岀鍚?
+    // ... (填充逻辑同签名)
     c_to_hash[2*n+2] = message;
     
-    // 姝ラ 6: 浠?c1 寮€濮嬮噸寤烘寫鎴樼幆
+    // 步骤 6: 从 c1 开始重建挑战环
     key c = copy(sig.c1);
     key c_p, c_c, c_new, L, R;
     geDsmp P_precomp, C_precomp, hash_precomp;
@@ -251,16 +251,16 @@ bool verRctCLSAGSimple(const key &message, const clsag &sig,
         sc_mul(c_p.bytes, mu_P.bytes, c.bytes);
         sc_mul(c_c.bytes, mu_C.bytes, c.bytes);
         
-        // 棰勮绠?
+        // 预计算
         precomp(P_precomp.k, pubs[i].dest);
         
-        // 璁＄畻 C[i] - C_offset
+        // 计算 C[i] - C_offset
         ge_frombytes_vartime(&temp_p3, pubs[i].mask.bytes);
         ge_sub(&temp_p1, &temp_p3, &C_offset_cached);
         ge_p1p1_to_p3(&temp_p3, &temp_p1);
         ge_dsm_precomp(C_precomp.k, &temp_p3);
         
-        // 閲嶅缓 L 鍜?R (楠岃瘉鏂圭▼)
+        // 重建 L 和 R (验证方程)
         // L = s[i]*G + c_p*P[i] + c_c*(C[i] - C_offset)
         addKeys_aGbBcC(L, sig.s[i], c_p, P_precomp.k, c_c, C_precomp.k);
         
@@ -269,7 +269,7 @@ bool verRctCLSAGSimple(const key &message, const clsag &sig,
         ge_dsm_precomp(hash_precomp.k, &hash8_p3);
         addKeys_aAbBcC(R, sig.s[i], hash_precomp.k, c_p, I_precomp.k, c_c, D_precomp.k);
         
-        // 璁＄畻涓嬩竴涓寫鎴?
+        // 计算下一个挑战
         c_to_hash[2*n+3] = L;
         c_to_hash[2*n+4] = R;
         c_new = hash_to_scalar(c_to_hash);
@@ -279,75 +279,75 @@ bool verRctCLSAGSimple(const key &message, const clsag &sig,
         i = i + 1;
     }
     
-    // 姝ラ 7: 楠岃瘉鐜棴鍚?(c 搴旇鍥炲埌 c1)
+    // 步骤 7: 验证环闭合 (c 应该回到 c1)
     sc_sub(c_new.bytes, c.bytes, sig.c1.bytes);
-    return sc_isnonzero(c_new.bytes) == 0;  // c == c1 鍒欓€氳繃
+    return sc_isnonzero(c_new.bytes) == 0;  // c == c1 则通过
 }
 ```
 
-#### 鍏抽敭鏁板鍏崇郴
+#### 关键数学关系
 
-**绛惧悕姝ｇ‘鎬ц瘉鏄?*:
+**签名正确性证明**:
 
-瀵逛簬鐪熷疄绱㈠紩 l, 鍝嶅簲 s[l] 鐨勮绠?
+对于真实索引 l, 响应 s[l] 的计算:
 ```
 s[l] = a - c[l]*(p*mu_P + z*mu_C) mod l
 ```
 
-楠岃瘉鏃堕噸寤?
+验证时重建:
 ```
 L[l] = s[l]*G + c_p[l]*P[l] + c_c[l]*C[l]
      = (a - c[l]*(p*mu_P + z*mu_C))*G + c[l]*mu_P*P[l] + c[l]*mu_C*C[l]
      = a*G + c[l]*mu_P*(P[l] - p*G) + c[l]*mu_C*(C[l] - z*G)
-     = a*G  (鍥犱负 P[l] = p*G, C[l] = z*G)
-     = aG (鍒濆鍊?
+     = a*G  (因为 P[l] = p*G, C[l] = z*G)
+     = aG (初始值)
 
 R[l] = s[l]*Hp(P[l]) + c_p[l]*I + c_c[l]*D
-     = ... (绫讳技鎺ㄥ)
-     = aH (鍒濆鍊?
+     = ... (类似推导)
+     = aH (初始值)
 ```
 
-鍥犳楠岃瘉鏃朵細閲嶅缓鍑?(L[l], R[l]) = (aG, aH), 浠庤€岄噸寤哄嚭 c[l+1], 鏈€缁堥棴鍚堢幆鍥炲埌 c1.
+因此验证时会重建出 (L[l], R[l]) = (aG, aH), 从而重建出 c[l+1], 最终闭合环回到 c1.
 
-**鍏抽敭闂瑙ｇ瓟**:
-- 鉁?**Ring members 閫夋嫨**: 鐢遍挶鍖呴€氳繃 `get_outs` RPC 浠庡尯鍧楅摼鑾峰彇, 浣跨敤 gamma 鍒嗗竷閫夋嫨 decoys
-- 鉁?**Key Image 鐢熸垚**: I = p * Hp(P), 鍏朵腑 Hp(P) = hash_to_p3(P) 灏嗗叕閽ュ搱甯屽埌鏇茬嚎鐐?
-- 鉁?**楠岃瘉鏈夋晥鎬?*: 閲嶅缓鎸戞垬鐜? 妫€鏌?c_final == c1 (鐜棴鍚?
+**关键问题解答**:
+- ✅ **Ring members 选择**: 由钱包通过 `get_outs` RPC 从区块链获取, 使用 gamma 分布选择 decoys
+- ✅ **Key Image 生成**: I = p * Hp(P), 其中 Hp(P) = hash_to_p3(P) 将公钥哈希到曲线点
+- ✅ **验证有效性**: 重建挑战环, 检查 c_final == c1 (环闭合)
 
-### 1.5 浠ｇ爜鐗囨鍒嗘瀽
+### 1.5 代码片段分析
 
-#### 鐗囨 1: 瀵嗛挜闀滃儚鐢熸垚 (Key Image Generation)
+#### 片段 1: 密钥镜像生成 (Key Image Generation)
 
 ```cpp
 // src/ringct/rctSigs.cpp:L1120-1130
-// 浠庡叕閽ョ敓鎴?Hash-to-Point
+// 从公钥生成 Hash-to-Point
 ge_p3 H_p3;
 hash_to_p3(H_p3, P[l]);  // H = Hp(P[l])
 key H;
 ge_p3_tobytes(H.bytes, &H_p3);
 
-// 纭欢璁惧璁＄畻 I = p * H, D = z * H
+// 硬件设备计算 I = p * H, D = z * H
 key a, aG, aH;
 hwdev.clsag_prepare(p, z, sig.I, D, H, a, aG, aH);
 ```
 
-**鍘熺悊**: 
-- `hash_to_p3(P)` 灏?32 瀛楄妭鍏挜 P 纭畾鎬ф槧灏勫埌妞渾鏇茬嚎鐐?Hp(P)
-- Key Image I = x * Hp(P) 缁戝畾鍒扮閽?x, 浣嗕笉鏆撮湶 x
-- 鍚屼竴杈撳嚭鍐嶆鑺辫垂浼氫骇鐢熺浉鍚岀殑 I (鍏ㄧ綉鍙娴嬪弻鑺?
+**原理**: 
+- `hash_to_p3(P)` 将 32 字节公钥 P 确定性映射到椭圆曲线点 Hp(P)
+- Key Image I = x * Hp(P) 绑定到私钥 x, 但不暴露 x
+- 同一输出再次花费会产生相同的 I (全网可检测双花)
 
-#### 鐗囨 2: 鑱氬悎鍝堝笇璁＄畻 (Aggregation Hashes)
+#### 片段 2: 聚合哈希计算 (Aggregation Hashes)
 
 ```cpp
 // src/ringct/rctSigs.cpp:L1150-1180
-// 鍩熷垎绂?(闃叉璺ㄥ崗璁?璺ㄤ笂涓嬫枃鏀诲嚮)
+// 域分离 (防止跨协议/跨上下文攻击)
 keyV mu_P_to_hash(2*n+4);
 sc_0(mu_P_to_hash[0].bytes);
 memcpy(mu_P_to_hash[0].bytes, 
        config::HASH_KEY_CLSAG_AGG_0,
        sizeof(config::HASH_KEY_CLSAG_AGG_0)-1);
 
-// 缁戝畾鎵€鏈夊叕閽ュ拰鎵胯鍒板搱甯?
+// 绑定所有公钥和承诺到哈希
 for (size_t i = 1; i < n+1; ++i) {
     mu_P_to_hash[i] = P[i-1];
     mu_P_to_hash[i+n] = C_nonzero[i-n-1];
@@ -357,20 +357,20 @@ mu_P_to_hash[2*n+2] = sig.D;
 mu_P_to_hash[2*n+3] = C_offset;
 
 key mu_P = hash_to_scalar(mu_P_to_hash);
-key mu_C = hash_to_scalar(mu_C_to_hash); // 绫讳技
+key mu_C = hash_to_scalar(mu_C_to_hash); // 类似
 ```
 
-**浣滅敤**:
-- mu_P, mu_C 灏嗘墍鏈夌幆鎴愬憳鍜屾壙璇虹粦瀹氬埌绛惧悕
-- 闃叉"娣峰悎鐜?鏀诲嚮 (涓嶅悓绛惧悕鐨勭幆鎴愬憳娣锋穯)
-- 鍩熷垎绂绘爣绛?`HASH_KEY_CLSAG_AGG_0/1` 闃叉鍝堝笇閲嶇敤
+**作用**:
+- mu_P, mu_C 将所有环成员和承诺绑定到签名
+- 防止"混合环"攻击 (不同签名的环成员混淆)
+- 域分离标签 `HASH_KEY_CLSAG_AGG_0/1` 防止哈希重用
 
-#### 鐗囨 3: 鐜舰鎸戞垬-鍝嶅簲璁＄畻 (Ring Challenge-Response Loop)
+#### 片段 3: 环形挑战-响应计算 (Ring Challenge-Response Loop)
 
 ```cpp
 // src/ringct/rctSigs.cpp:L1220-1260
 while (i != l) {
-    sig.s[i] = skGen();  // 闈炵瀵嗙储寮? 闅忔満鍝嶅簲
+    sig.s[i] = skGen();  // 非秘密索引: 随机响应
     
     sc_mul(c_p.bytes, mu_P.bytes, c.bytes);
     sc_mul(c_c.bytes, mu_C.bytes, c.bytes);
@@ -386,7 +386,7 @@ while (i != l) {
     ge_dsm_precomp(H_precomp.k, &Hi_p3);
     addKeys_aAbBcC(R, sig.s[i], H_precomp.k, c_p, I_precomp.k, c_c, D_precomp.k);
     
-    // 璁＄畻涓嬩竴涓寫鎴?
+    // 计算下一个挑战
     c_to_hash[2*n+3] = L;
     c_to_hash[2*n+4] = R;
     hwdev.clsag_hash(c_to_hash, c_new);
@@ -396,19 +396,19 @@ while (i != l) {
 }
 ```
 
-**Fiat-Shamir 鍙樻崲**:
-- 瀵逛簬 decoys (闈炵瀵嗙储寮?, 鍏堥€夐殢鏈?s[i], 鍐嶈绠?L, R
-- 鎸戞垬 c 閫氳繃鍝堝笇閾句紶閫? c[i+1] = H(L[i], R[i], ...)
-- 鐪熷疄绱㈠紩 l 鐨?s[l] 鍦ㄧ幆闂悎鏃跺弽鎺? s[l] = a - c[l]*(...)
+**Fiat-Shamir 变换**:
+- 对于 decoys (非秘密索引), 先选随机 s[i], 再计算 L, R
+- 挑战 c 通过哈希链传递: c[i+1] = H(L[i], R[i], ...)
+- 真实索引 l 的 s[l] 在环闭合时反推: s[l] = a - c[l]*(...)
 
-#### 鐗囨 4: 鐪熷疄鍝嶅簲璁＄畻 (Signing Index Response)
+#### 片段 4: 真实响应计算 (Signing Index Response)
 
 ```cpp
 // src/ringct/rctSigs.cpp:L1270
-// 鐜棴鍚? 璁＄畻 s[l] 浣垮緱楠岃瘉鏂圭▼鎴愮珛
+// 环闭合: 计算 s[l] 使得验证方程成立
 hwdev.clsag_sign(c, a, p, z, mu_P, mu_C, sig.s[l]);
 
-// 杞欢瀹炵幇 (hw::device_default::clsag_sign):
+// 软件实现 (hw::device_default::clsag_sign):
 // s[l] = a - c*(p*mu_P + z*mu_C) mod l
 sc_mul(tmp1, mu_P, p);         // tmp1 = mu_P * p
 sc_mul(tmp2, mu_C, z);         // tmp2 = mu_C * z
@@ -417,12 +417,12 @@ sc_mul(tmp4, c, tmp3);         // tmp4 = c * (mu_P*p + mu_C*z)
 sc_sub(s, a, tmp4);            // s = a - c*(mu_P*p + mu_C*z)
 ```
 
-**闆剁煡璇嗘€?*:
-- s[l] 娣峰悎浜嗛殢鏈烘暟 a 鍜岀瀵?(p, z)
-- 楠岃瘉鑰呮棤娉曚粠 s[l] 鍙嶆帹 p 鎴?z
-- 鍙兘楠岃瘉 s[l] 婊¤冻绛惧悕鏂圭▼
+**零知识性**:
+- s[l] 混合了随机数 a 和秘密 (p, z)
+- 验证者无法从 s[l] 反推 p 或 z
+- 只能验证 s[l] 满足签名方程
 
-#### 鐗囨 5: 楠岃瘉鐜棴鍚?(Verification Ring Closure)
+#### 片段 5: 验证环闭合 (Verification Ring Closure)
 
 ```cpp
 // src/ringct/rctSigs.cpp:L3100-3150 (verRctCLSAGSimple)
@@ -430,14 +430,14 @@ key c = copy(sig.c1);
 size_t i = 0;
 
 while (i < n) {
-    // 閲嶅缓 L[i] 鍜?R[i]
+    // 重建 L[i] 和 R[i]
     sc_mul(c_p.bytes, mu_P.bytes, c.bytes);
     sc_mul(c_c.bytes, mu_C.bytes, c.bytes);
     
     addKeys_aGbBcC(L, sig.s[i], c_p, P_precomp.k, c_c, C_precomp.k);
     addKeys_aAbBcC(R, sig.s[i], hash_precomp.k, c_p, I_precomp.k, c_c, D_precomp.k);
     
-    // 閲嶅缓涓嬩竴涓寫鎴?
+    // 重建下一个挑战
     c_to_hash[2*n+3] = L;
     c_to_hash[2*n+4] = R;
     c_new = hash_to_scalar(c_to_hash);
@@ -446,147 +446,147 @@ while (i < n) {
     i++;
 }
 
-// 楠岃瘉鐜棴鍚? c 搴旇鍥炲埌 c1
+// 验证环闭合: c 应该回到 c1
 sc_sub(c_new.bytes, c.bytes, sig.c1.bytes);
 return sc_isnonzero(c_new.bytes) == 0;  // c == c1?
 ```
 
-**楠岃瘉閫昏緫**:
-- 浠?c1 寮€濮? 渚濇閲嶅缓鎵€鏈?(L[i], R[i])
-- 姣忎釜 L[i], R[i] 鐢熸垚涓嬩竴涓寫鎴?c[i+1]
-- 濡傛灉绛惧悕鏈夋晥, 鏈€鍚庣殑 c 浼氱瓑浜庤捣鐐?c1 (鐜棴鍚?
-- 鍚﹀垯 c != c1, 绛惧悕鏃犳晥
+**验证逻辑**:
+- 从 c1 开始, 依次重建所有 (L[i], R[i])
+- 每个 L[i], R[i] 生成下一个挑战 c[i+1]
+- 如果签名有效, 最后的 c 会等于起点 c1 (环闭合)
+- 否则 c != c1, 签名无效
 
-#### 鎬ц兘浼樺寲鎶€宸?
+#### 性能优化技巧
 
 ```cpp
-// 1. 棰勮绠?(Precomputation)
+// 1. 预计算 (Precomputation)
 geDsmp P_precomp;
-precomp(P_precomp.k, P[i]);  // 灏嗙偣杞崲涓?DSM 褰㈠紡, 鍔犻€熷鏍囬噺涔樻硶
+precomp(P_precomp.k, P[i]);  // 将点转换为 DSM 形式, 加速多标量乘法
 
-// 2. 鎵归噺鎿嶄綔 (Batch Operations)
+// 2. 批量操作 (Batch Operations)
 addKeys_aGbBcC(L, s, c_p, P_precomp.k, c_c, C_precomp.k);
-// 绛変环浜? L = s*G + c_p*P + c_c*C (涓€娆¤绠?
+// 等价于: L = s*G + c_p*P + c_c*C (一次计算)
 
-// 3. Cofactor 娓呴櫎
-key D_8 = scalarmult8(sig.D);  // D' = 8*D, 纭繚鍦ㄧ礌鏁伴樁瀛愮兢
-CHECK(!(D_8 == identity()));    // 鎷掔粷灏忓瓙缇ゆ敾鍑?
+// 3. Cofactor 清除
+key D_8 = scalarmult8(sig.D);  // D' = 8*D, 确保在素数阶子群
+CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 ```
 
-**瀛︿範绗旇**:
-- CLSAG 浣跨敤 Fiat-Shamir 鍙樻崲灏嗕氦浜掑紡鍗忚杞负闈炰氦浜掑紡
-- 鑱氬悎鍝堝笇 (mu_P, mu_C) 鏄?CLSAG 鐩告瘮 MLSAG 鐨勫叧閿敼杩?
-- 鎵胯瀵嗛挜闀滃儚 D 闃叉"Janus/缁勫悎"绫绘敾鍑?
-- 鍩熷垎绂绘爣绛鹃槻姝㈣法鍗忚鏀诲嚮 (濡?Monero vs SuperVM 绛惧悕娣锋穯) 
+**学习笔记**:
+- CLSAG 使用 Fiat-Shamir 变换将交互式协议转为非交互式
+- 聚合哈希 (mu_P, mu_C) 是 CLSAG 相比 MLSAG 的关键改进
+- 承诺密钥镜像 D 防止"Janus/组合"类攻击
+- 域分离标签防止跨协议攻击 (如 Monero vs SuperVM 签名混淆) 
 
 ---
 
-## 馃幁 2. Stealth Address (闅愯韩鍦板潃)
+## 🎭 2. Stealth Address (隐身地址)
 
-### 2.1 鏍稿績姒傚康
+### 2.1 核心概念
 
-**闅愯韩鍦板潃 = 姣忕瑪浜ゆ槗鐢熸垚鍞竴鐨勪竴娆℃€у湴鍧€**
+**隐身地址 = 每笔交易生成唯一的一次性地址**
 
-- **鍙戦€佹柟**: 浣跨敤鎺ユ敹鏂瑰叕閽ョ敓鎴愪竴娆℃€у湴鍧€
-- **鎺ユ敹鏂?*: 浣跨敤绉侀挜鎵弿鍖哄潡閾捐瘑鍒睘浜庤嚜宸辩殑浜ゆ槗
+- **发送方**: 使用接收方公钥生成一次性地址
+- **接收方**: 使用私钥扫描区块链识别属于自己的交易
 
-### 2.2 鍏抽敭鏂囦欢
+### 2.2 关键文件
 
 - `src/cryptonote_basic/cryptonote_format_utils.cpp`
-  - `generate_key_derivation()` - 娲剧敓瀵嗛挜
-  - `derive_public_key()` - 娲剧敓鍏挜
+  - `generate_key_derivation()` - 派生密钥
+  - `derive_public_key()` - 派生公钥
 - `src/wallet/wallet2.cpp`
-  - 閽卞寘鎵弿閫昏緫
+  - 钱包扫描逻辑
 
-### 2.3 鍦板潃鐢熸垚娴佺▼
+### 2.3 地址生成流程
 
 ```
-鎺ユ敹鏂归挶鍖呭瘑閽?
-- Spend key pair: (a, A = aG)  - 鑺辫垂瀵嗛挜
-- View key pair: (b, B = bG)   - 瑙嗗浘瀵嗛挜
+接收方钱包密钥:
+- Spend key pair: (a, A = aG)  - 花费密钥
+- View key pair: (b, B = bG)   - 视图密钥
 
-鍙戦€佹柟鐢熸垚涓€娆℃€у湴鍧€:
-1. 闅忔満鐢熸垚 r (浜ゆ槗瀵嗛挜)
-2. 璁＄畻 R = rG (浜ゆ槗鍏挜)
-3. 璁＄畻鍏变韩绉樺瘑: S = rA = raG
-4. 璁＄畻涓€娆℃€у叕閽? P = H(S, n)G + B
-   鍏朵腑 n 鏄緭鍑虹储寮?
+发送方生成一次性地址:
+1. 随机生成 r (交易密钥)
+2. 计算 R = rG (交易公钥)
+3. 计算共享秘密: S = rA = raG
+4. 计算一次性公钥: P = H(S, n)G + B
+   其中 n 是输出索引
 
-鎺ユ敹鏂硅瘑鍒?
-1. 鎵弿鍖哄潡閾句腑鐨?R
-2. 璁＄畻鍏变韩绉樺瘑: S = aR = arG
-3. 璁＄畻鏈熸湜鍏挜: P' = H(S, n)G + B
-4. 濡傛灉 P' == P, 鍒欒杈撳嚭灞炰簬鑷繁
+接收方识别:
+1. 扫描区块链中的 R
+2. 计算共享秘密: S = aR = arG
+3. 计算期望公钥: P' = H(S, n)G + B
+4. 如果 P' == P, 则该输出属于自己
 ```
 
-### 2.4 浠ｇ爜鐗囨
+### 2.4 代码片段
 
-**TODO**: 鎻愬彇 `generate_key_derivation()` 瀹炵幇
+**TODO**: 提取 `generate_key_derivation()` 实现
 
 ```cpp
 // src/cryptonote_basic/cryptonote_format_utils.cpp
 
 ```
 
-**鍏抽敭闂**:
-- [ ] 濡備綍楂樻晥鎵弿澶ч噺浜ゆ槗?
-- [ ] 瑙嗗浘瀵嗛挜 vs 鑺辫垂瀵嗛挜鐨勫垎绂讳綔鐢?
-- [ ] 澶氫釜杈撳嚭濡備綍绱㈠紩 (n)?
+**关键问题**:
+- [ ] 如何高效扫描大量交易?
+- [ ] 视图密钥 vs 花费密钥的分离作用?
+- [ ] 多个输出如何索引 (n)?
 
 ---
 
-## 馃攽 2. Stealth Address (闅愯韩鍦板潃)
+## 🔑 2. Stealth Address (隐身地址)
 
-### 2.1 鍩烘湰姒傚康
+### 2.1 基本概念
 
-**鐩殑**: 姣忕瑪浜ゆ槗鐢熸垚鍞竴鐨勪竴娆℃€у湴鍧€, 闃叉浜ゆ槗鍏宠仈, 淇濇姢鎺ユ敹鏂归殣绉併€?
+**目的**: 每笔交易生成唯一的一次性地址, 防止交易关联, 保护接收方隐私。
 
-**鏍稿績鎬濇兂**: 
-- 鍙戦€佹柟浣跨敤鎺ユ敹鏂圭殑鍏挜 + 闅忔満鏁扮敓鎴愪竴娆℃€у湴鍧€
-- 鎺ユ敹鏂归€氳繃鎵弿鍖哄潡閾? 浣跨敤绉侀挜鎭㈠灞炰簬鑷繁鐨勮緭鍑?
-- 鍖哄潡閾句笂姣忎釜杈撳嚭鍦板潃閮戒笉鍚? 浣嗘帴鏀舵柟鍙互鑺辫垂
+**核心思想**: 
+- 发送方使用接收方的公钥 + 随机数生成一次性地址
+- 接收方通过扫描区块链, 使用私钥恢复属于自己的输出
+- 区块链上每个输出地址都不同, 但接收方可以花费
 
-### 2.2 Monero 鍦板潃缁撴瀯
+### 2.2 Monero 地址结构
 
-Monero 鏍囧噯鍦板潃鍖呭惈涓ゅ瀵嗛挜:
+Monero 标准地址包含两对密钥:
 
 ```
 Address = (A, B)
-  A = a*G  (View Public Key, 瑙嗗浘鍏挜)
-  B = b*G  (Spend Public Key, 鑺辫垂鍏挜)
+  A = a*G  (View Public Key, 视图公钥)
+  B = b*G  (Spend Public Key, 花费公钥)
 
-鐢ㄦ埛鎸佹湁:
-  a = view secret key (瑙嗗浘绉侀挜, 鐢ㄤ簬鎵弿)
-  b = spend secret key (鑺辫垂绉侀挜, 鐢ㄤ簬绛惧悕)
+用户持有:
+  a = view secret key (视图私钥, 用于扫描)
+  b = spend secret key (花费私钥, 用于签名)
 ```
 
-**鑱岃矗鍒嗙**:
-- `a` (view key): 鍙兘鏌ョ湅浜ゆ槗, 涓嶈兘鑺辫垂 (鍙垎浜粰瀹¤鍛?
-- `b` (spend key): 鑺辫垂璧勯噾 (缁濆淇濆瘑)
+**职责分离**:
+- `a` (view key): 只能查看交易, 不能花费 (可分享给审计员)
+- `b` (spend key): 花费资金 (绝对保密)
 
-### 2.3 涓€娆℃€у湴鍧€鐢熸垚 (鍙戦€佹柟)
+### 2.3 一次性地址生成 (发送方)
 
-鍙戦€佹柟瑕佺粰鍦板潃 `(A, B)` 鍙戦€佽祫閲戞椂:
+发送方要给地址 `(A, B)` 发送资金时:
 
-#### 姝ラ 1: 鐢熸垚浜ゆ槗瀵嗛挜瀵?
+#### 步骤 1: 生成交易密钥对
 
 ```cpp
 // src/crypto/crypto.cpp:L150
-secret_key r;  // 浜ゆ槗绉侀挜 (transaction secret key)
-random_scalar(r);  // 鐢熸垚闅忔満 256-bit 鏍囬噺
+secret_key r;  // 交易私钥 (transaction secret key)
+random_scalar(r);  // 生成随机 256-bit 标量
 
-public_key R;  // 浜ゆ槗鍏挜 (transaction public key)
+public_key R;  // 交易公钥 (transaction public key)
 secret_key_to_public_key(r, R);  // R = r*G
 ```
 
-`R` 浼氳鍐欏叆浜ゆ槗鐨?`tx_extra` 瀛楁, 鍏紑鍙銆?
+`R` 会被写入交易的 `tx_extra` 字段, 公开可见。
 
-#### 姝ラ 2: 璁＄畻鍏变韩瀵嗛挜 (Diffie-Hellman)
+#### 步骤 2: 计算共享密钥 (Diffie-Hellman)
 
 ```cpp
 // src/crypto/crypto.cpp:L237 - generate_key_derivation()
-bool generate_key_derivation(const public_key &A,     // 鎺ユ敹鏂硅鍥惧叕閽?
-                              const secret_key &r,     // 浜ゆ槗绉侀挜
+bool generate_key_derivation(const public_key &A,     // 接收方视图公钥
+                              const secret_key &r,     // 交易私钥
                               key_derivation &derivation) {
     ge_p3 point;
     ge_p2 point2;
@@ -595,10 +595,10 @@ bool generate_key_derivation(const public_key &A,     // 鎺ユ敹鏂硅鍥�
     if (ge_frombytes_vartime(&point, &A) != 0)
         return false;
     
-    // 璁＄畻 r*A (Diffie-Hellman 瀵嗛挜鍗忓晢)
+    // 计算 r*A (Diffie-Hellman 密钥协商)
     ge_scalarmult(&point2, &r, &point);
     
-    // 涔樹互 cofactor 8 (闃叉灏忓瓙缇ゆ敾鍑?
+    // 乘以 cofactor 8 (防止小子群攻击)
     ge_mul8(&point3, &point2);
     ge_p1p1_to_p2(&point2, &point3);
     ge_tobytes(&derivation, &point2);
@@ -607,7 +607,7 @@ bool generate_key_derivation(const public_key &A,     // 鎺ユ敹鏂硅鍥�
 }
 ```
 
-**鏁板鍘熺悊** (ECDH):
+**数学原理** (ECDH):
 ```
 derivation = 8 * r * A
            = 8 * r * (a*G)
@@ -615,16 +615,16 @@ derivation = 8 * r * A
            = 8 * a * R
 ```
 
-鍙戦€佹柟浣跨敤 `(r, A)` 璁＄畻, 鎺ユ敹鏂逛娇鐢?`(a, R)` 璁＄畻, 缁撴灉鐩稿悓!
+发送方使用 `(r, A)` 计算, 接收方使用 `(a, R)` 计算, 结果相同!
 
-#### 姝ラ 3: 娲剧敓涓€娆℃€ц緭鍑哄叕閽?
+#### 步骤 3: 派生一次性输出公钥
 
 ```cpp
 // src/crypto/crypto.cpp:L258 - derive_public_key()
 bool derive_public_key(const key_derivation &derivation,
-                       size_t output_index,     // 杈撳嚭绱㈠紩 n
-                       const public_key &B,     // 鎺ユ敹鏂硅姳璐瑰叕閽?
-                       public_key &P_out) {     // 涓€娆℃€у叕閽?
+                       size_t output_index,     // 输出索引 n
+                       const public_key &B,     // 接收方花费公钥
+                       public_key &P_out) {     // 一次性公钥
     ec_scalar scalar;
     ge_p3 point1, point2;
     ge_cached point3;
@@ -634,10 +634,10 @@ bool derive_public_key(const key_derivation &derivation,
     if (ge_frombytes_vartime(&point1, &B) != 0)
         return false;
     
-    // 璁＄畻 Hs(derivation || output_index)
+    // 计算 Hs(derivation || output_index)
     derivation_to_scalar(derivation, output_index, scalar);
     
-    // 璁＄畻 Hs(...)*G
+    // 计算 Hs(...)*G
     ge_scalarmult_base(&point2, &scalar);
     
     // P_out = Hs(...)*G + B
@@ -650,59 +650,59 @@ bool derive_public_key(const key_derivation &derivation,
 }
 ```
 
-**鏁板鍏紡**:
+**数学公式**:
 ```
 P_out = Hs(8*r*A || n)*G + B
 ```
 
-鍏朵腑 `Hs()` 鏄?hash-to-scalar 鍑芥暟.
+其中 `Hs()` 是 hash-to-scalar 函数.
 
-### 2.4 鎵弿杈撳嚭 (鎺ユ敹鏂?
+### 2.4 扫描输出 (接收方)
 
-鎺ユ敹鏂规壂鎻忓尯鍧楅摼, 瀵规瘡绗斾氦鏄?
+接收方扫描区块链, 对每笔交易:
 
-#### 姝ラ 1: 鎻愬彇浜ゆ槗鍏挜 R
+#### 步骤 1: 提取交易公钥 R
 
 ```cpp
 // src/cryptonote_basic/cryptonote_format_utils.cpp
 crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
 ```
 
-#### 姝ラ 2: 閲嶅缓鍏变韩瀵嗛挜
+#### 步骤 2: 重建共享密钥
 
 ```cpp
 crypto::key_derivation derivation;
 acc.get_device().generate_key_derivation(R, acc.m_view_secret_key, derivation);
-// derivation = 8*a*R = 8*r*A (涓庡彂閫佹柟鐩稿悓)
+// derivation = 8*a*R = 8*r*A (与发送方相同)
 ```
 
-#### 姝ラ 3: 閫愪釜妫€鏌ヨ緭鍑?
+#### 步骤 3: 逐个检查输出
 
 ```cpp
 for (size_t n = 0; n < tx.vout.size(); ++n) {
     crypto::public_key P_blockchain = get_output_public_key(tx.vout[n]);
     
-    // 閲嶅缓鏈熸湜鐨勫叕閽?
+    // 重建期望的公钥
     crypto::public_key P_expected;
     acc.get_device().derive_public_key(derivation, n, 
                                        acc.m_spend_public_key, 
                                        P_expected);
     
     if (P_blockchain == P_expected) {
-        // 杩欎釜杈撳嚭灞炰簬鎴?
+        // 这个输出属于我!
         outs.push_back(n);
     }
 }
 ```
 
-### 2.5 鑺辫垂杈撳嚭 (娲剧敓涓€娆℃€х閽?
+### 2.5 花费输出 (派生一次性私钥)
 
 ```cpp
 // src/crypto/crypto.cpp:L278 - derive_secret_key()
 void derive_secret_key(const key_derivation &derivation,
                        size_t output_index,
-                       const secret_key &b,      // 鑺辫垂绉侀挜
-                       secret_key &p_out) {      // 涓€娆℃€х閽?
+                       const secret_key &b,      // 花费私钥
+                       secret_key &p_out) {      // 一次性私钥
     ec_scalar scalar;
     
     derivation_to_scalar(derivation, output_index, scalar);
@@ -710,23 +710,23 @@ void derive_secret_key(const key_derivation &derivation,
 }
 ```
 
-**鏁板楠岃瘉**:
+**数学验证**:
 ```
 P_out = p_out * G
       = (Hs(8*r*A || n) + b) * G
       = Hs(8*r*A || n)*G + b*G
-      = Hs(8*r*A || n)*G + B  鉁?
+      = Hs(8*r*A || n)*G + B  ✅
 ```
 
-### 2.6 View Tags 浼樺寲 (Monero v15+)
+### 2.6 View Tags 优化 (Monero v15+)
 
-涓哄噺灏戞壂鎻忚绠楅噺 (256鍊嶆彁閫?:
+为减少扫描计算量 (256倍提速):
 
 ```cpp
 // src/crypto/crypto.cpp:L650 - derive_view_tag()
 void derive_view_tag(const key_derivation &derivation,
                      size_t output_index,
-                     view_tag &view_tag) {  // 鍙湁 1 瀛楄妭!
+                     view_tag &view_tag) {  // 只有 1 字节!
     struct {
         char salt[8];  // "view_tag"
         key_derivation derivation;
@@ -740,61 +740,61 @@ void derive_view_tag(const key_derivation &derivation,
     hash view_tag_full;
     cn_fast_hash(&buf, ..., view_tag_full);
     
-    // 鍙彇鍓?1 瀛楄妭
+    // 只取前 1 字节
     memcpy(&view_tag, &view_tag_full, 1);
 }
 ```
 
-**浼樺寲鍘熺悊**:
-1. 鍙戦€佹柟璁＄畻 view tag 骞堕檮鍔犲埌杈撳嚭 (1瀛楄妭)
-2. 鎺ユ敹鏂瑰厛妫€鏌?view tag (绠€鍗曟瘮杈?
-3. 鍙湁鍖归厤 (1/256 姒傜巼) 鎵嶅仛瀹屾暣鐨?`derive_public_key`
-4. 骞冲潎鍑忓皯 99.6% 鐨勮绠楅噺
+**优化原理**:
+1. 发送方计算 view tag 并附加到输出 (1字节)
+2. 接收方先检查 view tag (简单比较)
+3. 只有匹配 (1/256 概率) 才做完整的 `derive_public_key`
+4. 平均减少 99.6% 的计算量
 
-### 2.7 鍏抽敭闂瑙ｇ瓟
+### 2.7 关键问题解答
 
-鉁?**涓轰粈涔堥渶瑕佷袱瀵瑰瘑閽?**
-- `a` (view key): 杞婚挶鍖?瀹¤鍛樺彲鎵弿, 浣嗕笉鑳借姳璐?
-- `b` (spend key): 鍐烽挶鍖呬繚绠? 鍙湪绛惧悕鏃堕渶瑕?
+✅ **为什么需要两对密钥?**
+- `a` (view key): 轻钱包/审计员可扫描, 但不能花费
+- `b` (spend key): 冷钱包保管, 只在签名时需要
 
-鉁?**涓轰粈涔堣涔樹互 cofactor 8?**
-- Ed25519 鏇茬嚎 cofactor=8, 纭繚缁撴灉鍦ㄧ礌鏁伴樁瀛愮兢
-- 闃叉灏忓瓙缇ゆ敾鍑?(Lim-Lee attack)
+✅ **为什么要乘以 cofactor 8?**
+- Ed25519 曲线 cofactor=8, 确保结果在素数阶子群
+- 防止小子群攻击 (Lim-Lee attack)
 
-鉁?**濡備綍闃叉鍦板潃閲嶇敤?**
-- 姣忕瑪浜ゆ槗鐢熸垚鏂扮殑闅忔満 `r`
-- 鍗充娇鍚屼竴鎺ユ敹鏂? 姣忎釜 `P_out` 閮戒笉鍚?
-- 鍖哄潡閾惧垎鏋愭棤娉曞叧鑱旇緭鍑?
+✅ **如何防止地址重用?**
+- 每笔交易生成新的随机 `r`
+- 即使同一接收方, 每个 `P_out` 都不同
+- 区块链分析无法关联输出
 
 ---
 
-## 馃攽 3. Key Image (瀵嗛挜闀滃儚)
+## 🔑 3. Key Image (密钥镜像)
 
-### 3.1 浣滅敤
+### 3.1 作用
 
-**闃叉鍙岃姳鏀诲嚮**: Key Image 鏄粠绉侀挜娲剧敓鐨勫敮涓€鍊?鍏ㄧ綉鍙
+**防止双花攻击**: Key Image 是从私钥派生的唯一值,全网可见
 
-- 姣忎釜杈撳嚭鏈夊敮涓€鐨?Key Image
-- 鑺辫垂杈撳嚭鏃跺繀椤绘彁渚?Key Image
-- 缃戠粶鎷掔粷閲嶅鐨?Key Image
+- 每个输出有唯一的 Key Image
+- 花费输出时必须提供 Key Image
+- 网络拒绝重复的 Key Image
 
-### 3.2 鐢熸垚绠楁硶
+### 3.2 生成算法
 
 ```
-杈撳叆: 
-- x: 涓€娆℃€х閽?
-- P: 瀵瑰簲鐨勪竴娆℃€у叕閽?(P = xG)
+输入: 
+- x: 一次性私钥
+- P: 对应的一次性公钥 (P = xG)
 
-杈撳嚭:
+输出:
 - I: Key Image
 
-璁＄畻:
+计算:
 I = x * Hp(P)
 
-鍏朵腑 Hp(P) 鏄?"hash-to-point" 鍑芥暟
+其中 Hp(P) 是 "hash-to-point" 函数
 ```
 
-### 3.3 鍏抽敭鍑芥暟瀹炵幇
+### 3.3 关键函数实现
 
 ```cpp
 // src/crypto/crypto.cpp:L620 - generate_key_image()
@@ -804,174 +804,174 @@ void generate_key_image(const public_key &pub,
     ge_p3 point;
     ge_p2 point2;
     
-    // 璁＄畻 Hp(P)
-    hash_to_ec(pub, point);  // 灏嗗叕閽ュ搱甯屽埌妞渾鏇茬嚎鐐?
+    // 计算 Hp(P)
+    hash_to_ec(pub, point);  // 将公钥哈希到椭圆曲线点
     
-    // 璁＄畻 x * Hp(P)
+    // 计算 x * Hp(P)
     ge_scalarmult(&point2, &sec, &point);
     ge_tobytes(&image, &point2);
 }
 
-// hash_to_ec 瀹炵幇:
+// hash_to_ec 实现:
 static void hash_to_ec(const public_key &key, ge_p3 &res) {
     hash h;
     ge_p2 point;
     ge_p1p1 point2;
     
-    // 鍝堝笇鍏挜
+    // 哈希公钥
     cn_fast_hash(&key, sizeof(public_key), h);
     
-    // 瑙ｇ爜鍝堝笇鍒扮偣 (Elligator)
+    // 解码哈希到点 (Elligator)
     ge_fromfe_frombytes_vartime(&point, (const unsigned char*)&h);
     
-    // 涔樹互 cofactor 8
+    // 乘以 cofactor 8
     ge_mul8(&point2, &point);
     ge_p1p1_to_p3(&res, &point2);
 }
 ```
 
-**鏁板鎬ц川**:
-- `I = x * Hp(P)` 缁戝畾鍒扮閽?`x`, 浣嗕笉娉勯湶 `x`
-- 鍚屼竴杈撳嚭鍐嶆鑺辫垂浼氫骇鐢熺浉鍚岀殑 `I` (鍏ㄧ綉鍙娴?
+**数学性质**:
+- `I = x * Hp(P)` 绑定到私钥 `x`, 但不泄露 `x`
+- 同一输出再次花费会产生相同的 `I` (全网可检测)
 
-### 3.4 瀹夊叏鎬?
+### 3.4 安全性
 
-**涓轰粈涔堜笉鑳界洿鎺ョ敤鍏挜?**
-- 鍏挜浼氭硠闇茬幆绛惧悕涓殑鐪熷疄杈撳嚭
-- Key Image 閫氳繃 hash-to-point 鎵撶牬鍏宠仈鎬?
+**为什么不能直接用公钥?**
+- 公钥会泄露环签名中的真实输出
+- Key Image 通过 hash-to-point 打破关联性
 
-**涓轰粈涔堟敾鍑昏€呬笉鑳戒吉閫?**
-- 鍙湁鐭ラ亾绉侀挜 x 鎵嶈兘璁＄畻 I = x * Hp(P)
-- 鐜鍚嶅悓鏃惰瘉鏄庣鍚嶈€呯煡閬撴煇涓閽?
+**为什么攻击者不能伪造?**
+- 只有知道私钥 x 才能计算 I = x * Hp(P)
+- 环签名同时证明签名者知道某个私钥
 
 ---
 
-## 锟?4. Bulletproofs 鑼冨洿璇佹槑
+## � 4. Bulletproofs 范围证明
 
-### 4.1 鍩烘湰姒傚康
+### 4.1 基本概念
 
-**鐩殑**: 鍦ㄤ笉娉勯湶閲戦鐨勬儏鍐典笅, 璇佹槑浜ゆ槗閲戦 `v` 鍦ㄥ悎娉曡寖鍥村唴 (0 鈮?v < 2^64)銆?
+**目的**: 在不泄露金额的情况下, 证明交易金额 `v` 在合法范围内 (0 ≤ v < 2^64)。
 
-**鏍稿績鎬濇兂**:
-- Pedersen Commitment 闅愯棌閲戦: `C = v*H + gamma*G`
-- Bulletproofs 璇佹槑 `v 鈭?[0, 2^N)` 涓斾笉娉勯湶 `v` 鎴?`gamma`
-- 鑱氬悎璇佹槑: 澶氫釜杈撳嚭鍏变韩涓€涓瘉鏄? 鎸囨暟绾у噺灏戝ぇ灏?
+**核心思想**:
+- Pedersen Commitment 隐藏金额: `C = v*H + gamma*G`
+- Bulletproofs 证明 `v ∈ [0, 2^N)` 且不泄露 `v` 或 `gamma`
+- 聚合证明: 多个输出共享一个证明, 指数级减少大小
 
-**鍏抽敭鐗规€?*:
-- **璇佹槑澶у皬**: 2*log鈧?n*m) + 9 涓き鍦嗘洸绾跨偣 (~700 bytes for 2 outputs)
-- **楠岃瘉澶嶆潅搴?*: 鎵归噺楠岃瘉 O(n + m*log(m)), 鍗曚釜 O(n*log(n))
-- **鏃犻渶鍙俊璁剧疆** (鐩告瘮 zk-SNARKs)
+**关键特性**:
+- **证明大小**: 2*log₂(n*m) + 9 个椭圆曲线点 (~700 bytes for 2 outputs)
+- **验证复杂度**: 批量验证 O(n + m*log(m)), 单个 O(n*log(n))
+- **无需可信设置** (相比 zk-SNARKs)
 
-### 4.2 Pedersen Commitment 鍩虹
+### 4.2 Pedersen Commitment 基础
 
-#### 鎵胯璁＄畻
+#### 承诺计算
 
 ```rust
 // Pedersen Commitment: C = v*H + gamma*G
-// v: 閲戦 (淇濆瘑)
-// gamma: 鐩插寲鍥犲瓙 (闅忔満, 淇濆瘑)
-// H, G: 鍩虹偣 (鍏紑)
+// v: 金额 (保密)
+// gamma: 盲化因子 (随机, 保密)
+// H, G: 基点 (公开)
 
 let commitment = v * H + gamma * G;
 ```
 
-**鍚屾€佹€?* (Homomorphic Property):
+**同态性** (Homomorphic Property):
 ```
-C鈧?+ C鈧?= (v鈧?H + 纬鈧?G) + (v鈧?H + 纬鈧?G)
-        = (v鈧?+ v鈧?*H + (纬鈧?+ 纬鈧?*G
-```
-
-**搴旂敤**: 浜ゆ槗楠岃瘉
-```
-杈撳叆鎵胯涔嬪拰 = 杈撳嚭鎵胯涔嬪拰 + 鎵嬬画璐?H
-危 C_in = 危 C_out + fee*H
+C₁ + C₂ = (v₁*H + γ₁*G) + (v₂*H + γ₂*G)
+        = (v₁ + v₂)*H + (γ₁ + γ₂)*G
 ```
 
-### 4.3 Bulletproofs 璇佹槑鐢熸垚
+**应用**: 交易验证
+```
+输入承诺之和 = 输出承诺之和 + 手续费*H
+Σ C_in = Σ C_out + fee*H
+```
 
-Monero 浣跨敤鐨勬槸 **aggregated range proof** (澶氳緭鍑鸿仛鍚堣瘉鏄?銆?
+### 4.3 Bulletproofs 证明生成
 
-#### 姝ラ 1: 鍒濆鍖?(PAPER LINES 41-44)
+Monero 使用的是 **aggregated range proof** (多输出聚合证明)。
+
+#### 步骤 1: 初始化 (PAPER LINES 41-44)
 
 ```cpp
 // src/ringct/bulletproofs.cc:L800 - bulletproof_PROVE()
 
-constexpr size_t N = 64;    // 姣旂壒浣嶆暟 (2^64 鑼冨洿)
-size_t M = outputs.size();  // 杈撳嚭鏁伴噺
+constexpr size_t N = 64;    // 比特位数 (2^64 范围)
+size_t M = outputs.size();  // 输出数量
 size_t MN = M * N;
 
-// 灏嗛噾棰濈紪鐮佷负姣旂壒鍚戦噺 aL, aR
+// 将金额编码为比特向量 aL, aR
 for (size_t j = 0; j < M; ++j) {
     for (size_t i = 0; i < N; ++i) {
         if (v[j] & (1 << i)) {
-            aL[j*N + i] = 1;   // 姣旂壒涓?1
+            aL[j*N + i] = 1;   // 比特为 1
             aR[j*N + i] = 0;
         } else {
-            aL[j*N + i] = 0;   // 姣旂壒涓?0
+            aL[j*N + i] = 0;   // 比特为 0
             aR[j*N + i] = -1;  // aR = aL - 1
         }
     }
 }
 
-// 鐢熸垚鎵胯 V = v*H + gamma*G
+// 生成承诺 V = v*H + gamma*G
 for (size_t i = 0; i < M; ++i) {
-    V[i] = addKeys2(gamma[i] / 8, v[i] / 8, H);  // 闄や互8鏄痗ofactor澶勭悊
+    V[i] = addKeys2(gamma[i] / 8, v[i] / 8, H);  // 除以8是cofactor处理
 }
 ```
 
-**aL, aR 鍏崇郴**:
+**aL, aR 关系**:
 ```
-aL[i] 鈭?{0, 1}         (姣旂壒鍊?
-aR[i] = aL[i] - 1 鈭?{-1, 0}
-aL 鈯?aR = 0            (Hadamard 绉负0)
-危(aL[i] * 2^i) = v     (浜岃繘鍒堕噸寤洪噾棰?
+aL[i] ∈ {0, 1}         (比特值)
+aR[i] = aL[i] - 1 ∈ {-1, 0}
+aL ⊙ aR = 0            (Hadamard 积为0)
+Σ(aL[i] * 2^i) = v     (二进制重建金额)
 ```
 
-#### 姝ラ 2: 鍚戦噺鎵胯 A, S (PAPER LINES 43-47)
+#### 步骤 2: 向量承诺 A, S (PAPER LINES 43-47)
 
 ```cpp
-// 鐢熸垚闅忔満鍚戦噺 sL, sR (鐢ㄤ簬闆剁煡璇?
+// 生成随机向量 sL, sR (用于零知识)
 sL = random_vector(MN);
 sR = random_vector(MN);
 
-// A = aL*G + aR*H + alpha*G (绗竴涓壙璇?
+// A = aL*G + aR*H + alpha*G (第一个承诺)
 alpha = random_scalar();
 A = vector_exponent(aL, aR) + alpha * G;
 
-// S = sL*G + sR*H + rho*G (绗簩涓壙璇? 鐢ㄤ簬澶氶」寮?
+// S = sL*G + sR*H + rho*G (第二个承诺, 用于多项式)
 rho = random_scalar();
 S = vector_exponent(sL, sR) + rho * G;
 ```
 
-#### 姝ラ 3: Fiat-Shamir 鎸戞垬 (PAPER LINES 48-50)
+#### 步骤 3: Fiat-Shamir 挑战 (PAPER LINES 48-50)
 
 ```cpp
-// 浠?V, A, S 娲剧敓鎸戞垬 (闈炰氦浜掑紡)
+// 从 V, A, S 派生挑战 (非交互式)
 y = H(V || A || S)
 z = H(y)
 ```
 
-#### 姝ラ 4: 澶氶」寮忔瀯閫?(PAPER LINES 58-63)
+#### 步骤 4: 多项式构造 (PAPER LINES 58-63)
 
 ```cpp
-// 鏋勯€犲椤瑰紡 l(X), r(X)
+// 构造多项式 l(X), r(X)
 // l(X) = (aL - z*1) + sL*X
-// r(X) = y^n 鈯?(aR + z*1 + sR*X) + z虏*2^n
+// r(X) = y^n ⊙ (aR + z*1 + sR*X) + z²*2^n
 
 l0 = aL - z;
 l1 = sL;
 
-y_powers = [1, y, y虏, ..., y^(MN-1)];
-r0 = (aR + z) 鈯?y_powers + z虏 * [2鈦? 2鹿, ..., 2^(N-1)];
-r1 = y_powers 鈯?sR;
+y_powers = [1, y, y², ..., y^(MN-1)];
+r0 = (aR + z) ⊙ y_powers + z² * [2⁰, 2¹, ..., 2^(N-1)];
+r1 = y_powers ⊙ sR;
 
-// 璁＄畻澶氶」寮忕郴鏁?
-// t(X) = <l(X), r(X)> = t鈧€ + t鈧?X + t鈧?X虏
+// 计算多项式系数
+// t(X) = <l(X), r(X)> = t₀ + t₁*X + t₂*X²
 t1 = <l0, r1> + <l1, r0>;
 t2 = <l1, r1>;
 ```
 
-#### 姝ラ 5: 澶氶」寮忔壙璇?T1, T2 (PAPER LINES 52-53)
+#### 步骤 5: 多项式承诺 T1, T2 (PAPER LINES 52-53)
 
 ```cpp
 tau1 = random_scalar();
@@ -981,260 +981,260 @@ T1 = t1*H / 8 + tau1*G / 8;
 T2 = t2*H / 8 + tau2*G / 8;
 ```
 
-#### 姝ラ 6: 鎸戞垬涓庡搷搴?(PAPER LINES 54-63)
+#### 步骤 6: 挑战与响应 (PAPER LINES 54-63)
 
 ```cpp
-// 鏂版寫鎴?
+// 新挑战
 x = H(z || T1 || T2);
 
-// 璁＄畻 taux (鐩插寲鍥犲瓙鐨勭嚎鎬х粍鍚?
-taux = tau1*x + tau2*x虏 + 危(z^(j+2) * gamma[j]);
+// 计算 taux (盲化因子的线性组合)
+taux = tau1*x + tau2*x² + Σ(z^(j+2) * gamma[j]);
 
-// 璁＄畻 mu (鐢ㄤ簬鍐呯Н璇佹槑)
+// 计算 mu (用于内积证明)
 mu = x*rho + alpha;
 
-// 璁＄畻 l, r (鍦?x 澶勬眰鍊?
+// 计算 l, r (在 x 处求值)
 l = l0 + l1*x;
 r = r0 + r1*x;
 
-// 璁＄畻 t (鍐呯Н)
+// 计算 t (内积)
 t = <l, r>;
 ```
 
-#### 姝ラ 7: 鍐呯Н璇佹槑 (Inner Product Argument)
+#### 步骤 7: 内积证明 (Inner Product Argument)
 
-杩欐槸 Bulletproofs 鐨勬牳蹇冮€掑綊绠楁硶:
+这是 Bulletproofs 的核心递归算法:
 
 ```cpp
-// src/ringct/bulletproofs.cc:L1100 - 鍐呯Н璇佹槑寰幆
+// src/ringct/bulletproofs.cc:L1100 - 内积证明循环
 
-nprime = MN;  // 鍒濆鍚戦噺闀垮害
-L[], R[] = [];  // 宸﹀彸鎵胯鏁扮粍
+nprime = MN;  // 初始向量长度
+L[], R[] = [];  // 左右承诺数组
 
 while (nprime > 1) {
     nprime /= 2;
     
-    // 璁＄畻浜ゅ弶鍐呯Н
+    // 计算交叉内积
     cL = <a[0:nprime], b[nprime:2*nprime]>;
     cR = <a[nprime:2*nprime], b[0:nprime]>;
     
-    // 璁＄畻宸﹀彸鎵胯
-    L = 危(a[0:nprime] * G[nprime:2*nprime]) 
-      + 危(b[nprime:2*nprime] * H[0:nprime]) 
+    // 计算左右承诺
+    L = Σ(a[0:nprime] * G[nprime:2*nprime]) 
+      + Σ(b[nprime:2*nprime] * H[0:nprime]) 
       + cL * x_ip * H;
       
-    R = 危(a[nprime:2*nprime] * G[0:nprime]) 
-      + 危(b[0:nprime] * H[nprime:2*nprime]) 
+    R = Σ(a[nprime:2*nprime] * G[0:nprime]) 
+      + Σ(b[0:nprime] * H[nprime:2*nprime]) 
       + cR * x_ip * H;
     
-    // Fiat-Shamir 鎸戞垬
+    // Fiat-Shamir 挑战
     w = H(L || R);
     
-    // 鎶樺彔鍚戦噺 (閫掑綊鍘嬬缉)
-    a' = w*a[0:nprime] + w鈦宦?a[nprime:2*nprime];
-    b' = w鈦宦?b[0:nprime] + w*b[nprime:2*nprime];
+    // 折叠向量 (递归压缩)
+    a' = w*a[0:nprime] + w⁻¹*a[nprime:2*nprime];
+    b' = w⁻¹*b[0:nprime] + w*b[nprime:2*nprime];
     
-    // 鎶樺彔鍩虹偣
-    G' = w鈦宦?G[0:nprime] + w*G[nprime:2*nprime];
-    H' = w*H[0:nprime] + w鈦宦?H[nprime:2*nprime];
+    // 折叠基点
+    G' = w⁻¹*G[0:nprime] + w*G[nprime:2*nprime];
+    H' = w*H[0:nprime] + w⁻¹*H[nprime:2*nprime];
     
     a = a'; b = b'; G = G'; H = H';
 }
 
-// 鏈€缁堣繑鍥炴爣閲?a, b (闀垮害涓?)
+// 最终返回标量 a, b (长度为1)
 ```
 
-**璇佹槑缁撴瀯**:
+**证明结构**:
 ```rust
 struct Bulletproof {
-    V: Vec<Point>,       // 鎵胯鍚戦噺 (M涓?
-    A: Point,            // 鍚戦噺鎵胯 A
-    S: Point,            // 鍚戦噺鎵胯 S
-    T1: Point,           // 澶氶」寮忔壙璇?T1
-    T2: Point,           // 澶氶」寮忔壙璇?T2
-    taux: Scalar,        // 鐩插寲鍥犲瓙
-    mu: Scalar,          // 鍐呯Н鐩插寲鍥犲瓙
-    L: Vec<Point>,       // 宸︽壙璇?(log鈧?MN)涓?
-    R: Vec<Point>,       // 鍙虫壙璇?(log鈧?MN)涓?
-    a: Scalar,           // 鏈€缁?a
-    b: Scalar,           // 鏈€缁?b
-    t: Scalar,           // 鏈€缁堝唴绉?
+    V: Vec<Point>,       // 承诺向量 (M个)
+    A: Point,            // 向量承诺 A
+    S: Point,            // 向量承诺 S
+    T1: Point,           // 多项式承诺 T1
+    T2: Point,           // 多项式承诺 T2
+    taux: Scalar,        // 盲化因子
+    mu: Scalar,          // 内积盲化因子
+    L: Vec<Point>,       // 左承诺 (log₂(MN)个)
+    R: Vec<Point>,       // 右承诺 (log₂(MN)个)
+    a: Scalar,           // 最终 a
+    b: Scalar,           // 最终 b
+    t: Scalar,           // 最终内积
 }
 ```
 
-**澶у皬璁＄畻**:
+**大小计算**:
 ```
 M=2 outputs (128 bits total):
 - V: 2 * 32 = 64 bytes
 - A, S, T1, T2: 4 * 32 = 128 bytes
 - taux, mu, a, b, t: 5 * 32 = 160 bytes
-- L, R: 2 * log鈧?128) * 32 = 2 * 7 * 32 = 448 bytes
+- L, R: 2 * log₂(128) * 32 = 2 * 7 * 32 = 448 bytes
 Total: ~800 bytes
 
-瀵规瘮: 鍘熷 RingCT (non-Bulletproofs): ~7 KB
-鑺傜渷: 89% 绌洪棿
+对比: 原始 RingCT (non-Bulletproofs): ~7 KB
+节省: 89% 空间
 ```
 
-### 4.4 Bulletproofs 楠岃瘉
+### 4.4 Bulletproofs 验证
 
-楠岃瘉鏂圭▼ (PAPER LINE 62-65):
+验证方程 (PAPER LINE 62-65):
 
 ```cpp
 // src/ringct/bulletproofs.cc:L1400 - bulletproof_VERIFY()
 
-// 閲嶅缓鎸戞垬
+// 重建挑战
 y = H(V || A || S);
 z = H(y);
 x = H(z || T1 || T2);
 x_ip = H(x || taux || mu || t);
 w[] = [H(L[0] || R[0]), H(L[1] || R[1]), ...];
 
-// 楠岃瘉鏂圭▼ 1: Pedersen Commitment 骞宠　
-// g^(-z) * h^(z*y^n + z虏*2^n) * V鈧乛(z虏) * V鈧俕(z鈦? == g^(-taux) * h^t * T1^x * T2^(x虏)
+// 验证方程 1: Pedersen Commitment 平衡
+// g^(-z) * h^(z*y^n + z²*2^n) * V₁^(z²) * V₂^(z⁴) == g^(-taux) * h^t * T1^x * T2^(x²)
 
-lhs = -z*G + (z*y^n + z虏*2^n)*H 
-    + z虏*V[0] + z鈦?V[1]  // 澶氳緭鍑鸿仛鍚?
+lhs = -z*G + (z*y^n + z²*2^n)*H 
+    + z²*V[0] + z⁴*V[1]  // 多输出聚合
     
-rhs = -taux*G + t*H + x*T1 + x虏*T2;
+rhs = -taux*G + t*H + x*T1 + x²*T2;
 
-CHECK(lhs == rhs);  // 鏂圭▼ 1
+CHECK(lhs == rhs);  // 方程 1
 
-// 楠岃瘉鏂圭▼ 2: 鍐呯Н璇佹槑
-// 閲嶅缓鍩虹偣 G', H'
-for (i = 0; i < log鈧?MN); i++) {
-    G' = w[i]鈦宦?G[left] + w[i]*G[right];
-    H' = w[i]*H[left] + w[i]鈦宦?H[right];
+// 验证方程 2: 内积证明
+// 重建基点 G', H'
+for (i = 0; i < log₂(MN); i++) {
+    G' = w[i]⁻¹*G[left] + w[i]*G[right];
+    H' = w[i]*H[left] + w[i]⁻¹*H[right];
 }
 
-// 妫€鏌ユ渶缁堝唴绉?
+// 检查最终内积
 lhs = a*G' + b*H' + (a*b)*x_ip*H;
-rhs = mu*G + 危(w[i]虏*L[i]) + 危(w[i]鈦宦?R[i]) + ...;
+rhs = mu*G + Σ(w[i]²*L[i]) + Σ(w[i]⁻²*R[i]) + ...;
 
-CHECK(lhs == rhs);  // 鏂圭▼ 2
+CHECK(lhs == rhs);  // 方程 2
 ```
 
-### 4.5 鎵归噺楠岃瘉浼樺寲
+### 4.5 批量验证优化
 
-Monero 鏀寔鎵归噺楠岃瘉澶氫釜 Bulletproofs (鍖哄潡涓墍鏈変氦鏄?:
+Monero 支持批量验证多个 Bulletproofs (区块中所有交易):
 
 ```cpp
 // src/ringct/bulletproofs.cc:L1300 - bulletproof_VERIFY(batch)
 
-// 涓烘瘡涓瘉鏄庣敓鎴愰殢鏈烘潈閲?
+// 为每个证明生成随机权重
 weight_y[] = random();
 weight_z[] = random();
 
-// 鑱氬悎鎵€鏈夐獙璇佹柟绋?(鍔犳潈鍜?
-aggregate_lhs = 危(weight_y[i] * lhs[i]) + 危(weight_z[i] * lhs2[i]);
-aggregate_rhs = 危(weight_y[i] * rhs[i]) + 危(weight_z[i] * rhs2[i]);
+// 聚合所有验证方程 (加权和)
+aggregate_lhs = Σ(weight_y[i] * lhs[i]) + Σ(weight_z[i] * lhs2[i]);
+aggregate_rhs = Σ(weight_y[i] * rhs[i]) + Σ(weight_z[i] * rhs2[i]);
 
-// 鍗曟澶氭爣閲忎箻娉曟鏌?
+// 单次多标量乘法检查
 CHECK(aggregate_lhs == aggregate_rhs);
 ```
 
-**鎬ц兘鎻愬崌**:
-- 鍗曚釜楠岃瘉: ~5ms (1 output)
-- 鎵归噺楠岃瘉 1000 proofs: ~1.2s (骞冲潎 1.2ms/proof)
-- **鎻愰€?*: 4鍊?
+**性能提升**:
+- 单个验证: ~5ms (1 output)
+- 批量验证 1000 proofs: ~1.2s (平均 1.2ms/proof)
+- **提速**: 4倍
 
-### 4.6 鍏抽敭闂瑙ｇ瓟
+### 4.6 关键问题解答
 
-鉁?**涓轰粈涔堥渶瑕佷袱涓悜閲?aL, aR?**
-- `aL 鈭?{0,1}` 琛ㄧず姣旂壒鍊?
-- `aR = aL - 1 鈭?{-1,0}` 纭繚 `aL 鈯?aR = 0`
-- 杩欎釜绾︽潫闅愬紡璇佹槑浜?aL 鏄簩杩涘埗
+✅ **为什么需要两个向量 aL, aR?**
+- `aL ∈ {0,1}` 表示比特值
+- `aR = aL - 1 ∈ {-1,0}` 确保 `aL ⊙ aR = 0`
+- 这个约束隐式证明了 aL 是二进制
 
-鉁?**涓轰粈涔堣閫掑綊鎶樺彔?**
-- 鍒濆鍚戦噺闀垮害 MN (渚嬪 128)
-- 姣忚疆鎶樺彔鍑忓崐: 128 鈫?64 鈫?32 鈫?... 鈫?1
-- 璇佹槑澶у皬: O(log MN) 鑰岄潪 O(MN)
+✅ **为什么要递归折叠?**
+- 初始向量长度 MN (例如 128)
+- 每轮折叠减半: 128 → 64 → 32 → ... → 1
+- 证明大小: O(log MN) 而非 O(MN)
 
-鉁?**Bulletproofs vs Bulletproofs+?**
-- Bulletproofs+: Monero v15+ 浣跨敤
-- 鏀硅繘: 鍑忓皯 1 涓爣閲?(weighted norm argument)
-- 鑺傜渷: ~32 bytes/proof
+✅ **Bulletproofs vs Bulletproofs+?**
+- Bulletproofs+: Monero v15+ 使用
+- 改进: 减少 1 个标量 (weighted norm argument)
+- 节省: ~32 bytes/proof
 
-鉁?**濡備綍闃叉璐熸暟?**
-- 鑼冨洿璇佹槑寮哄埗 `v 鈭?[0, 2^N)`
-- 璐熸暟鐨勪簩杩涘埗琛ㄧず浼氭孩鍑?N 浣?
-- 楠岃瘉鏂圭▼浼氬け璐?
+✅ **如何防止负数?**
+- 范围证明强制 `v ∈ [0, 2^N)`
+- 负数的二进制表示会溢出 N 位
+- 验证方程会失败
 
 ---
 
-## 锟金煍?5. RingCT 瀹屾暣浜ゆ槗娴佺▼
+## �🔄 5. RingCT 完整交易流程
 
-### 4.1 浜ゆ槗缁撴瀯
+### 4.1 交易结构
 
 ```cpp
 // src/ringct/rctTypes.h
 struct rctSig {
-    rctSigBase base;        // 鍩虹绛惧悕
-    vector<clsag> p;        // 鐜鍚?(姣忎釜杈撳叆涓€涓?
-    vector<rangeSig> rangeSigs; // 鑼冨洿璇佹槑 (Bulletproofs)
+    rctSigBase base;        // 基础签名
+    vector<clsag> p;        // 环签名 (每个输入一个)
+    vector<rangeSig> rangeSigs; // 范围证明 (Bulletproofs)
     // ...
 };
 ```
 
-### 4.2 浜ゆ槗鏋勯€犳楠?
+### 4.2 交易构造步骤
 
-**TODO**: 璇︾粏鍒嗘瀽 `construct_tx_and_get_tx_key()`
+**TODO**: 详细分析 `construct_tx_and_get_tx_key()`
 
 ```
-1. 閫夋嫨杈撳叆 (UTXOs)
-2. 涓烘瘡涓緭鍏ラ€夋嫨 ring members
-3. 鐢熸垚杈撳嚭鐨勯殣韬湴鍧€
-4. 鐢熸垚 Pedersen Commitments (闅愯棌閲戦)
-5. 鐢熸垚 Bulletproofs (璇佹槑閲戦 鈮?0)
-6. 鐢熸垚 CLSAG 绛惧悕 (璇佹槑鎷ユ湁鏌愪釜杈撳叆)
-7. 楠岃瘉 Commitment 骞宠　 (杈撳叆 = 杈撳嚭 + 鎵嬬画璐?
+1. 选择输入 (UTXOs)
+2. 为每个输入选择 ring members
+3. 生成输出的隐身地址
+4. 生成 Pedersen Commitments (隐藏金额)
+5. 生成 Bulletproofs (证明金额 ≥ 0)
+6. 生成 CLSAG 签名 (证明拥有某个输入)
+7. 验证 Commitment 平衡 (输入 = 输出 + 手续费)
 ```
 
-### 4.3 鎵胯鏂规
+### 4.3 承诺方案
 
 **Pedersen Commitment**:
 ```
 C(a, r) = aH + rG
 
-鍏朵腑:
-- a: 閲戦 (secret)
-- r: 鐩插洜瀛?(blinding factor)
-- H, G: 鍩虹偣
+其中:
+- a: 金额 (secret)
+- r: 盲因子 (blinding factor)
+- H, G: 基点
 ```
 
-**骞宠　楠岃瘉**:
+**平衡验证**:
 ```
 sum(C_inputs) = sum(C_outputs) + fee * H
 ```
 
-### 4.4 鍏抽敭闂
+### 4.4 关键问题
 
-- [ ] Ring size 濡備綍閫夋嫨? (褰撳墠榛樿 16)
-- [ ] Ring members 閫夋嫨绠楁硶? (gamma 鍒嗗竷)
-- [ ] Bulletproofs 鑱氬悎濡備綍宸ヤ綔?
-- [ ] 鎵嬬画璐瑰浣曡绠?
+- [ ] Ring size 如何选择? (当前默认 16)
+- [ ] Ring members 选择算法? (gamma 分布)
+- [ ] Bulletproofs 聚合如何工作?
+- [ ] 手续费如何计算?
 
 ---
 
-## 馃搳 5. 鎬ц兘鏁版嵁
+## 📊 5. 性能数据
 
-### 5.1 绛惧悕/楠岃瘉鏃堕棿
+### 5.1 签名/验证时间
 
-**TODO**: 杩愯 Monero 鍩哄噯娴嬭瘯
+**TODO**: 运行 Monero 基准测试
 
 ```bash
-cd d:\WEB3_AI寮€鍙慭monero-research
-# 缂栬瘧骞惰繍琛屾€ц兘娴嬭瘯
+cd d:\WEB3_AI开发\monero-research
+# 编译并运行性能测试
 ```
 
-**棰勬湡鏁版嵁** (Ring Size = 16):
-- 绛惧悕鐢熸垚: ~50-100ms
-- 绛惧悕楠岃瘉: ~5-10ms
-- Bulletproofs 鐢熸垚: ~200-300ms
-- Bulletproofs 楠岃瘉: ~5-10ms (鎵归噺楠岃瘉鏇村揩)
+**预期数据** (Ring Size = 16):
+- 签名生成: ~50-100ms
+- 签名验证: ~5-10ms
+- Bulletproofs 生成: ~200-300ms
+- Bulletproofs 验证: ~5-10ms (批量验证更快)
 
-### 5.2 浜ゆ槗澶у皬
+### 5.2 交易大小
 
-| Ring Size | CLSAG Size | Bulletproofs | 鎬诲ぇ灏?(浼扮畻) |
+| Ring Size | CLSAG Size | Bulletproofs | 总大小 (估算) |
 |-----------|-----------|--------------|---------------|
 | 11 | ~1.5 KB | ~1.5 KB | ~3 KB |
 | 16 | ~2 KB | ~1.5 KB | ~3.5 KB |
@@ -1242,28 +1242,28 @@ cd d:\WEB3_AI寮€鍙慭monero-research
 
 ---
 
-## 馃幆 6. 搴旂敤鍒?SuperVM
+## 🎯 6. 应用到 SuperVM
 
-### 6.1 璁捐鍐崇瓥
+### 6.1 设计决策
 
-**闇€瑕佸喅瀹?*:
-1. **Ring Size**: Monero 鐢?16, 鎴戜滑鐢ㄥ灏?
-   - 鏇村ぇ = 鏇村尶鍚? 浣嗘洿鎱?鏇村ぇ
-   - 寤鸿: 11 (榛樿), 鏀寔 3-64 鍙厤缃?
+**需要决定**:
+1. **Ring Size**: Monero 用 16, 我们用多少?
+   - 更大 = 更匿名, 但更慢/更大
+   - 建议: 11 (默认), 支持 3-64 可配置
 
-2. **绛惧悕绠楁硶**: CLSAG vs MLSAG?
-   - 閫夋嫨: CLSAG (鏇村揩, 鏇村皬)
+2. **签名算法**: CLSAG vs MLSAG?
+   - 选择: CLSAG (更快, 更小)
 
 3. **Range Proof**: Bulletproofs vs Bulletproofs+?
-   - 閫夋嫨: Bulletproofs (curve25519-dalek 宸叉敮鎸?
+   - 选择: Bulletproofs (curve25519-dalek 已支持)
 
-4. **zkSNARK**: 鏄惁棰濆闆嗘垚?
-   - 寰呰瘎浼? Week 3-4 鍐崇瓥
+4. **zkSNARK**: 是否额外集成?
+   - 待评估: Week 3-4 决策
 
-### 6.2 API 璁捐鑽夋
+### 6.2 API 设计草案
 
 ```rust
-// 鍩轰簬 Monero 瀛︿範鎴愭灉璁捐
+// 基于 Monero 学习成果设计
 
 pub struct RingSigner {
     ring_size: usize,
@@ -1274,145 +1274,141 @@ pub struct RingSigner {
 
 impl RingSigner {
     pub fn sign(&self, message: &[u8]) -> Result<RingSignature> {
-        // 1. 鐢熸垚 Key Image
+        // 1. 生成 Key Image
         let key_image = self.generate_key_image();
         
-        // 2. 鎵ц CLSAG 绛惧悕绠楁硶
-        // (鍙傝€?Monero proveRctCLSAGSimple)
+        // 2. 执行 CLSAG 签名算法
+        // (参考 Monero proveRctCLSAGSimple)
         
         todo!()
     }
 }
 ```
 
-### 6.3 瀹炵幇璺嚎鍥?
+### 6.3 实现路线图
 
 **Week 9-12** (Phase 2.2.1):
-- [ ] 瀹炵幇 `generate_key_image()` (鍩轰簬 Monero)
-- [ ] 瀹炵幇 CLSAG 绛惧悕绠楁硶
-- [ ] 瀹炵幇 CLSAG 楠岃瘉绠楁硶
-- [ ] 鎬ц兘娴嬭瘯: 鐩爣 <50ms 绛惧悕, <5ms 楠岃瘉
+- [ ] 实现 `generate_key_image()` (基于 Monero)
+- [ ] 实现 CLSAG 签名算法
+- [ ] 实现 CLSAG 验证算法
+- [ ] 性能测试: 目标 <50ms 签名, <5ms 验证
 
 ---
 
-## 馃摎 7. 鍙傝€冭祫鏂?
+## 📚 7. 参考资料
 
-### 7.1 蹇呰璁烘枃
+### 7.1 必读论文
 
-- [ ] **Zero to Monero 2.0** (450 椤靛畬鏁存暀绋?
+- [ ] **Zero to Monero 2.0** (450 页完整教程)
   - https://web.getmonero.org/library/Zero-to-Monero-2-0-0.pdf
-  - 绔犺妭閲嶇偣: Ch3 (Ring Signatures), Ch4 (Stealth Addresses), Ch5 (RingCT)
+  - 章节重点: Ch3 (Ring Signatures), Ch4 (Stealth Addresses), Ch5 (RingCT)
 
-- [ ] **CryptoNote v1.0 Whitepaper**
+- [ ] **CryptoNote v2.0 Whitepaper**
   - https://cryptonote.org/whitepaper.pdf
-  - 鍘熷闅愮甯佽璁?
+  - 原始隐私币设计
 
 - [ ] **Triptych: Logarithmic-Sized Linkable Ring Signatures**
   - https://eprint.iacr.org/2020/018
-  - 涓嬩竴浠ｇ幆绛惧悕绠楁硶
+  - 下一代环签名算法
 
-### 7.2 Monero 鏂囨。
+### 7.2 Monero 文档
 
-- **瀹樻柟鏂囨。**: https://www.getmonero.org/resources/developer-guides/
+- **官方文档**: https://www.getmonero.org/resources/developer-guides/
 - **Moneropedia**: https://www.getmonero.org/resources/moneropedia/
 - **StackExchange**: https://monero.stackexchange.com/
 
-### 7.3 浠ｇ爜瀵艰埅
+### 7.3 代码导航
 
-**鏍稿績鐩綍**:
+**核心目录**:
 ```
 monero-research/
-鈹溾攢鈹€ src/
-鈹?  鈹溾攢鈹€ ringct/              鈫?RingCT 瀹炵幇 (閲嶇偣!)
-鈹?  鈹?  鈹溾攢鈹€ rctSigs.cpp      鈫?CLSAG/MLSAG 绛惧悕
-鈹?  鈹?  鈹溾攢鈹€ rctTypes.h       鈫?鏁版嵁缁撴瀯
-鈹?  鈹?  鈹斺攢鈹€ bulletproofs.cc  鈫?鑼冨洿璇佹槑
-鈹?  鈹溾攢鈹€ crypto/              鈫?鍩虹瀵嗙爜瀛?
-鈹?  鈹?  鈹溾攢鈹€ crypto.cpp       鈫?Ed25519, Key Image
-鈹?  鈹?  鈹斺攢鈹€ hash-ops.h       鈫?鍝堝笇鍑芥暟
-鈹?  鈹溾攢鈹€ cryptonote_basic/    鈫?CryptoNote 鏍稿績
-鈹?  鈹?  鈹斺攢鈹€ cryptonote_format_utils.cpp 鈫?鍦板潃鐢熸垚
-鈹?  鈹斺攢鈹€ wallet/              鈫?閽卞寘閫昏緫
-鈹?      鈹斺攢鈹€ wallet2.cpp      鈫?浜ゆ槗鏋勯€? 鎵弿
+├── src/
+│   ├── ringct/              ← RingCT 实现 (重点!)
+│   │   ├── rctSigs.cpp      ← CLSAG/MLSAG 签名
+│   │   ├── rctTypes.h       ← 数据结构
+│   │   └── bulletproofs.cc  ← 范围证明
+│   ├── crypto/              ← 基础密码学
+│   │   ├── crypto.cpp       ← Ed25519, Key Image
+│   │   └── hash-ops.h       ← 哈希函数
+│   ├── cryptonote_basic/    ← CryptoNote 核心
+│   │   └── cryptonote_format_utils.cpp ← 地址生成
+│   └── wallet/              ← 钱包逻辑
+│       └── wallet2.cpp      ← 交易构造, 扫描
 ```
 
 ---
 
-## 鉁?瀛︿範杩涘害
+## ✅ 学习进度
 
-### Week 1 (2025-11-04 鑷?2025-11-10)
+### Week 1 (2025-11-04 至 2025-11-10)
 
 **Day 1 (2025-11-04)**:
-- [x] 鍏嬮殕 Monero 浠撳簱
-- [x] 鍒涘缓瀛︿範绗旇妗嗘灦
-- [ ] 闃呰 `rctTypes.h` 浜嗚В鏁版嵁缁撴瀯
-- [ ] 闃呰 Zero to Monero Ch3 (Ring Signatures)
+- [x] 克隆 Monero 仓库
+- [x] 创建学习笔记框架
+- [ ] 阅读 `rctTypes.h` 了解数据结构
+- [ ] 阅读 Zero to Monero Ch3 (Ring Signatures)
 
 **Day 2-3**:
-- [ ] 娣卞叆 `rctSigs.cpp` - CLSAG 瀹炵幇
-- [ ] 鎻愬彇鍏抽敭浠ｇ爜鐗囨鍒扮瑪璁?
-- [ ] 鐢诲嚭 CLSAG 绛惧悕娴佺▼鍥?
+- [ ] 深入 `rctSigs.cpp` - CLSAG 实现
+- [ ] 提取关键代码片段到笔记
+- [ ] 画出 CLSAG 签名流程图
 
 **Day 4-5**:
-- [ ] 鐮旂┒ Stealth Address 瀹炵幇
-- [ ] 鐮旂┒ Key Image 鐢熸垚
-- [ ] 杩愯 Monero 娴嬭瘯鐢ㄤ緥
+- [ ] 研究 Stealth Address 实现
+- [ ] 研究 Key Image 生成
+- [ ] 运行 Monero 测试用例
 
 **Day 6-7**:
-- [ ] 鎬荤粨 Week 1 瀛︿範鎴愭灉
-- [ ] 鍑嗗 Week 2 娣卞叆鐮旂┒璁″垝
+- [ ] 总结 Week 1 学习成果
+- [ ] 准备 Week 2 深入研究计划
 
-### Week 2 (2025-11-11 鑷?2025-11-17)
+### Week 2 (2025-11-11 至 2025-11-17)
 
 **Day 8-10**:
-- [ ] 鐮旂┒ Bulletproofs 瀹炵幇
-- [ ] 鐮旂┒ RingCT 瀹屾暣浜ゆ槗娴佺▼
-- [ ] 缂栧啓 C++ 娴嬭瘯浠ｇ爜楠岃瘉鐞嗚В
+- [ ] 研究 Bulletproofs 实现
+- [ ] 研究 RingCT 完整交易流程
+- [ ] 编写 C++ 测试代码验证理解
 
 **Day 11-12**:
-- [ ] 璁捐 SuperVM 鐨?Ring Signature API
-- [ ] 缂栧啓鎶€鏈€夊瀷鎶ュ憡
-- [ ] 纭畾瀹炵幇缁嗚妭 (ring size, 绠楁硶閫夋嫨)
+- [ ] 设计 SuperVM 的 Ring Signature API
+- [ ] 编写技术选型报告
+- [ ] 确定实现细节 (ring size, 算法选择)
 
 **Day 13-14**:
-- [ ] 瀹屾垚 Monero 瀛︿範鎬荤粨鎶ュ憡
-- [ ] 鍑嗗 Week 3 zkSNARK 璇勪及
+- [ ] 完成 Monero 学习总结报告
+- [ ] 准备 Week 3 zkSNARK 评估
 
 ---
 
-## 馃挕 闂涓庢€濊€?
+## 💡 问题与思考
 
-### 寰呰В鍐抽棶棰?
+### 待解决问题
 
-1. **Ring Member 閫夋嫨绠楁硶**
-   - Monero 浣跨敤 gamma 鍒嗗竷閫夋嫨 decoys
-   - 濡備綍闃叉缁熻鍒嗘瀽鏀诲嚮?
+1. **Ring Member 选择算法**
+   - Monero 使用 gamma 分布选择 decoys
+   - 如何防止统计分析攻击?
 
-2. **鎬ц兘浼樺寲**
-   - 鎵归噺楠岃瘉濡備綍瀹炵幇?
-   - 鏄惁闇€瑕侀璁＄畻琛?
+2. **性能优化**
+   - 批量验证如何实现?
+   - 是否需要预计算表?
 
-3. **瀛樺偍浼樺寲**
-   - Key Image 绱㈠紩缁撴瀯?
-   - 濡備綍楂樻晥妫€娴嬪弻鑺?
+3. **存储优化**
+   - Key Image 索引结构?
+   - 如何高效检测双花?
 
-### 涓汉鐞嗚В
+### 个人理解
 
-**TODO**: 姣忓ぉ璁板綍瀛︿範蹇冨緱
-
----
-
-## 馃敆 鐩稿叧绗旇
-
-- `curve25519-dalek-notes.md` (Week 1-2 骞惰瀛︿範)
-- `cryptonote-whitepaper-notes.md` (Week 1-2 骞惰瀛︿範)
-- `phase2-implementation-decisions.md` (Week 7-8 鏋舵瀯璁捐)
+**TODO**: 每天记录学习心得
 
 ---
 
-**鏈€鍚庢洿鏂?*: 2025-11-04  
-**涓嬫鏇存柊**: 姣忔棩鍚屾瀛︿範杩涘害
+## 🔗 相关笔记
 
+- `curve25519-dalek-notes.md` (Week 1-2 并行学习)
+- `cryptonote-whitepaper-notes.md` (Week 1-2 并行学习)
+- `phase2-implementation-decisions.md` (Week 7-8 架构设计)
 
+---
 
-
+**最后更新**: 2025-11-04  
+**下次更新**: 每日同步学习进度

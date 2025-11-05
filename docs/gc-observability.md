@@ -1,55 +1,340 @@
-# GC 杩愯鏃跺彲瑙傛祴鎬?
+﻿# GC 运行时可观测性
 
-閫傜敤鐗堟湰: v0.8.0+
+版本: v0.8.0+  
+最后更新: 2025-11-05
 
-鏈枃妗ｄ粙缁嶅浣曞湪杩愯鏃惰瀵?Auto GC 鐨勫叧閿弬鏁颁笌鐘舵€侊紝甯姪浣犲湪鍘嬫祴鎴栫敓浜т腑蹇€熻瘖鏂笌璋冧紭銆?
+## 概述
 
-## 鑳藉姏姒傝
+本文档介绍如何在运行时观察 Auto GC 的关键参数与状态，便于监控、调试和性能调优。
 
-- 瀹炴椂鑾峰彇褰撳墠 GC 鍛ㄦ湡涓庨槇鍊硷紙鍖呭惈鑷€傚簲璋冩暣鍚庣殑鍊硷級
-- 纭鏄惁鍚敤浜嗚嚜閫傚簲 GC
-- 鎼厤 GC 缁熻锛堟鏁般€佹竻鐞嗙増鏈暟锛夎繘琛屾晥鏋滆瘎浼?
+SuperVM 的 MVCC 存储系统支持配置式自动垃圾回收（Auto GC），可定期清理不再需要的旧版本数据，控制内存增长。通过运行时可观测性 API，您可以实时监控 GC 行为并调整策略。
 
-## API
+---
 
-閫氳繃 `MvccStore::get_auto_gc_runtime()` 鑾峰彇蹇収锛?
+## 可观测性 API
 
+### 1. get_auto_gc_runtime()
+
+获取当前自动 GC 的运行时参数快照。
+
+**方法签名**:
 ```rust
-use vm_runtime::{MvccStore, GcConfig, AutoGcConfig};
-
-let store = MvccStore::new_with_config(GcConfig {
-    max_versions_per_key: 20,
-    enable_time_based_gc: false,
-    version_ttl_secs: 3600,
-    auto_gc: Some(AutoGcConfig {
-        interval_secs: 60,
-        version_threshold: 1000,
-        run_on_start: true,
-        enable_adaptive: true,
-    }),
-});
-
-if let Some(rt) = store.get_auto_gc_runtime() {
-    println!(
-        "adaptive: {}, interval_secs: {}, threshold: {}",
-        rt.enable_adaptive, rt.interval_secs, rt.version_threshold
-    );
-}
+pub fn get_auto_gc_runtime(&self) -> Option<AutoGcRuntime>
 ```
 
-杩斿洖缁撴瀯锛堝彧璇诲揩鐓э級锛?
+**返回值**:
+- `Some(AutoGcRuntime)` - 如果启用了自动 GC
+- `None` - 如果未配置自动 GC
 
+**AutoGcRuntime 结构**:
 ```rust
 pub struct AutoGcRuntime {
+    /// 是否启用自适应 GC
     pub enable_adaptive: bool,
-    pub interval_secs: u64,       // 褰撳墠鐢熸晥鐨勯棿闅旓紙鍙兘琚嚜閫傚簲璋冩暣锛?
-    pub version_threshold: u64,   // 褰撳墠鐢熸晥鐨勯槇鍊硷紙鍙兘琚嚜閫傚簲璋冩暣锛?
+    /// 当前 GC 间隔时间（秒）
+    pub interval_secs: u64,
+    /// 当前版本数阈值
+    pub version_threshold: usize,
 }
 ```
 
-> 娉細褰撴湭閰嶇疆 `auto_gc` 鏃讹紝`get_auto_gc_runtime()` 杩斿洖 `None`銆?
+**用途**:
+- 监控自适应 GC 是否根据负载动态调整了参数
+- 调试 GC 触发频率问题
+- 性能分析时了解当前 GC 策略
 
-## 涓?GC 缁熻鑱斿悎浣跨敤
+**示例**:
+```rust
+use vm_runtime::MvccStore;
+
+let store = MvccStore::new_with_config(config);
+
+// 查询当前 GC 运行参数
+if let Some(runtime) = store.get_auto_gc_runtime() {
+    println!("自适应模式: {}", runtime.enable_adaptive);
+    println!("GC 间隔: {} 秒", runtime.interval_secs);
+    println!("版本阈值: {} 个", runtime.version_threshold);
+} else {
+    println!("未启用自动 GC");
+}
+```
+
+---
+
+### 2. get_gc_stats()
+
+获取累计 GC 统计信息。
+
+**方法签名**:
+```rust
+pub fn get_gc_stats(&self) -> GcStats
+```
+
+**返回值**: `GcStats` 结构体
+
+**GcStats 结构**:
+```rust
+pub struct GcStats {
+    /// GC 执行次数
+    pub gc_count: u64,
+    /// 清理的版本总数
+    pub versions_cleaned: u64,
+    /// 清理的键总数
+    pub keys_cleaned: u64,
+    /// 最后一次 GC 时间戳
+    pub last_gc_ts: u64,
+}
+```
+
+**用途**:
+- 监控 GC 执行频率
+- 评估 GC 回收效果
+- 诊断内存泄漏或版本堆积问题
+
+**示例**:
+```rust
+let stats = store.get_gc_stats();
+
+println!("╔═══════════════════════════════════════╗");
+println!("║         GC 统计报告                   ║");
+println!("╠═══════════════════════════════════════╣");
+println!("║ 执行次数:   {:>10}            ║", stats.gc_count);
+println!("║ 清理版本:   {:>10}            ║", stats.versions_cleaned);
+println!("║ 清理键数:   {:>10}            ║", stats.keys_cleaned);
+println!("║ 最后执行:   {:>10}            ║", stats.last_gc_ts);
+println!("╚═══════════════════════════════════════╝");
+```
+
+---
+
+### 3. total_versions() / total_keys()
+
+获取当前存储的总版本数和键数。
+
+**方法签名**:
+```rust
+pub fn total_versions(&self) -> usize
+pub fn total_keys(&self) -> usize
+```
+
+**用途**:
+- 监控内存使用情况
+- 判断 GC 是否有效控制版本增长
+- 压力测试时的关键指标
+
+**示例**:
+```rust
+let versions = store.total_versions();
+let keys = store.total_keys();
+
+println!("当前版本数: {}", versions);
+println!("当前键数: {}", keys);
+
+// 计算平均版本数
+let avg_versions = if keys > 0 {
+    versions as f64 / keys as f64
+} else {
+    0.0
+};
+println!("平均版本/键: {:.2}", avg_versions);
+```
+
+---
+
+## 监控最佳实践
+
+### 1. 定期轮询监控
+
+在生产环境中，建议定期采集 GC 统计信息：
+
+```rust
+use std::thread;
+use std::time::Duration;
+
+fn gc_monitor_loop(store: Arc<MvccStore>) {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(Duration::from_secs(30));
+            
+            let stats = store.get_gc_stats();
+            let versions = store.total_versions();
+            let keys = store.total_keys();
+            
+            // 输出到监控系统
+            log::info!("GC Stats: count={}, cleaned={}, versions={}, keys={}",
+                stats.gc_count, stats.versions_cleaned, versions, keys);
+            
+            // 检查异常情况
+            if versions > 100_000 {
+                log::warn!("版本数过高: {}", versions);
+            }
+        }
+    });
+}
+```
+
+### 2. 自适应 GC 观察
+
+启用自适应 GC 时，观察参数变化：
+
+```rust
+let mut last_interval = 0u64;
+
+loop {
+    thread::sleep(Duration::from_secs(10));
+    
+    if let Some(runtime) = store.get_auto_gc_runtime() {
+        if runtime.interval_secs != last_interval {
+            println!("⚡ GC 间隔已调整: {} -> {} 秒",
+                last_interval, runtime.interval_secs);
+            last_interval = runtime.interval_secs;
+        }
+    }
+}
+```
+
+### 3. 压力测试监控
+
+在压力测试中，持续监控内存与 GC 效果：
+
+```rust
+let start = Instant::now();
+let mut last_check = Instant::now();
+
+// 压力测试循环
+for i in 0..100_000 {
+    // 执行事务...
+    
+    // 每 5 秒检查一次
+    if last_check.elapsed().as_secs() >= 5 {
+        let versions = store.total_versions();
+        let stats = store.get_gc_stats();
+        
+        println!("[{:.1}s] 版本数: {}, GC 次数: {}, 清理: {}",
+            start.elapsed().as_secs_f64(),
+            versions,
+            stats.gc_count,
+            stats.versions_cleaned
+        );
+        
+        last_check = Instant::now();
+    }
+}
+```
+
+---
+
+## 调试场景
+
+### 场景 1: GC 未按预期触发
+
+**症状**: 版本数持续增长，GC 执行次数为 0
+
+**诊断**:
+```rust
+// 1. 检查是否启用了自动 GC
+if store.get_auto_gc_runtime().is_none() {
+    println!("❌ 未启用自动 GC");
+}
+
+// 2. 检查配置参数
+if let Some(runtime) = store.get_auto_gc_runtime() {
+    println!("间隔: {} 秒", runtime.interval_secs);
+    println!("阈值: {} 版本", runtime.version_threshold);
+    
+    let versions = store.total_versions();
+    if versions < runtime.version_threshold {
+        println!("版本数 {} 未达阈值 {}", versions, runtime.version_threshold);
+    }
+}
+```
+
+### 场景 2: GC 清理效果不佳
+
+**症状**: GC 执行多次，但版本数仍然很高
+
+**诊断**:
+```rust
+let stats = store.get_gc_stats();
+let versions = store.total_versions();
+
+println!("GC 执行次数: {}", stats.gc_count);
+println!("清理版本总数: {}", stats.versions_cleaned);
+println!("当前版本数: {}", versions);
+
+if stats.gc_count > 0 {
+    let avg_cleaned = stats.versions_cleaned / stats.gc_count;
+    println!("平均每次清理: {} 版本", avg_cleaned);
+    
+    if avg_cleaned < 10 {
+        println!("⚠️  清理效果不佳，可能是:");
+        println!("   - 有大量活跃事务阻止清理");
+        println!("   - max_versions_per_key 设置过高");
+        println!("   - 写入速度超过 GC 清理速度");
+    }
+}
+```
+
+### 场景 3: 性能抖动
+
+**症状**: TPS 周期性下降
+
+**诊断**:
+```rust
+// 记录 GC 执行时刻
+let mut last_gc_count = 0u64;
+
+loop {
+    thread::sleep(Duration::from_secs(1));
+    
+    let stats = store.get_gc_stats();
+    if stats.gc_count > last_gc_count {
+        println!("⏱️  GC 执行于 {} 时刻", Instant::now());
+        last_gc_count = stats.gc_count;
+        
+        // 与 TPS 监控关联，确定 GC 是否导致性能下降
+    }
+    }
+}
+```
+
+---
+
+## 配置调优建议
+
+基于监控数据，调整 GC 配置：
+
+### 1. 版本数过高
+
+如果 `total_versions()` 持续增长：
+- 减小 `interval_secs`（更频繁 GC）
+- 降低 `version_threshold`（更早触发）
+- 减小 `max_versions_per_key`（保留更少版本）
+
+### 2. GC 过于频繁
+
+如果 `gc_count` 增长很快但版本数很少：
+- 增大 `interval_secs`
+- 提高 `version_threshold`
+- 启用 `enable_adaptive` 自动调节
+
+### 3. 自适应调优
+
+启用自适应 GC 后，系统会根据负载自动调整参数。监控 `get_auto_gc_runtime()` 返回的参数变化，确认自适应策略是否符合预期。
+
+---
+
+## 参考
+
+- **配置详解**: 参见 `stress-testing-guide.md` 中的"GC 配置参数"章节
+- **压力测试**: 参见 `src/vm-runtime/tests/mvcc_stress_test.rs`
+- **API 文档**: 参见 `docs/API.md`
+
+---
+
+© 2025 SuperVM Project | GPL-3.0 License
+
+## �?GC 统计联合使用
 
 ```rust
 let stats = store.get_gc_stats();
@@ -59,13 +344,13 @@ println!(
 );
 ```
 
-缁撳悎 `AutoGcRuntime` 鍙互鍒ゆ柇锛?
-- 璋冩暣鍚庣殑闂撮殧/闃堝€兼槸鍚︿笌鏈熸湜涓€鑷?
-- 鍦ㄦ煇涓尯闂村唴 GC 鏄惁鏈夋晥锛堟竻鐞嗙巼锛?
+结合 `AutoGcRuntime` 可以判断�?
+- 调整后的间隔/阈值是否与期望一�?
+- 在某个区间内 GC 是否有效（清理率�?
 
-## 鍏稿瀷鐢ㄦ硶锛氬帇娴嬭娴嬬偣
+## 典型用法：压测观测点
 
-鍦ㄥ帇娴嬪惊鐜垨闃舵鎬?sleep 澶勬彃鍏ヨ娴嬶細
+在压测循环或阶段�?sleep 处插入观测：
 
 ```rust
 if let Some(rt) = store.get_auto_gc_runtime() {
@@ -77,19 +362,19 @@ if let Some(rt) = store.get_auto_gc_runtime() {
 }
 ```
 
-## 鎺掗敊寤鸿
+## 排错建议
 
-- 鐗堟湰鏁板眳楂樹笉涓嬶細
-  - 妫€鏌?`interval_secs` 鏄惁杩囧ぇ銆乣version_threshold` 鏄惁杩囬珮
-  - 纭鏄惁鍚敤浜?`enable_adaptive`
-- GC 娓呯悊鐜囪繃浣庯細
-  - 閫傚綋闄嶄綆闃堝€兼垨缂╃煭闂撮殧
-  - 妫€鏌ユ槸鍚﹀瓨鍦ㄩ暱浜嬪姟闃绘尅鍘嗗彶鐗堟湰鍥炴敹
+- 版本数居高不下：
+  - 检�?`interval_secs` 是否过大、`version_threshold` 是否过高
+  - 确认是否启用�?`enable_adaptive`
+- GC 清理率过低：
+  - 适当降低阈值或缩短间隔
+  - 检查是否存在长事务阻挡历史版本回收
 
-## 鐩稿叧鏂囨。
+## 相关文档
 
-- 鍘嬪姏娴嬭瘯涓庤皟浼樻寚鍗? ./stress-testing-guide.md
-- 骞惰鎵ц璁捐: ./parallel-execution.md
+- 压力测试与调优指�? ./stress-testing-guide.md
+- 并行执行设计: ./parallel-execution.md
 
 
 

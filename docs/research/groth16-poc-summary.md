@@ -1,213 +1,209 @@
-# Groth16 PoC 瀹炵幇鎬荤粨
+# Groth16 PoC 实现总结
 
-## 椤圭洰姒傝
+## 项目概览
 
-**浣嶇疆**: `zk-groth16-test/`  
-**鐩爣**: 楠岃瘉 Groth16 鍦?SuperVM 闅愮灞傜殑鍙鎬э紝涓烘妧鏈€夊瀷鎻愪緵鏁版嵁鏀拺  
-**鎶€鏈爤**: arkworks锛坅rk-groth16 + ark-bls12-381锛? 
-**瀹屾垚鏃堕棿**: 2025骞?1鏈?鏃? 
-
----
-
-## 瀹炵幇鍐呭
-
-### 1. 鏍稿績鐢佃矾
-
-#### MultiplyCircuit锛堟渶灏忕ず渚嬶級
-```rust
-// 绾︽潫锛歛 * b = c
-// 鍏紑锛歝
-// 绉佹湁锛歛, b
-```
-- **绾︽潫鏁?*: 1
-- **鐢ㄩ€?*: 楠岃瘉绔埌绔祦绋嬶紙Setup 鈫?Prove 鈫?Verify锛?
-- **娴嬭瘯**: 鉁?閫氳繃
-
-#### RangeProofCircuit锛堣寖鍥磋瘉鏄庯級
-```rust
-// 绾︽潫锛歷 = c 涓?v = 危(b_i * 2^i) 涓旀瘡涓?b_i 鈭?{0,1}
-// 鍏紑锛歝
-// 绉佹湁锛歷, {b_0, b_1, ..., b_{n-1}}
-```
-
-**8-bit 鐗堟湰**锛?
-- **绾︽潫鏁?*: ~10锛?涓浉绛?+ 8涓竷灏?+ 1涓綅姹傚拰锛?
-- **鐢ㄩ€?*: 婕旂ず鑼冨洿绾︽潫鏋勫缓鏂瑰紡
-- **娴嬭瘯**: 鉁?閫氳繃锛坴=42 < 2^8锛?
-
-**64-bit 鐗堟湰** 鉁細
-- **绾︽潫鏁?*: ~70锛?涓浉绛?+ 64涓竷灏?+ 1涓綅姹傚拰锛?
-- **鐢ㄩ€?*: 鐪熷疄閲戦鑼冨洿璇佹槑锛堝疄闄呭簲鐢ㄥ満鏅級
-- **娴嬭瘯**: 鉁?閫氳繃锛坴=12345678901234 < 2^64锛?
-- **鎬ц兘**: Setup 19.6ms, Prove 7.4ms, Verify ~3.6ms
-
-#### PedersenCommitmentCircuit锛堢畝鍖栫嚎鎬ф壙璇猴級
-```rust
-// 绾︽潫锛欳 = v + r*k 锛坘 涓哄叕寮€鍙傛暟锛?
-// 鍏紑锛欳
-// 绉佹湁锛歷, r
-```
-- **绾︽潫鏁?*: ~2锛?涓箻娉?+ 1涓姞娉曠浉绛夛級
-- **鐢ㄩ€?*: 妯℃嫙鎵胯鎵撳紑楠岃瘉锛堢畝鍖栫増锛屽畬鏁寸増闇€妞渾鏇茬嚎缇よ繍绠楋級
-- **娴嬭瘯**: 鉁?閫氳繃锛坴=100, r=42, k=7 => C=394锛?
-
-### 2. 鍩哄噯娴嬭瘯
-
-鎵€鏈夌數璺潎鎺ュ叆 Criterion 鍩哄噯娴嬭瘯妗嗘灦锛岃鐩栵細
-- Setup锛圱rusted Setup锛?
-- Prove锛堣瘉鏄庣敓鎴愶級
-- Verify锛堣瘉鏄庨獙璇侊級
-
-**瀹屾暣鏁版嵁**: 瑙?`docs/research/zk-evaluation.md`
+**位置**: `zk-groth16-test/`  
+**目标**: 验证 Groth16 在 SuperVM 隐私层的可行性，为技术选型提供数据支撑  
+**技术栈**: arkworks（ark-groth16 + ark-bls12-381）  
+**完成时间**: 2025年11月5日  
 
 ---
 
-## 鎬ц兘鏁版嵁锛堟牳蹇冩憳瑕侊級
+## 实现内容
 
-| 鐢佃矾 | Setup | Prove | Verify | 绾︽潫鏁?|
+### 1. 核心电路
+
+#### MultiplyCircuit（最小示例）
+```rust
+// 约束：a * b = c
+// 公开：c
+// 私有：a, b
+```
+- **约束数**: 1
+- **用途**: 验证端到端流程（Setup → Prove → Verify）
+- **测试**: ✅ 通过
+
+#### RangeProofCircuit（范围证明）
+```rust
+// 约束：v = c 且 v = Σ(b_i * 2^i) 且每个 b_i ∈ {0,1}
+// 公开：c
+// 私有：v, {b_0, b_1, ..., b_{n-1}}
+```
+
+**8-bit 版本**：
+- **约束数**: ~10（1个相等 + 8个布尔 + 1个位求和）
+- **用途**: 演示范围约束构建方式
+- **测试**: ✅ 通过（v=42 < 2^8）
+
+**64-bit 版本** ✨：
+- **约束数**: ~70（1个相等 + 64个布尔 + 1个位求和）
+- **用途**: 真实金额范围证明（实际应用场景）
+- **测试**: ✅ 通过（v=12345678901234 < 2^64）
+- **性能**: Setup 19.6ms, Prove 7.4ms, Verify ~3.6ms
+
+#### PedersenCommitmentCircuit（简化线性承诺）
+```rust
+// 约束：C = v + r*k （k 为公开参数）
+// 公开：C
+// 私有：v, r
+```
+- **约束数**: ~2（1个乘法 + 1个加法相等）
+- **用途**: 模拟承诺打开验证（简化版，完整版需椭圆曲线群运算）
+- **测试**: ✅ 通过（v=100, r=42, k=7 => C=394）
+
+### 2. 基准测试
+
+所有电路均接入 Criterion 基准测试框架，覆盖：
+- Setup（Trusted Setup）
+- Prove（证明生成）
+- Verify（证明验证）
+
+**完整数据**: 见 `docs/research/zk-evaluation.md`
+
+---
+
+## 性能数据（核心摘要）
+
+| 电路 | Setup | Prove | Verify | 约束数 |
 |------|-------|-------|--------|-------|
 | Multiply | 31.1ms | 5.2ms | 3.6ms | ~1 |
 | Range-8bit | - | 4.4ms | ~3.6ms | ~10 |
-| **Range-64bit** 鉁?| **19.6ms** | **7.4ms** | **~3.6ms** | **~70** |
+| **Range-64bit** ✨ | **19.6ms** | **7.4ms** | **~3.6ms** | **~70** |
 | Pedersen | - | 3.8ms | ~3.6ms | ~2 |
 
-**鍏抽敭鍙戠幇**锛?
-- 鉁?**楠岃瘉鏃堕棿鎭掑畾**锛垀3.6ms锛夛紝涓嶉殢鐢佃矾澶嶆潅搴﹀闀匡紙Groth16 鏍稿績浼樺娍锛?
-- 鉁?**璇佹槑澶у皬鎭掑畾**锛?28 bytes锛夛紝闈炲父閫傚悎閾句笂楠岃瘉
-- 鉁?**鎵╁睍鎬т紭寮?*锛氱害鏉熸暟 脳7锛?0鈫?0锛夛紝璇佹槑鏃堕棿浠?脳1.7锛?.4ms鈫?.4ms锛夛紝**浜氱嚎鎬у闀?*
-- 鈿狅笍 Setup 鏃堕棿闅忕害鏉熸暟澧為暱锛?4-bit浠呴渶19.6ms锛屽彲棰勮绠?缂撳瓨锛?
-- 鉁?璇佹槑鏃堕棿鍦ㄥ疄鐢ㄨ寖鍥村唴锛?4-bit鐪熷疄鍦烘櫙浠?.4ms锛?
+**关键发现**：
+- ✅ **验证时间恒定**（~3.6ms），不随电路复杂度增长（Groth16 核心优势）
+- ✅ **证明大小恒定**（128 bytes），非常适合链上验证
+- ✅ **扩展性优异**：约束数 ×7（10→70），证明时间仅 ×1.7（4.4ms→7.4ms），**亚线性增长**
+- ⚠️ Setup 时间随约束数增长（64-bit仅需19.6ms，可预计算/缓存）
+- ✅ 证明时间在实用范围内（64-bit真实场景仅7.4ms）
 
 ---
 
-## 鎶€鏈喅绛?
+## 技术决策
 
-### 涓轰粈涔堥€夋嫨 arkworks 鑰岄潪 bellman锛?
+### 为什么选择 arkworks 而非 bellman？
 
-1. **渚濊禆绋冲畾鎬?*: bellman 鐨?pairing 0.20/0.21/0.23 鍦?Windows 鐜涓嬫洸绾挎ā鍧楀鍑轰笉涓€鑷达紝璋冭瘯鎴愭湰楂?
-2. **API 娓呮櫚搴?*: arkworks 鐨?`Groth16::prove` / `verify_proof` 鎺ュ彛鏇寸洿瑙?
-3. **妯″潡鍖?*: arkworks 鐢熸€佸彲杞绘澗鍒囨崲鍒?Marlin/Plonk 绛夊叾浠栬瘉鏄庣郴缁?
-4. **鏂囨。**: arkworks 鐨?r1cs API 鏂囨。鏇村畬鍠?
+1. **依赖稳定性**: bellman 的 pairing 0.20/0.21/0.23 在 Windows 环境下曲线模块导出不一致，调试成本高
+2. **API 清晰度**: arkworks 的 `Groth16::prove` / `verify_proof` 接口更直观
+3. **模块化**: arkworks 生态可轻松切换到 Marlin/Plonk 等其他证明系统
+4. **文档**: arkworks 的 r1cs API 文档更完善
 
-**鏉冭　**锛?
-- bellman 鍦?Zcash 鐢熶骇鐜鏈夋洿澶氶獙璇侊紙鏇存垚鐔燂級
-- arkworks 鎬ц兘涓?bellman 鐩稿綋锛屼絾瀛︿範鏇茬嚎鐣ラ櫋
+**权衡**：
+- bellman 在 Zcash 生产环境有更多验证（更成熟）
+- arkworks 性能与 bellman 相当，但学习曲线略陡
 
-**缁撹**: 瀵逛簬蹇€熷師鍨嬩笌鎶€鏈瘎浼帮紝arkworks 鏄洿浼橀€夋嫨锛涚敓浜ч儴缃叉椂鍙€冭檻杩佺Щ鍒?bellman 鎴栦繚鎸?arkworks銆?
+**结论**: 对于快速原型与技术评估，arkworks 是更优选择；生产部署时可考虑迁移到 bellman 或保持 arkworks。
 
 ---
 
-## 浠ｇ爜缁撴瀯
+## 代码结构
 
 ```
 zk-groth16-test/
-鈹溾攢鈹€ Cargo.toml              # 渚濊禆锛歛rk-groth16, ark-bls12-381, ark-snark
-鈹溾攢鈹€ src/
-鈹?  鈹溾攢鈹€ lib.rs              # 鏈€灏?Multiply 鐢佃矾
-鈹?  鈹溾攢鈹€ range_proof.rs      # 8-bit 鑼冨洿璇佹槑
-鈹?  鈹斺攢鈹€ pedersen.rs         # 绠€鍖栫嚎鎬ф壙璇?
-鈹斺攢鈹€ benches/
-    鈹斺攢鈹€ groth16_benchmarks.rs  # Criterion 鍩哄噯娴嬭瘯
+├── Cargo.toml              # 依赖：ark-groth16, ark-bls12-381, ark-snark
+├── src/
+│   ├── lib.rs              # 最小 Multiply 电路
+│   ├── range_proof.rs      # 8-bit 范围证明
+│   └── pedersen.rs         # 简化线性承诺
+└── benches/
+    └── groth16_benchmarks.rs  # Criterion 基准测试
 ```
 
-**娴嬭瘯瑕嗙洊**锛?
-- 鍗曞厓娴嬭瘯锛? 涓紙姣忎釜鐢佃矾 1 涓鍒扮娴嬭瘯锛?
-- 鍩哄噯娴嬭瘯锛? 涓紙setup/prove/verify 脳 澶氫釜鐢佃矾锛?
+**测试覆盖**：
+- 单元测试：3 个（每个电路 1 个端到端测试）
+- 基准测试：5 个（setup/prove/verify × 多个电路）
 
 ---
 
-## 涓?Bulletproofs 瀵规瘮锛圡onero 鍩虹嚎锛?
+## 与 Bulletproofs 对比（Monero 基线）
 
-| 缁村害 | Groth16 | Bulletproofs | 浼樺姡 |
+| 维度 | Groth16 | Bulletproofs | 优劣 |
 |------|---------|--------------|------|
-| 璇佹槑澶у皬 | 128 bytes | ~700 bytes (64-bit range) | 鉁?Groth16 浼?|
-| 楠岃瘉鏃堕棿 | ~4ms | ~10ms | 鉁?Groth16 浼?|
-| 璇佹槑鏃堕棿 | ~10ms | ~5ms | 鈿狅笍 鎸佸钩/鐣ユ參 |
-| Trusted Setup | 闇€瑕侊紙姣忕數璺級 | 涓嶉渶瑕?| 鉂?Groth16 鍔?|
-| 鐢佃矾鐏垫椿鎬?| 闇€棰勫畾涔?R1CS | 閫氱敤鑼冨洿璇佹槑 | 鉂?Groth16 鍔?|
+| 证明大小 | 128 bytes | ~700 bytes (64-bit range) | ✅ Groth16 优 |
+| 验证时间 | ~4ms | ~10ms | ✅ Groth16 优 |
+| 证明时间 | ~10ms | ~5ms | ⚠️ 持平/略慢 |
+| Trusted Setup | 需要（每电路） | 不需要 | ❌ Groth16 劣 |
+| 电路灵活性 | 需预定义 R1CS | 通用范围证明 | ❌ Groth16 劣 |
 
-**缁撹**: 
-- Groth16 閫傚悎**閾句笂楠岃瘉**鍦烘櫙锛堣瘉鏄庡皬銆侀獙璇佸揩锛?
-- Bulletproofs 閫傚悎**鐏垫椿鍦烘櫙**锛堟棤 Setup銆侀€氱敤鑼冨洿璇佹槑锛?
-- SuperVM 鍙?*娣峰悎浣跨敤**锛?
-  - 鍥哄畾鐢佃矾锛堝 RingCT锛夆啋 Groth16
-  - 鐏垫椿鑼冨洿璇佹槑 鈫?Bulletproofs
-
----
-
-## 鍚庣画宸ヤ綔锛堜紭鍏堢骇鎺掑簭锛?
-
-### 馃敟 楂樹紭鍏堢骇锛圵eek 3-4锛?
-1. ~~**64-bit 鑼冨洿璇佹槑**: 鎵╁睍 RangeProofCircuit 鍒?64-bit锛垀70 绾︽潫锛墌~ 鉁?**宸插畬鎴?*
-2. **Pedersen + Range 缁勫悎**: 瀹炵幇闅愯棌閲戦鐨勫畬鏁磋寖鍥磋瘉鏄庣數璺紙**涓嬩竴姝?*锛?
-3. **鎵归噺楠岃瘉**: 娴嬭瘯澶氫釜璇佹槑鐨勬壒閲忛獙璇佹€ц兘浼樺寲
-4. **PLONK 璇勪及**: 瀵规瘮閫氱敤 Setup 鐨勪紭鍔ｏ紙plonky2 鎴?halo2锛?
-
-### 馃殌 涓紭鍏堢骇锛圵eek 5-8锛?
-1. **瀹屾暣 Pedersen**: 浣跨敤妞渾鏇茬嚎缇よ繍绠楋紙鑰岄潪绠€鍖栫殑鍩熶箻娉曪級
-2. **璺ㄥ钩鍙版祴璇?*: 鍦?Linux/鍥哄畾纭欢鐜閲嶆祴锛岃幏鍙栫敓浜х骇鏁版嵁
-3. **鍐呭瓨鍗犵敤鍒嗘瀽**: Profile Setup/Prove 闃舵鐨勫唴瀛樺嘲鍊?
-4. **GPU 鍔犻€?*: 璇勪及 MSM/閰嶅杩愮畻鐨?GPU 鍔犻€熸綔鍔?
-
-### 馃挕 浣庝紭鍏堢骇锛圵eek 9+锛?
-1. **閫掑綊璇佹槑**: 璇勪及 Halo2 鐨勯€掑綊 Groth16 鍙鎬э紙鑱氬悎澶氫釜璇佹槑锛?
-2. **鐢佃矾浼樺寲**: 浣跨敤 lookup table 浼樺寲浣嶅垎瑙ｇ害鏉?
-3. **褰㈠紡鍖栭獙璇?*: 瀵瑰叧閿數璺繘琛屽舰寮忓寲楠岃瘉锛圠ean4/Coq锛?
+**结论**: 
+- Groth16 适合**链上验证**场景（证明小、验证快）
+- Bulletproofs 适合**灵活场景**（无 Setup、通用范围证明）
+- SuperVM 可**混合使用**：
+  - 固定电路（如 RingCT）→ Groth16
+  - 灵活范围证明 → Bulletproofs
 
 ---
 
-## 椋庨櫓涓庣紦瑙?
+## 后续工作（优先级排序）
 
-### 椋庨櫓 1: Trusted Setup 娉勯湶
-**褰卞搷**: 绉樺瘑鍙傛暟娉勯湶鍙吉閫犱换鎰忚瘉鏄? 
-**缂撹В**: 
-- 閲囩敤 MPC Ceremony锛堝鏂硅绠椾华寮忥紝鍙備笌鑰?100+锛?
-- 鍙傝€?Zcash Powers of Tau锛?76 鍙備笌鑰咃紝鍙渶 1 浜鸿瘹瀹炲嵆鍙級
-- 鑰冭檻閫氱敤 Setup锛圥LONK锛夋垨鏃?Setup锛圚alo2锛夋柟妗?
+### 🔥 高优先级（Week 3-4）
+1. ~~**64-bit 范围证明**: 扩展 RangeProofCircuit 到 64-bit（~70 约束）~~ ✅ **已完成**
+2. **Pedersen + Range 组合**: 实现隐藏金额的完整范围证明电路（**下一步**）
+3. **批量验证**: 测试多个证明的批量验证性能优化
+4. **PLONK 评估**: 对比通用 Setup 的优劣（plonky2 或 halo2）
 
-### 椋庨櫓 2: 鐢佃矾澶嶆潅搴︾垎鐐?
-**褰卞搷**: 澶嶆潅鍚堢害鐢佃矾鍙兘杈?1M+ 绾︽潫锛孲etup/Prove 鏃堕棿杩囬暱  
-**缂撹В**:
-- 鎷嗗垎鐢佃矾锛堝涓皬璇佹槑 鈫?閾句笅鑱氬悎锛?
-- 浣跨敤閫掑綊璇佹槑锛圚alo2锛?
-- 棰勮绠?缂撳瓨 Setup 缁撴灉
+### 🚀 中优先级（Week 5-8）
+1. **完整 Pedersen**: 使用椭圆曲线群运算（而非简化的域乘法）
+2. **跨平台测试**: 在 Linux/固定硬件环境重测，获取生产级数据
+3. **内存占用分析**: Profile Setup/Prove 阶段的内存峰值
+4. **GPU 加速**: 评估 MSM/配对运算的 GPU 加速潜力
 
-### 椋庨櫓 3: 璺ㄥ钩鍙板吋瀹规€?
-**褰卞搷**: Windows 娴嬭瘯鏁版嵁鍙兘涓嶄唬琛?Linux 鐢熶骇鐜  
-**缂撹В**:
-- Week 4 鍦?Linux/Docker 鐜閲嶆祴
-- 浣跨敤 CI/CD 璺ㄥ钩鍙拌嚜鍔ㄥ寲娴嬭瘯
+### 💡 低优先级（Week 9+）
+1. **递归证明**: 评估 Halo2 的递归 Groth16 可行性（聚合多个证明）
+2. **电路优化**: 使用 lookup table 优化位分解约束
+3. **形式化验证**: 对关键电路进行形式化验证（Lean4/Coq）
 
 ---
 
-## 鍙傝€冭祫婧?
+## 风险与缓解
 
-### 瀛︿範鏉愭枡
-- Groth16 璁烘枃: "On the Size of Pairing-based Non-interactive Arguments" (2016)
-- arkworks 鏂囨。: https://github.com/arkworks-rs/
-- Zcash Groth16 瀹炵幇: https://github.com/zcash/librustzcash
+### 风险 1: Trusted Setup 泄露
+**影响**: 秘密参数泄露可伪造任意证明  
+**缓解**: 
+- 采用 MPC Ceremony（多方计算仪式，参与者 100+）
+- 参考 Zcash Powers of Tau（176 参与者，只需 1 人诚实即可）
+- 考虑通用 Setup（PLONK）或无 Setup（Halo2）方案
 
-### 鍐呴儴鏂囨。
-- `docs/research/groth16-study.md`: Groth16 鍘熺悊娣卞害瀛︿範绗旇锛垀400琛岋級
-- `docs/research/zk-evaluation.md`: zkSNARK 鎶€鏈瘎浼版姤鍛?
-- `docs/research/monero-study-notes.md`: Bulletproofs 鍩虹嚎鏁版嵁
+### 风险 2: 电路复杂度爆炸
+**影响**: 复杂合约电路可能达 1M+ 约束，Setup/Prove 时间过长  
+**缓解**:
+- 拆分电路（多个小证明 → 链下聚合）
+- 使用递归证明（Halo2）
+- 预计算/缓存 Setup 结果
+
+### 风险 3: 跨平台兼容性
+**影响**: Windows 测试数据可能不代表 Linux 生产环境  
+**缓解**:
+- Week 4 在 Linux/Docker 环境重测
+- 使用 CI/CD 跨平台自动化测试
 
 ---
 
-## 鎬荤粨
+## 参考资源
 
-鉁?**鎴愬姛楠岃瘉** Groth16 鍦?SuperVM 闅愮灞傜殑鍙鎬? 
-鉁?**瀹炵幇** 3 涓牳蹇冪數璺紙Multiply/Range/Pedersen锛夊苟閫氳繃娴嬭瘯  
-鉁?**鏀堕泦** 鍒濇鎬ц兘鏁版嵁锛岃瘉鏄庡ぇ灏忎笌楠岃瘉鏃堕棿绗﹀悎棰勬湡  
-鉁?**璇勪及** arkworks 鎶€鏈爤锛岀‘璁ゅ彲鐢ㄤ簬鐢熶骇  
+### 学习材料
+- Groth16 论文: "On the Size of Pairing-based Non-interactive Arguments" (2016)
+- arkworks 文档: https://github.com/arkworks-rs/
+- Zcash Groth16 实现: https://github.com/zcash/librustzcash
 
-鈴笍 **涓嬩竴姝?*: 瀹炵幇 64-bit 鑼冨洿璇佹槑 + Pedersen 缁勫悎鐢佃矾锛屽苟璇勪及 PLONK/Halo2 鏂规銆?
+### 内部文档
+- `docs/research/groth16-study.md`: Groth16 原理深度学习笔记（~400行）
+- `docs/research/zk-evaluation.md`: zkSNARK 技术评估报告
+- `docs/research/monero-study-notes.md`: Bulletproofs 基线数据
 
 ---
 
-**椤圭洰鐘舵€?*: Week 3-4 Groth16 璇勪及 **80% 瀹屾垚** 鉁? 
-**棰勮瀹屾垚**: 2025骞?1鏈?鏃ワ紙瀹屾垚 64-bit Range + PLONK 瀵规瘮鍚庤揪鍒?100%锛?
+## 总结
 
+✅ **成功验证** Groth16 在 SuperVM 隐私层的可行性  
+✅ **实现** 3 个核心电路（Multiply/Range/Pedersen）并通过测试  
+✅ **收集** 初步性能数据，证明大小与验证时间符合预期  
+✅ **评估** arkworks 技术栈，确认可用于生产  
 
+⏭️ **下一步**: 实现 64-bit 范围证明 + Pedersen 组合电路，并评估 PLONK/Halo2 方案。
 
+---
 
+**项目状态**: Week 3-4 Groth16 评估 **80% 完成** ✅  
+**预计完成**: 2025年11月6日（完成 64-bit Range + PLONK 对比后达到 100%）
