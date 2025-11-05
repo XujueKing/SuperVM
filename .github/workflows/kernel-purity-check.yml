@@ -1,0 +1,341 @@
+name: Kernel Purity & Performance Check
+
+on:
+  pull_request:
+    paths:
+      - 'src/vm-runtime/**'
+      - 'Cargo.toml'
+  push:
+    branches:
+      - main
+      - develop
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Job 1: L0/L1 内核修改检测
+  kernel-modification-check:
+    name: 🔍 Kernel Modification Detection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # 获取完整历史
+      
+      - name: 读取维护者白名单
+        id: maintainers
+        run: |
+          if [ -f .github/MAINTAINERS ]; then
+            echo "maintainers=$(cat .github/MAINTAINERS | tr '\n' ' ' )" >> $GITHUB_OUTPUT
+          else
+            echo "maintainers=" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: 检测 L0 内核修改
+        id: l0_check
+        run: |
+          L0_PATTERNS=(
+            "src/vm-runtime/src/lib.rs"
+            "src/vm-runtime/src/runtime.rs"
+            "src/vm-runtime/src/wasm_executor.rs"
+            "src/vm-runtime/src/storage.rs"
+            "src/vm-runtime/src/parallel/"
+            "src/vm-runtime/src/mvcc/"
+          )
+          
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
+          L0_MODIFIED=0
+          
+          for pattern in "${L0_PATTERNS[@]}"; do
+            if echo "$CHANGED_FILES" | grep -q "^$pattern"; then
+              echo "⚠️  L0 file modified: $pattern"
+              L0_MODIFIED=1
+            fi
+          done
+          
+          echo "l0_modified=$L0_MODIFIED" >> $GITHUB_OUTPUT
+
+      - name: 检测是否存在维护者覆盖 (标签、文件或分支名)
+        id: override
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "override=0" >> $GITHUB_OUTPUT
+          OVERRIDE_REASON=""
+          
+          # 检查 PR 标签是否包含 override-l0
+          if command -v jq >/dev/null 2>&1; then
+            HAS_LABEL=$(jq -r '.pull_request.labels | map(.name) | index("override-l0")' "$GITHUB_EVENT_PATH")
+            if [ "$HAS_LABEL" != "null" ]; then
+              echo "label_found=1" >> $GITHUB_OUTPUT
+              OVERRIDE_REASON="PR label override-l0"
+            fi
+          fi
+          
+          # 检查仓库中是否存在覆盖文件
+          if [ -f .github/OVERRIDE-L0 ] || [ -f .kernel-override ]; then
+            echo "file_found=1" >> $GITHUB_OUTPUT
+            OVERRIDE_REASON="${OVERRIDE_REASON:+$OVERRIDE_REASON, }override file"
+          fi
+          
+          # 检查分支名是否为上帝分支 (king/* 或 main)
+          HEAD_REF="${{ github.head_ref }}"
+          if [[ "$HEAD_REF" =~ ^king/ ]] || [ "$HEAD_REF" = "main" ]; then
+            echo "god_branch=1" >> $GITHUB_OUTPUT
+            OVERRIDE_REASON="${OVERRIDE_REASON:+$OVERRIDE_REASON, }god branch: $HEAD_REF"
+          fi
+          
+          # 校验提交者是否维护者
+          ACTOR="${{ github.actor }}"
+          MAINTAINERS_STR="${{ steps.maintainers.outputs.maintainers }}"
+          if echo "$MAINTAINERS_STR" | grep -qi "$ACTOR"; then
+            echo "actor_is_maintainer=1" >> $GITHUB_OUTPUT
+          fi
+          
+          # 计算 override (任一条件满足且为维护者)
+          if { [ "$HAS_LABEL" != "" ] && [ "$HAS_LABEL" != "null" ]; } || [ -f .github/OVERRIDE-L0 ] || [ -f .kernel-override ] || [[ "$HEAD_REF" =~ ^king/ ]] || [ "$HEAD_REF" = "main" ]; then
+            if echo "$MAINTAINERS_STR" | grep -qi "$ACTOR"; then
+              echo "override=1" >> $GITHUB_OUTPUT
+              echo "override_reason=$OVERRIDE_REASON" >> $GITHUB_OUTPUT
+            fi
+          fi
+      
+      - name: 检测 L1 扩展修改
+        id: l1_check
+        run: |
+          L1_PATTERNS=(
+            "src/vm-runtime/src/ownership.rs"
+            "src/vm-runtime/src/supervm.rs"
+            "src/vm-runtime/src/execution_trait.rs"
+          )
+          
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
+          L1_MODIFIED=0
+          
+          for pattern in "${L1_PATTERNS[@]}"; do
+            if echo "$CHANGED_FILES" | grep -q "^$pattern"; then
+              echo "⚠️  L1 file modified: $pattern"
+              L1_MODIFIED=1
+            fi
+          done
+          
+          echo "l1_modified=$L1_MODIFIED" >> $GITHUB_OUTPUT
+      
+      - name: L0 修改警告/覆盖
+        if: steps.l0_check.outputs.l0_modified == '1' && steps.override.outputs.override != '1'
+        run: |
+          echo "::error::🚨 L0 CRITICAL MODIFICATION DETECTED"
+          echo "::error::This PR modifies L0 core kernel files"
+          echo "::error::Required: Architect + 2 core developers approval"
+          echo "::error::See: docs/KERNEL-DEFINITION.md Section 4.1"
+          exit 1
+
+      - name: 维护者覆盖已启用 (仅警告)
+        if: steps.l0_check.outputs.l0_modified == '1' && steps.override.outputs.override == '1'
+        run: |
+          echo "::warning::⚠️  Maintainer override enabled for L0 changes"
+          echo "::warning::Actor: ${{ github.actor }}"
+          echo "::warning::Reason: ${{ steps.override.outputs.override_reason }}"
+          echo "::warning::Please ensure all approvals and tests are completed before merging."
+      
+      - name: L1 修改警告
+        if: steps.l1_check.outputs.l1_modified == '1'
+        run: |
+          echo "::warning::⚠️  L1 EXTENSION MODIFICATION DETECTED"
+          echo "::warning::Required: 1 core developer approval"
+          echo "::warning::See: docs/KERNEL-DEFINITION.md Section 4.2"
+
+  # Job 2: 依赖纯净度检查
+  dependency-purity-check:
+    name: 🧪 Dependency Purity Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 安装 Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: 检查禁止依赖
+        run: |
+          echo "🔍 Checking for forbidden dependencies in vm-runtime..."
+          
+          FORBIDDEN=("revm" "ethers" "web3" "tokio")
+          FOUND_FORBIDDEN=0
+          
+          for dep in "${FORBIDDEN[@]}"; do
+            if grep -q "^$dep = " src/vm-runtime/Cargo.toml; then
+              echo "::error::❌ Forbidden dependency found: $dep"
+              echo "::error::Kernel must not depend on EVM or async runtime"
+              FOUND_FORBIDDEN=1
+            fi
+          done
+          
+          if [ $FOUND_FORBIDDEN -eq 1 ]; then
+            exit 1
+          fi
+          
+          echo "✅ No forbidden dependencies found"
+      
+      - name: 纯净内核构建测试
+        run: |
+          echo "🏗️  Building pure kernel (no default features)..."
+          cd src/vm-runtime
+          cargo build --no-default-features --verbose
+          
+          echo "✅ Pure kernel build successful"
+
+  # Job 3: 单元测试
+  unit-tests:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 安装 Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: 运行内核测试
+        run: |
+          cargo test -p vm-runtime --verbose
+      
+      - name: 运行完整测试
+        run: |
+          cargo test --workspace --verbose
+
+  # Job 4: 性能基准测试
+  performance-benchmarks:
+    name: ⚡ Performance Benchmarks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: 安装 Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: 安装 Criterion
+        run: cargo install cargo-criterion || true
+      
+      - name: 运行性能基准测试
+        run: |
+          echo "⚡ Running performance benchmarks..."
+          
+          # 运行并行执行基准测试
+          cargo bench --bench parallel_execution -- --save-baseline current
+          
+          # 运行 MVCC 吞吐量测试
+          cargo bench --bench mvcc_throughput -- --save-baseline current
+      
+      - name: 对比基准性能
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          echo "📊 Comparing with baseline..."
+          
+          # 检出 main 分支
+          git checkout origin/main
+          
+          # 运行基准测试
+          cargo bench --bench parallel_execution -- --save-baseline main
+          cargo bench --bench mvcc_throughput -- --save-baseline main
+          
+          # 对比结果
+          cargo criterion --baseline main
+      
+      - name: 上传性能报告
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-report
+          path: target/criterion/
+
+  # Job 5: 代码质量检查
+  code-quality:
+    name: 📝 Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 安装 Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          override: true
+      
+      - name: Rustfmt 检查
+        run: cargo fmt -- --check
+      
+      - name: Clippy 检查
+        run: cargo clippy --workspace -- -D warnings
+
+  # Job 6: 文档检查
+  documentation-check:
+    name: 📚 Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 安装 Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: 检查 Rustdoc
+        run: |
+          cargo doc --workspace --no-deps --document-private-items
+      
+      - name: 检查 CHANGELOG 更新
+        if: github.event_name == 'pull_request'
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
+          
+          # 如果修改了源码但没更新 CHANGELOG
+          if echo "$CHANGED_FILES" | grep -q "^src/"; then
+            if ! echo "$CHANGED_FILES" | grep -q "^CHANGELOG.md"; then
+              echo "::warning::⚠️  Source code changed but CHANGELOG.md not updated"
+              echo "::warning::Consider updating CHANGELOG.md"
+            fi
+          fi
+
+  # Job 7: 最终总结报告
+  summary-report:
+    name: 📊 Summary Report
+    runs-on: ubuntu-latest
+    needs: [kernel-modification-check, dependency-purity-check, unit-tests, performance-benchmarks, code-quality, documentation-check]
+    if: always()
+    
+    steps:
+      - name: 生成总结
+        run: |
+          echo "## 🎯 Kernel Purity & Performance Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Kernel Modification | ${{ needs.kernel-modification-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Purity | ${{ needs.dependency-purity-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Performance | ${{ needs.performance-benchmarks.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.code-quality.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation | ${{ needs.documentation-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "📖 See [KERNEL-DEFINITION.md](docs/KERNEL-DEFINITION.md) for details" >> $GITHUB_STEP_SUMMARY

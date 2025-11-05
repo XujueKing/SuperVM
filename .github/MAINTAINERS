@@ -1,0 +1,10 @@
+# SuperVM Maintainers
+# 格式: role | name | github | email
+# 角色可选: owner, architect, core-dev, maintainer
+
+owner | KING XU | XujueKing | leadbrand@me.com
+owner | KING XU | XujueKing | iscrbank@gmail.com
+owner | KingAI | XujueKing | 146935787+XujueKing@users.noreply.github.com
+architect | KING XU | XujueKing | leadbrand@me.com
+core-dev | alice | alice-gh | alice@example.com
+core-dev | bob | bob-gh | bob@example.com
