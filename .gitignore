@@ -25,8 +25,9 @@ Thumbs.db
 *.stderr
 *.stdout
 
-# Solana 参考代码（保留本地，但不提交到仓库）
-/solana/
+# 基准测试输出
+bench_output.txt
+**/bench_output.txt
 
 # 临时文件
 *.tmp

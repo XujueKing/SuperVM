@@ -1,5 +1,7 @@
 # Groth16 PoC 实现总结
 
+开发者/作者：King Xujue
+
 ## 项目概览
 
 **位置**: `zk-groth16-test/`  

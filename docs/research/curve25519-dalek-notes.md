@@ -1,6 +1,8 @@
 # curve25519-dalek 学习笔记
 
-**研究周期**: Week 1-2 (2025-11-04 至 2025-11-17)  
+开发者/作者：King Xujue
+
+**研究周期**: Week 1-2 (2025-02-17 至 2025-03-02)  
 **官方仓库**: https://github.com/dalek-cryptography/curve25519-dalek  
 **文档**: https://docs.rs/curve25519-dalek/  
 **学习目标**: 掌握 Ristretto Point API, 为 Ring Signature 实现做准备
@@ -351,9 +353,9 @@ struct SimpleRingSignature {
 
 ## ✅ 学习进度
 
-### Week 1 (2025-11-04 至 2025-11-10)
+### Week 1 (2025-02-17 至 2025-02-23)
 
-**Day 1 (2025-11-04)**:
+**Day 1 (2025-02-17)**:
 - [x] 创建学习笔记
 - [ ] 添加依赖到测试项目
 - [ ] 运行基础示例 (RistrettoPoint, Scalar)
@@ -373,7 +375,7 @@ struct SimpleRingSignature {
 - [ ] 总结学习成果
 - [ ] 准备 Week 2 高级主题
 
-### Week 2 (2025-11-11 至 2025-11-17)
+### Week 2 (2025-02-24 至 2025-03-02)
 
 **Day 8-10**:
 - [ ] 深入多标量乘法优化

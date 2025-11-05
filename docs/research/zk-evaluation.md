@@ -1,4 +1,5 @@
 # zkSNARK 技术评估报告
+开发者/作者：King Xujue
 **Phase 2 Week 3-4**
 
 ## 目标

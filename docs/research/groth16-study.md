@@ -1,4 +1,5 @@
 # Groth16 zkSNARK 深度学习笔记
+开发者/作者：King Xujue
 **Phase 2 Week 3 - Day 1**
 
 ## 概览

@@ -2,7 +2,7 @@
 
 **设计者**: king  
 **版本**: v1.0  
-**日期**: 2025-11-05  
+**日期**: 2025-06-10  
 **状态**: 🚧 实施进行中（Phase 2.1）
 
 最近进展（2025-11-05）
@@ -38,9 +38,9 @@
 
 在 Windows（PowerShell）环境下快速验证 RingCT 电路：
 
-```powershell
+```bash
 # 进入 Groth16 测试工程
-cd d:\WEB3_AI开发\虚拟机开发\zk-groth16-test
+cd zk-groth16-test
 
 # 运行 RingCT 相关单元测试（打印约束数与端到端验证结果）
 cargo test --lib ringct -- --nocapture
@@ -987,5 +987,5 @@ fn test_boundary_cases() {
 
 ---
 
-**设计完成时间**: 2025-11-05  
+**设计完成时间**: 2025-06-10  
 **下一步**: 🚀 开始 RingCT 电路实现！

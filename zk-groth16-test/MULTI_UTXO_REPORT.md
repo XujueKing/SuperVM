@@ -1,6 +1,8 @@
 # Phase 2.2: Multi-UTXO Support - 实现报告
 
-**日期**: 2025-11-05  
+开发者/作者：King Xujue
+
+**日期**: 2025-06-17  
 **状态**: ✅ 完成  
 **版本**: 2-in-2-out UTXO Model
 
@@ -290,4 +292,4 @@ let valid = Groth16::verify(&vk, &public_inputs, &proof)?;
 
 **状态**: ✅ Phase 2.2 完成  
 **准备就绪**: 链上集成测试  
-**生成时间**: 2025-11-05
+**生成时间**: 2025-06-17

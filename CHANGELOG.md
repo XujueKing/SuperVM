@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added - zk-groth16-test v0.1.0 (2025-11-06)
+### Added - zk-groth16-test v0.1.0 (2025-06-20)
 
 #### Ring Signature 电路与测试 ✅
 - 新增模块：`zk-groth16-test/src/ring_signature.rs`
@@ -22,12 +22,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 基准脚本：`zk-groth16-test/benches/ring_signature_benchmarks.rs`
 - 报告文档：`zk-groth16-test/RING_SIGNATURE_REPORT.md`
 
+#### RingCT 多 UTXO 集成 ✅
+- 更新 `zk-groth16-test/src/ringct_multi_utxo.rs`
+  - 集成环签名：Key Image 公开输入（每个输入 1 个）、成员资格验证、输入间 Key Image 去重（反双花约束）
+  - 兼容原有：承诺哈希验证、金额平衡、范围证明、Merkle 成员证明
+  - 所有相关单元测试通过（集成后）
+- 更新 `zk-groth16-test/examples/ringct_multi_utxo_perf.rs`
+  - 构造 `ring_auths` 并将 Key Image 纳入公开输入
+
+#### 对抗性测试套件 🛡️
+- 新增 `zk-groth16-test/tests/adversarial_tests.rs`（5/5 通过）
+  - ✅ `test_double_spend_same_key_image`：相同 Key Image 的两笔交易触发约束失败（Unsatisfiable）
+  - ✅ `test_forged_signature_wrong_secret_key`：错误私钥导致 Key Image 不匹配，约束失败
+  - ✅ `test_ring_membership_validation`：公钥在环中时约束满足（正常流程验证）
+  - ✅ `test_max_ring_size`：ring_size=10 正常工作，约束数=735
+  - ✅ `test_zero_value_transaction`：零值交易边界情况正常工作
+- 新增测试报告：`zk-groth16-test/ADVERSARIAL_TESTS_REPORT.md`
+  - 详细安全性分析、约束分解、性能评估
+  - 验证双花防护、签名真实性、发送方匿名等安全属性
+
 #### 相关文档
-- `ROADMAP-ZK-Privacy.md`：标记“实现环签名电路（Week 5-6）”为已完成，并补充约束指标与报告链接
+- `ROADMAP-ZK-Privacy.md`：标记“实现环签名电路（Week 5-6）”与“集成到 Multi-UTXO 交易”为已完成，并补充约束指标与报告链接
 - `docs/INDEX.md`：新增“隐私与零知识”板块，汇总研究与实现链接
  - `ROADMAP.md`：将 Phase 5 进度从 30% → 35%，并新增 `scripts/update-roadmaps.ps1` 自动化脚本
+ - 新增优化报告：`zk-groth16-test/OPTIMIZATION_REPORT.md`
 
-### Added - vm-runtime v0.9.0 (2025-11-04)
+### Added - vm-runtime v0.9.0 (2025-06-03)
 
 #### Critical Bug Fix: Write Skew Anomaly 🐛🔧
 - **根本原因**: MVCC 并发转账出现随机金额偏差（±50-200），违反守恒定律
@@ -80,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Sui**: 对象所有权 + 最小共识，120K TPS（简单转账），适合去中心化
   - **Monero**: 环签名 + 隐形地址 + RingCT，2K TPS，强隐私保护
 
-### Added - vm-runtime v0.8.0 (2025-11-04)
+### Added - vm-runtime v0.8.0 (2025-05-08)
 
 #### MVCC Stress Testing & Adaptive GC 🔬🤖
 - **压力测试套件**:
@@ -134,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-### Added - vm-runtime v0.7.0 (2025-11-04)
+### Added - vm-runtime v0.7.0 (2025-04-15)
 
 #### MVCC Automatic Garbage Collection 🤖🗑️
 - **AutoGcConfig**: 自动 GC 配置
@@ -188,7 +208,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-### Added - vm-runtime v0.6.0 (2025-11-04)
+### Added - vm-runtime v0.6.0 (2025-04-01)
 
 #### MVCC Garbage Collection 🗑️
 - **GcConfig**: 可配置的垃圾回收策略
@@ -238,7 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **智能清理**: 仅清理不再需要的版本，不影响活跃事务
 - **低开销**: GC 使用写锁，不阻塞读操作
 
-## [0.5.0] - 2025-11-04
+## [0.5.0] - 2025-03-15
 
 ### Added - vm-runtime v0.5.0
 
@@ -308,7 +328,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **时间戳分配**: 原子操作,避免锁开销
 - **锁粒度**: 从全局锁优化为每键锁,大幅降低争用
 
-## [0.4.0] - 2025-11-04
+## [0.4.0] - 2025-03-01
 
 ### Added - vm-runtime v0.4.0
 

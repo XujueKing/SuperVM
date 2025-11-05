@@ -4,6 +4,8 @@
 >
 > 版本来源：使用 Cargo 工作区版本或各 crate 自身的 Cargo.toml。
 
+开发者/作者：King Xujue
+
 ---
 
 ## 版本号策略（SemVer + 层级约束）

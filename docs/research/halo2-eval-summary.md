@@ -1,6 +1,8 @@
 ﻿# Halo2 评估总结
 
-完成时间: 2025-11-06  
+开发者/作者：King Xujue
+
+完成时间: 2025-02-28  
 项目位置: `halo2-eval/`  
 任务状态: ✅ 完成
 
@@ -250,14 +252,14 @@ halo2-eval/
 ## 代码示例
 
 ### 运行 MockProver 测试
-```powershell
-cd d:\WEB3_AI开发\虚拟机开发\halo2-eval
+```bash
+cd halo2-eval
 cargo test
 ```
 
 ### 运行 KZG 基准测试
-```powershell
-cd d:\WEB3_AI开发\虚拟机开发\halo2-eval
+```bash
+cd halo2-eval
 cargo run --release --bin kzg_bench
 ```
 

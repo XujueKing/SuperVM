@@ -7,7 +7,8 @@
 //! 预期约束数：~531 (线性扩展)
 
 use ark_bls12_381::Fr;
-use ark_ff::PrimeField;
+use ark_ff::{Field, PrimeField};
+use ark_std::Zero;
 use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystemRef, SynthesisError,
 };
@@ -28,6 +29,8 @@ use ark_crypto_primitives::crh::poseidon::constraints as poseidon_constraints;
 use ark_crypto_primitives::crh::{CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget};
 use ark_crypto_primitives::crh::poseidon as poseidon_crh;
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+// Reuse Ring Signature types
+use crate::ring_signature::RingMember as RSMember;
 
 // ===== 数据结构定义 =====
 
@@ -131,6 +134,15 @@ impl MerkleProof {
 
 // ===== Multi-UTXO RingCT 电路 =====
 
+/// 环签名授权（每个输入一个）
+#[derive(Clone, Debug)]
+pub struct RingAuth {
+    pub ring_members: Vec<RSMember>,
+    pub real_index: usize,
+    pub secret_key: Fr,
+    pub key_image: Fr,
+}
+
 /// Multi-UTXO RingCT 电路 (2-in-2-out)
 #[derive(Clone)]
 pub struct MultiUTXORingCTCircuit {
@@ -140,6 +152,8 @@ pub struct MultiUTXORingCTCircuit {
     pub outputs: [UTXO; 2],
     // Merkle 证明 (每个输入一个)
     pub merkle_proofs: [MerkleProof; 2],
+    // 环签名授权（每个输入一个）
+    pub ring_auths: [RingAuth; 2],
     // Poseidon 配置
     pub poseidon_cfg: PoseidonConfig<Fr>,
 }
@@ -189,7 +203,7 @@ impl MultiUTXORingCTCircuit {
             UTXO::new(values_out[i], r, &pedersen_params, &poseidon_cfg)
         });
 
-        // 创建 2 个 Merkle 证明
+    // 创建 2 个 Merkle 证明
         let merkle_proofs: [MerkleProof; 2] = std::array::from_fn(|i| {
             let leaf = Fr::from((100 + i) as u64);
             let path = vec![Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)];
@@ -205,14 +219,31 @@ impl MultiUTXORingCTCircuit {
             MerkleProof { leaf, path, directions, root }
         });
 
-        Self { inputs, outputs, merkle_proofs, poseidon_cfg }
+        // 创建环签名授权（每个输入一个，ring_size=3）
+        use ark_std::UniformRand;
+        let ring_auths: [RingAuth; 2] = std::array::from_fn(|_| {
+            let ring_size = 3usize;
+            let real_index = (rng.next_u32() as usize) % ring_size;
+            let secret_key = Fr::rand(&mut rng);
+            let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
+            for j in 0..ring_size {
+                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
+                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+            }
+            let public_key = ring_members[real_index].public_key;
+            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
+                .expect("poseidon ki");
+            RingAuth { ring_members, real_index, secret_key, key_image }
+        });
+
+        Self { inputs, outputs, merkle_proofs, ring_auths, poseidon_cfg }
     }
 }
 
 impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
-        // ===== 公开输入 (6 个) =====
-        // 2 个输入承诺哈希 + 2 个输出承诺哈希 + 2 个 Merkle 根
+        // ===== 公开输入 =====
+        // 2 个输入承诺哈希 + 2 个输出承诺哈希 + 2 个 Merkle 根 + 2 个 Key Image
         let mut input_commitment_hashes = Vec::new();
         for i in 0..2 {
             let hash = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.inputs[i].commitment_hash))?;
@@ -229,6 +260,13 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
         for i in 0..2 {
             let root = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.merkle_proofs[i].root))?;
             merkle_roots.push(root);
+        }
+
+        // Key Images 公开输入
+        let mut key_images = Vec::new();
+        for i in 0..2 {
+            let ki = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.ring_auths[i].key_image))?;
+            key_images.push(ki);
         }
 
         // ===== 私有输入 =====
@@ -376,6 +414,46 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
             }
         }
 
+        // ===== 约束 5: 环签名（Key Image 正确性 + 成员资格）=====
+        {
+            use ark_crypto_primitives::crh::poseidon::constraints::CRHGadget as PoseidonCRHGadget;
+            use ark_crypto_primitives::crh::poseidon::constraints::CRHParametersVar as PoseidonCRHParamsVar;
+
+            let params_var = PoseidonCRHParamsVar::new_constant(cs.clone(), &self.poseidon_cfg)?;
+            let mut pk_vars: Vec<FpVar<Fr>> = Vec::new();
+
+            for i in 0..2 {
+                // witness: secret_key, real public_key
+                let sk_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.ring_auths[i].secret_key))?;
+                let real_pk = self.ring_auths[i].ring_members[self.ring_auths[i].real_index].public_key;
+                let pk_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(real_pk))?;
+                pk_vars.push(pk_var.clone());
+
+                // Key Image correctness: KI = H(sk, pk)
+                let expected_ki = PoseidonCRHGadget::<Fr>::evaluate(&params_var, &[sk_var.clone(), pk_var.clone()])?;
+                expected_ki.enforce_equal(&key_images[i])?;
+
+                // Membership: pk in ring_members (OR over equality)
+                let mut found = Boolean::FALSE;
+                for m in &self.ring_auths[i].ring_members {
+                    let member_pk = FpVar::<Fr>::new_witness(cs.clone(), || Ok(m.public_key))?;
+                    let eq = pk_var.is_eq(&member_pk)?;
+                    found = found.or(&eq)?;
+                }
+                found.enforce_equal(&Boolean::TRUE)?;
+            }
+
+            // Anti-double-spend: key_images must be distinct
+            // Enforce (ki0 - ki1) * inv = 1
+            let diff = &key_images[0] - &key_images[1];
+            let inv = FpVar::<Fr>::new_witness(cs.clone(), || {
+                let d = self.ring_auths[0].key_image - self.ring_auths[1].key_image;
+                if d.is_zero() { return Err(SynthesisError::Unsatisfiable); }
+                Ok(d.inverse().unwrap())
+            })?;
+            (diff * inv).enforce_equal(&FpVar::<Fr>::constant(Fr::from(1u64)))?;
+        }
+
         Ok(())
     }
 }
@@ -410,7 +488,7 @@ mod tests {
         let mut rng = OsRng;
         
         // Setup
-        let setup_circuit = MultiUTXORingCTCircuit::example();
+    let setup_circuit = MultiUTXORingCTCircuit::example();
         let mut setup_circuit_clone = setup_circuit.clone();
         
         // 清空私有见证用于 setup
@@ -440,6 +518,10 @@ mod tests {
         for i in 0..2 {
             public_inputs.push(setup_circuit.merkle_proofs[i].root);
         }
+        // Key Images
+        for i in 0..2 {
+            public_inputs.push(setup_circuit.ring_auths[i].key_image);
+        }
         
         let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof)
             .expect("verify failed");
@@ -456,7 +538,7 @@ mod tests {
         use rand::RngCore;
         let mut rng = OsRng;
 
-        let poseidon_cfg = {
+    let poseidon_cfg = {
             let full_rounds: usize = 8;
             let partial_rounds: usize = 57;
             let alpha: u64 = 5;
@@ -506,10 +588,27 @@ mod tests {
             MerkleProof { leaf, path, directions, root }
         });
 
+        // 构造环签名授权（使环签名部分满足）
+        use ark_std::UniformRand;
+        let ring_auths: [RingAuth; 2] = std::array::from_fn(|_| {
+            let ring_size = 3usize;
+            let real_index = 1usize;
+            let secret_key = Fr::rand(&mut rng);
+            let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
+            for j in 0..ring_size {
+                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
+                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+            }
+            let public_key = ring_members[real_index].public_key;
+            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
+            RingAuth { ring_members, real_index, secret_key, key_image }
+        });
+
         let circuit = MultiUTXORingCTCircuit {
             inputs,
             outputs,
             merkle_proofs,
+            ring_auths,
             poseidon_cfg,
         };
 

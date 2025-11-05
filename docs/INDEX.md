@@ -3,45 +3,152 @@
 > 快速导航 - 所有 SuperVM 相关文档的完整索引
 
 架构师: KING XU (CHINA)
+开发者/作者/测试: Rainbow Haruko(CHINA) / king(CHINA) / Alan Tang(CHINA) / Xuxu(CHINA)
 
 ---
 
-> 许可信息：本项目代码以 GPL-3.0-or-later 许可协议发布，详见仓库根目录 `LICENSE`。
+## 📝 关于本文档库
+
+**原创性声明**：
+- 设计、实现与实验类文档（`docs/design/`, `zk-groth16-test/`, `halo2-eval/` 等）为**原创内容**
+- 研究笔记（`docs/research/`）为基于公开论文、项目与资料的**独立整理与归纳**，引用已注明来源
+- 如需引用本仓库文档，请注明出处；对外部资料的引述版权归原作者所有
+- 完整引用清单详见：[ATTRIBUTIONS.md](./ATTRIBUTIONS.md)
+
+**许可信息**：本项目代码以 GPL-3.0-or-later 许可协议发布，详见仓库根目录 `LICENSE`。
+
+---
 
 ## 文档结构
 
 ```
-docs/
-├── quickstart.md                  - 5 分钟快速启动指南
-├── quick-reference.md             - 快速参考（决策矩阵 + FAQ）
-├── architecture.md                - 完整架构设计
-├── tech-comparison.md             - 技术对比分析
-├── phase1-implementation.md       - Phase 1 实施计划
-├── design-complete-report.md      - 设计总结报告
+SuperVM/
 │
-├── 深度分析
-│   ├── sui-smart-contract-analysis.md     - Sui 对象所有权与智能合约分析
-│   ├── gas-incentive-mechanism.md         - 四层网络 Gas 激励机制
-│   ├── scenario-analysis-game-defi.md     - 游戏与 DeFi 场景深度分析
-│   └── compiler-and-gas-innovation.md     - 跨链编译器与多币种 Gas 创新
+├── 📋 核心文档（根目录）
+│   ├── README.md                          - 项目总览与快速入门
+│   ├── ROADMAP.md                         - 开发路线图（8个阶段）
+│   ├── ROADMAP-ZK-Privacy.md              - ZK 隐私专项计划
+│   ├── CHANGELOG.md                       - 版本更新日志
+│   ├── CONTRIBUTING.md                    - 贡献指南
+│   └── DEVELOPER.md                       - 开发者文档
 │
-├── 技术细节
-│   ├── stress-testing-guide.md     - 压力测试指南
-│   ├── gc-observability.md         - GC 可观测性
-│   ├── parallel-execution.md       - 并行执行设计
-│   └── API.md                      - API 文档
+├── 📚 docs/ - 设计与分析文档
+│   ├── INDEX.md (本文件)                  - 文档索引与导航
+│   ├── ATTRIBUTIONS.md                    - 引用与致谢（论文/项目/资料清单）
+│   ├── quickstart.md                      - 5 分钟快速启动指南
+│   ├── quick-reference.md                 - 快速参考（决策矩阵 + FAQ）
+│   ├── architecture.md                    - 完整架构设计
+│   ├── tech-comparison.md                 - 技术对比分析
+│   ├── phase1-implementation.md           - Phase 1 实施计划
+│   ├── design-complete-report.md          - 设计总结报告
+│   ├── API.md                             - API 文档
+│   ├── parallel-execution.md              - 并行执行设计
+│   ├── stress-testing-guide.md            - 压力测试指南
+│   ├── gc-observability.md                - GC 可观测性
+│   ├── evm-adapter-design.md              - EVM 适配器插件化设计
+│   │
+│   ├── 🔍 design/ - 电路与协议设计
+│   │   └── ringct-circuit-design.md       - RingCT 电路设计
+│   │
+│   ├── 🧪 research/ - 研究笔记（8篇）
+│   │   ├── zk-evaluation.md               - zkSNARK 技术评估
+│   │   ├── groth16-study.md               - Groth16 原理学习
+│   │   ├── groth16-poc-summary.md         - Groth16 PoC 总结
+│   │   ├── halo2-eval-summary.md          - Halo2 评估总结
+│   │   ├── monero-study-notes.md          - Monero 隐私技术
+│   │   ├── curve25519-dalek-notes.md      - Curve25519-dalek 库
+│   │   ├── cryptonote-whitepaper-notes.md - CryptoNote 白皮书
+│   │   └── 64bit-range-proof-summary.md   - 64-bit Range Proof
+│   │
+│   └── 🎯 深度分析（4篇）
+│       ├── sui-smart-contract-analysis.md - Sui 对象所有权与智能合约
+│       ├── gas-incentive-mechanism.md     - 四层网络 Gas 激励机制
+│       ├── scenario-analysis-game-defi.md - 游戏与 DeFi 场景深度分析
+│       └── compiler-and-gas-innovation.md - 跨链编译器与多币种 Gas
+│
+├── 🔐 zk-groth16-test/ - Groth16 隐私层实现
+│   ├── README.md                          - 项目文档与性能数据
+│   ├── RING_SIGNATURE_REPORT.md           - Ring Signature 实现报告
+│   ├── MULTI_UTXO_REPORT.md               - Multi-UTXO 实现报告
+│   ├── ADVERSARIAL_TESTS_REPORT.md        - 对抗性测试报告
+│   ├── OPTIMIZATION_REPORT.md             - 约束优化报告
+│   ├── src/                               - 电路实现（8个电路）
+│   ├── tests/                             - 单元测试与对抗性测试
+│   └── benches/                           - 性能基准测试
+│
+├── 🌟 halo2-eval/ - Halo2 评估项目
+│   ├── README.md                          - Halo2 快速入门与性能对比
+│   └── src/                               - Halo2 电路实现
+│
+├── 🧬 privacy-test/ - 隐私原语测试
+│   └── src/                               - Pedersen、Ristretto、Ring Signature
+│
+└── 💻 src/ - 核心运行时代码
+    ├── vm-runtime/                        - WASM 运行时 + MVCC + 并行调度
+    └── node-core/                         - 节点核心 + CLI
 ```
+
+---
+
+## 📋 核心文档（根目录）
+
+### 项目总览与路线图
+- [README.md](../README.md) - 项目总览、快速开始、核心特性
+- [ROADMAP.md](../ROADMAP.md) - 完整开发路线图（8 个阶段，44% 完成）
+- [ROADMAP-ZK-Privacy.md](../ROADMAP-ZK-Privacy.md) - ZK 隐私专项计划（4 个阶段）
+
+### 开发者指南
+- [CONTRIBUTING.md](../CONTRIBUTING.md) - 贡献指南、代码规范、PR 流程
+- [DEVELOPER.md](../DEVELOPER.md) - 开发者文档、环境搭建、调试技巧
+- [CHANGELOG.md](../CHANGELOG.md) - 版本更新日志（当前 v0.9.0）
+
+### 引用与致谢
+- [ATTRIBUTIONS.md](./ATTRIBUTIONS.md) - 引用清单：学术论文、开源项目、技术资料及致谢
+
+---
+
+## ⏱ 项目时间线概览（2025-02 → 2025-06）
+
+- 2025-02-03 ~ 2025-02-16：CryptoNote 白皮书学习（Week 1-2） → 详见《[CryptoNote 白皮书笔记](./research/cryptonote-whitepaper-notes.md)》
+- 2025-02-17 ~ 2025-03-02：curve25519-dalek 库学习（Week 1-2） → 详见《[Curve25519-dalek 库笔记](./research/curve25519-dalek-notes.md)》
+- 2025-03-03 起：Monero 源码学习（持续进行） → 详见《[Monero 隐私技术研究笔记](./research/monero-study-notes.md)》
+- 2025-03-24：设计阶段完成 → 《[设计总结报告](./design-complete-report.md)》
+- 2025-04-01 / 04-15 / 05-08 / 06-03：vm-runtime 连续版本发布 v0.6.0 / v0.7.0 / v0.8.0 / v0.9.0 → 《[CHANGELOG](../CHANGELOG.md)》与《[API](./API.md)》
+- 2025-05-12：Phase 1 实施完成；2025-05-13：Phase 2 启动 → 《[Phase 1 实施计划](./phase1-implementation.md)》，《[ROADMAP-ZK-Privacy](../ROADMAP-ZK-Privacy.md)》
+- 2025-06-10：RingCT 电路设计完成 → 《[RingCT 电路设计](./design/ringct-circuit-design.md)》
+- 2025-06-20：zk-groth16-test v0.1.0 → 《[zk-groth16-test README](../zk-groth16-test/README.md)》《[CHANGELOG](../CHANGELOG.md)》
+
+注：以上为“开始/完成/里程碑”时间线；每篇文档的“最后更新”保持真实编辑日期，可能晚于里程碑时间。
 
 ---
 
 ## 隐私与零知识
 
-- 研究报告
-  - [Halo2 评估总结](./research/halo2-eval-summary.md)
-  - [zkSNARK 技术选型与评估](./research/zk-evaluation.md)
-  - [Monero 隐私技术研究笔记](./research/monero-study-notes.md)
-- 实现与进展
+### 研究报告
+- [zkSNARK 技术选型与评估](./research/zk-evaluation.md)
+- [Groth16 原理学习笔记](./research/groth16-study.md)
+- [Groth16 PoC 总结](./research/groth16-poc-summary.md)
+- [Halo2 评估总结](./research/halo2-eval-summary.md)
+- [Monero 隐私技术研究笔记](./research/monero-study-notes.md)
+- [Curve25519-dalek 库笔记](./research/curve25519-dalek-notes.md)
+- [CryptoNote 白皮书笔记](./research/cryptonote-whitepaper-notes.md)
+- [64-bit Range Proof 总结](./research/64bit-range-proof-summary.md)
+
+### 项目与实现
+
+#### Groth16 (zk-groth16-test)
+- [zk-groth16-test 项目 README](../zk-groth16-test/README.md) - 快速入门与性能数据
+- RingCT 系列报告
   - [Ring Signature 实现报告](../zk-groth16-test/RING_SIGNATURE_REPORT.md)
+  - [RingCT Multi-UTXO 实现报告](../zk-groth16-test/MULTI_UTXO_REPORT.md)
+  - [RingCT Multi-UTXO 对抗性测试报告](../zk-groth16-test/ADVERSARIAL_TESTS_REPORT.md)
+  - [RingCT 约束优化报告](../zk-groth16-test/OPTIMIZATION_REPORT.md)
+
+#### Halo2 (halo2-eval)
+- [halo2-eval 项目 README](../halo2-eval/README.md) - Halo2 快速入门与性能对比
+
+### 设计文档
+- [RingCT 电路设计](./design/ringct-circuit-design.md) - RingCT 电路架构与约束设计
 
 ---
 
@@ -139,6 +246,22 @@ docs/
 - SuperVM 适合我的场景吗？
 - 什么时候选 SuperVM？
 - 什么时候选其他链？
+
+---
+
+### 场景 6: 我想开发隐私/ZK 功能
+
+推荐路径（3-4 小时）:
+1. [ROADMAP-ZK-Privacy.md](../ROADMAP-ZK-Privacy.md) (30 min) - ZK 隐私专项计划
+2. [zkSNARK 技术评估](./research/zk-evaluation.md) (40 min) - Groth16 vs Halo2 对比
+3. [zk-groth16-test README](../zk-groth16-test/README.md) (30 min) - 快速入门与性能数据
+4. [Groth16 原理学习](./research/groth16-study.md) (60 min) - 深入理解 Groth16
+5. [RingCT 系列报告](../zk-groth16-test/) (60 min) - Ring Signature、Multi-UTXO、对抗性测试
+
+关键问题:
+- 如何实现隐私交易？
+- Groth16 和 Halo2 如何选择？
+- 如何集成到 SuperVM？
 
 ---
 
@@ -444,6 +567,38 @@ docs/
 **何时阅读**: 开发应用时
 
 ---
+
+### 15. evm-adapter-design.md
+
+**大小**: 8KB  
+**阅读时间**: 15-20 分钟  
+**适合人群**: EVM 兼容层开发者  
+**内容**:
+- EVM 适配器插件化设计
+- 完全隔离的架构原则
+- ExecutionEngine trait 接口
+- Feature Flag 控制
+- 核心纯净性保证
+
+**何时阅读**: 开发 EVM 兼容层时
+
+---
+
+### 16. ringct-circuit-design.md
+
+**大小**: 12KB  
+**阅读时间**: 25-30 分钟  
+**适合人群**: ZK 电路开发者  
+**内容**:
+- RingCT 电路架构设计
+- 约束系统设计
+- Poseidon Hash 集成
+- Merkle Tree 验证
+- 性能优化策略
+
+**何时阅读**: 开发 ZK 电路时
+
+---
 ## 学习路径推荐
 
 ### 路径 1: 快速了解（30 分钟）
@@ -520,20 +675,65 @@ docs/
 
 ---
 
+### 路径 6: ZK 隐私开发（3-4 小时）
+
+```
+1. ROADMAP-ZK-Privacy.md (30 min)
+   - 了解 ZK 隐私专项计划（4 个阶段）
+   - 理解技术选型（Groth16 vs Halo2）
+2. research/zk-evaluation.md (40 min)
+   - zkSNARK 技术评估与对比
+   - 性能基准数据
+3. zk-groth16-test/README.md (30 min)
+   - Groth16 快速入门
+   - 电路示例与基准测试
+4. research/groth16-study.md (60 min)
+   - Groth16 原理深入学习
+   - R1CS 约束系统
+5. zk-groth16-test/ 系列报告 (60 min)
+   - Ring Signature 实现
+   - RingCT Multi-UTXO 实现
+   - 对抗性测试与约束优化
+6. 实战编码 (60 min)
+   - 实现自己的电路
+   - 运行基准测试
+
+结果: 掌握 ZK 电路开发，能够实现隐私交易
+```
+
+---
+
 ## 文档统计
 
 ### 总览
 
 | 分类 | 数量 | 总大小 |
 |------|------|--------|
-| 设计文档 | 5 篇 | 109KB |
-| 深度分析 | 4 篇 | 122KB |
-| 技术文档 | 4 篇 | 45KB |
-| **合计** | **14 篇** | **276KB** |
+| 📋 核心文档（根目录） | 6 篇 | ~60KB |
+| 📚 docs/ 主文档 | 15 篇 | ~290KB |
+| 🧪 research/ 研究笔记 | 8 篇 | ~120KB |
+| 🔍 design/ 设计文档 | 1 篇 | ~12KB |
+| 🔐 zk-groth16-test/ 报告 | 4 篇 | ~40KB |
+| 🌟 halo2-eval/ 文档 | 1 篇 | ~8KB |
+| **合计** | **35+ 篇** | **~530KB** |
 
 ---
 
 ### 分类明细
+
+**核心文档（根目录，~60KB）**:
+- README.md
+- ROADMAP.md (完整路线图，8 个阶段)
+- ROADMAP-ZK-Privacy.md (ZK 专项计划)
+- CHANGELOG.md
+- CONTRIBUTING.md
+- DEVELOPER.md
+
+**docs/ 主文档（~290KB）**:
+
+核心与引用（~25KB）:
+- INDEX.md (本文件)
+- ATTRIBUTIONS.md (~15KB) - 引用与致谢
 
 设计类（109KB）:
 - architecture.md (26KB)
@@ -548,17 +748,33 @@ docs/
 - gas-incentive-mechanism.md (20KB) - 经济模型
 - sui-smart-contract-analysis.md (18KB) - 智能合约与路径
 
-实施类（30KB）:
-- phase1-implementation.md (24KB)
+技术实现（45KB）:
 - API.md (15KB)
-
-测试与运维（20KB）:
 - stress-testing-guide.md (12KB)
-- gc-observability.md (8KB)
+- parallel-execution.md (10KB)
+- evm-adapter-design.md (8KB)
 
-参考类（27KB）:
-- quick-reference.md (20KB)
-- quickstart.md (9KB)
+**research/ 研究笔记（~120KB）**:
+- zk-evaluation.md - zkSNARK 技术评估
+- groth16-study.md - Groth16 原理学习
+- groth16-poc-summary.md - Groth16 PoC 总结
+- halo2-eval-summary.md - Halo2 评估总结
+- monero-study-notes.md - Monero 隐私技术
+- curve25519-dalek-notes.md - Curve25519-dalek 库
+- cryptonote-whitepaper-notes.md - CryptoNote 白皮书
+- 64bit-range-proof-summary.md - 64-bit Range Proof
+
+**design/ 设计文档（~12KB）**:
+- ringct-circuit-design.md - RingCT 电路设计
+
+**zk-groth16-test/ 报告（~40KB）**:
+- RING_SIGNATURE_REPORT.md - Ring Signature 实现
+- MULTI_UTXO_REPORT.md - Multi-UTXO 实现
+- ADVERSARIAL_TESTS_REPORT.md - 对抗性测试
+- OPTIMIZATION_REPORT.md - 约束优化
+
+**halo2-eval/ 文档（~8KB）**:
+- README.md - Halo2 快速入门与性能对比
 
 ---
 
@@ -583,7 +799,7 @@ docs/
 ## 获取帮助
 
 - GitHub Issues: https://github.com/XujueKing/SuperVM/issues
-- 项目路径: `d:\WEB3_AI开发\虚拟机开发`
+- GitHub Repository: https://github.com/XujueKing/SuperVM
 - 当前分支: `main`
 
 ---
@@ -599,7 +815,17 @@ docs/
 • Phase 1: 待启动（新增编译器/Gas 章节）
 ```
 
-最近更新（2025-11-04）:
+最近更新（2025-11-06）:
+- **新增 ATTRIBUTIONS.md**：完整引用清单（论文、项目、资料、致谢）
+- 优化原创性声明：区分原创内容与研究笔记
+- 新增 ZK 隐私层文档索引（research/ + zk-groth16-test/）
+- 新增 RingCT 系列报告 4 篇（Ring Signature、Multi-UTXO、对抗性测试、优化）
+- 新增 Halo2 评估项目文档
+- 优化文档结构树状图（全景视角）
+- 新增场景 6：ZK 隐私开发路径
+- 更新文档统计（35+ 篇，~530KB）
+
+历史更新（2025-11-04）:
 - compiler-and-gas-innovation.md - 跨链编译器与多币种 Gas（52KB）
 - scenario-analysis-game-defi.md - 游戏与 DeFi 场景深度分析（32KB）
 - sui-smart-contract-analysis.md - 智能合约与快捷/共识路径（18KB）
@@ -607,9 +833,10 @@ docs/
 
 ---
 
-Last Updated: 2025-11-04  
+Last Updated: 2025-11-06  
 Version: 0.10.0-alpha  
-Total Docs: 14 files, 276KB
+Total Docs: 35+ files, ~530KB  
+New: ATTRIBUTIONS.md - 完整引用与致谢清单 🎉
 
 
 

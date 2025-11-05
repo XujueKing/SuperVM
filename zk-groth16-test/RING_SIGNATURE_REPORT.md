@@ -1,5 +1,7 @@
 # Ring Signature 实现报告
 
+开发者/作者：King Xujue
+
 ## 实现概述
 
 Ring Signature（环签名）是实现发送方匿名性的核心组件。本实现基于 Groth16 zkSNARK，使用 BLS12-381 曲线和 Poseidon 哈希。

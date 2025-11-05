@@ -14,6 +14,7 @@ use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective as PedersenCurve;
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use ark_crypto_primitives::crh::TwoToOneCRHScheme;
 use ark_crypto_primitives::crh::poseidon as poseidon_crh;
+use ark_crypto_primitives::crh::CRHScheme;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use std::time::Instant;
@@ -79,10 +80,27 @@ fn main() {
     
     // ===== Setup =====
     let start = Instant::now();
+    // 构造环签名授权（每个输入一个，ring_size=3）
+    use ark_std::UniformRand;
+    let ring_auths: [zk_groth16_test::ringct_multi_utxo::RingAuth; 2] = std::array::from_fn(|_| {
+        let ring_size = 3usize;
+        let real_index = 1usize;
+        let secret_key = Fr::rand(&mut rng);
+        let mut ring_members: Vec<zk_groth16_test::ring_signature::RingMember> = Vec::with_capacity(ring_size);
+        for j in 0..ring_size {
+            let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
+            ring_members.push(zk_groth16_test::ring_signature::RingMember { public_key: pk, merkle_root: None });
+        }
+        let public_key = ring_members[real_index].public_key;
+        let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
+        zk_groth16_test::ringct_multi_utxo::RingAuth { ring_members, real_index, secret_key, key_image }
+    });
+
     let mut circuit_setup = MultiUTXORingCTCircuit {
         inputs: inputs.clone(),
         outputs: outputs.clone(),
         merkle_proofs: merkle_proofs.clone(),
+        ring_auths: ring_auths.clone(),
         poseidon_cfg: poseidon_cfg.clone(),
     };
     
@@ -102,6 +120,7 @@ fn main() {
         inputs: inputs.clone(),
         outputs: outputs.clone(),
         merkle_proofs: merkle_proofs.clone(),
+        ring_auths: ring_auths.clone(),
         poseidon_cfg: poseidon_cfg.clone(),
     };
     
@@ -123,6 +142,10 @@ fn main() {
     // Merkle 根
     for i in 0..2 {
         public_inputs.push(merkle_proofs[i].root);
+    }
+    // Key Images
+    for i in 0..2 {
+        public_inputs.push(ring_auths[i].key_image);
     }
     
     let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof)

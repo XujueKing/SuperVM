@@ -1,6 +1,7 @@
 ﻿# 开发者：king
-# Set working directory
-Set-Location -Path "d:\WEB3_AI开发\虚拟机开发"
+# Set working directory to script's parent directory (project root)
+$projectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location -Path $projectRoot
 
 # Ensure directories
 $paths = @(
@@ -168,4 +169,4 @@ try {
     Write-Host "Commit skipped or failed: $($_.Exception.Message)"
 }
 
-Write-Host "完成：ROADMAP.md 与 GitHub 模板已创建（路径：d:\WEB3_AI开发\虚拟机开发）。"
+Write-Host "完成：ROADMAP.md 与 GitHub 模板已创建。"

@@ -47,14 +47,32 @@ function Update-Phase5 {
     param([string] $Path, [int] $NewPercent)
     # Update table row
     $content = Get-Content -Path $Path -Raw -Encoding UTF8
-    $pattern1 = '(\|\s*\*\*Phase 5\*\*\s*\|[^|]*\|[^|]*\|\s*)(\d+%)(\s*\|)'
+    $pattern1 = '(?m)^(\|\s*\*\*Phase 5\*\*\s*\|[^|]*\|[^|]*\|\s*)(\d+%)(\s*\|.*)$'
     $updated = [regex]::Replace($content, $pattern1, "${1}$NewPercent%${3}")
-    # Update ASCII diagram line percentage
+    # Update ASCII diagram line percentage (header area with 进行中 XX%)
     $updated = [regex]::Replace($updated, '(进行中\s*)(\d+)%', "`${1}$NewPercent%")
+    # Update bottom progress bar line like: "Phase 5 三通道路由  ███ ...  30% 🚧"
+    # Be robust to varied spaces, trailing content (emoji/notes), and bar glyphs; capture any non-digit run before percent
+    $patternBar = '(?m)(Phase\s*5\b.*?三通道路由[^\r\n]*?\s)(\d{1,3})%(\s*.*)$'
+    $updated = [regex]::Replace($updated, $patternBar, "`${1}$NewPercent%`${3}")
     # Update last-updated date to today
     $today = (Get-Date).ToString('yyyy-MM-dd')
     $updated = [regex]::Replace($updated, '(>\s*\*\*开发者\*\*:\s*king\s*\|\s*\*\*架构师\*\*:\s*KING XU \(CHINA\)\s*\|\s*\*\*最后更新\*\*:\s*)(\d{4}-\d{2}-\d{2})', "`${1}$today")
-    if ($updated -ne $content) { Set-Content -Path $Path -Value $updated -Encoding UTF8 }
+    # Always perform a line-wise pass against the just-updated content to ensure stubborn lines are updated
+    $lines = $updated -split '(?:\r\n|\n)'
+    $changed = $false
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -like '*Phase 5 三通道路由*') {
+            $newLine = [regex]::Replace($lines[$i], '(\d{1,3})%(\s*.*)$', "$NewPercent%`${2}")
+            if ($newLine -ne $lines[$i]) { Write-Host "[auto-sync] Fallback updated Phase 5 line: $($lines[$i]) -> $newLine"; $lines[$i] = $newLine; $changed = $true }
+        }
+        if ($lines[$i] -like '*进行中*%*') {
+            $newLine2 = [regex]::Replace($lines[$i], '(进行中\s*)(\d{1,3})%', "`${1}$NewPercent%")
+            if ($newLine2 -ne $lines[$i]) { Write-Host "[auto-sync] Fallback updated header line: $($lines[$i]) -> $newLine2"; $lines[$i] = $newLine2; $changed = $true }
+        }
+    }
+    $final = if ($changed) { $lines -join "`r`n" } else { $updated }
+    if ($final -ne $content) { Set-Content -Path $Path -Value $final -Encoding UTF8 }
 }
 
 Write-Host "[auto-sync] Reading $PrivacyPath ..."

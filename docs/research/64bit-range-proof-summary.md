@@ -1,5 +1,7 @@
 # 64-bit 范围证明实现总结
 
+开发者/作者：King Xujue
+
 **完成时间**: 2025年11月5日  
 **项目位置**: `zk-groth16-test/src/range_proof.rs`  
 **任务状态**: ✅ 完成

@@ -1,5 +1,7 @@
 # Halo2 评估项目
 
+开发者/作者：King Xujue
+
 **状态**: ✅ 完成  
 **最后更新**: 2025-11-05
 
@@ -56,8 +58,8 @@ blake2 = "0.10"           # Blake2 哈希（Fiat-Shamir）
 
 ### 1. 克隆并构建
 
-```powershell
-cd d:\WEB3_AI开发\虚拟机开发\halo2-eval
+```bash
+cd halo2-eval
 cargo build --release
 ```
 

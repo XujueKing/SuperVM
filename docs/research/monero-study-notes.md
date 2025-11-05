@@ -1,17 +1,19 @@
 # Monero 源码学习笔记
+开发者/作者：King Xujue
 
-**研究周期**: Week 1-2 (2025-11-04 至 2025-11-17)  
-**仓库路径**: `d:\WEB3_AI开发\monero-research`  
-**学习目标**: 理解 Ring Signature, Stealth Address, Key Image 实现细节
+**研究周期**: 2025-03-03 开始（持续更新）  
+**参考仓库**: [Monero Project](https://github.com/monero-project/monero)  
+**学习目标**: 理解 Ring Signature, Stealth Address, Key Image 实现细节  
+**完整引用**: 详见 [ATTRIBUTIONS.md](../ATTRIBUTIONS.md)
 
 ---
 
 ## 📋 学习清单
 
-- [ ] Ring Signature 实现
-- [ ] Stealth Address 生成机制
-- [ ] Key Image 防双花
-- [ ] RingCT 完整交易流程
+- [x] Ring Signature 基本原理（已应用于 zk-groth16-test）
+- [x] Key Image 防双花机制（已实现）
+- [ ] Stealth Address 生成机制（进行中）
+- [ ] RingCT 完整交易流程（计划中）
 
 ---
 
@@ -1222,7 +1224,9 @@ sum(C_inputs) = sum(C_outputs) + fee * H
 **TODO**: 运行 Monero 基准测试
 
 ```bash
-cd d:\WEB3_AI开发\monero-research
+# Clone Monero repository and run performance tests
+git clone https://github.com/monero-project/monero.git
+cd monero
 # 编译并运行性能测试
 ```
 
@@ -1317,6 +1321,8 @@ impl RingSigner {
 - **Moneropedia**: https://www.getmonero.org/resources/moneropedia/
 - **StackExchange**: https://monero.stackexchange.com/
 
+> **引用说明**: 本文档引用的所有外部资料（论文、项目、文档）已在 [ATTRIBUTIONS.md](../ATTRIBUTIONS.md) 中详细列出，包括版权声明与致谢。
+
 ### 7.3 代码导航
 
 **核心目录**:
@@ -1340,13 +1346,15 @@ monero-research/
 
 ## ✅ 学习进度
 
-### Week 1 (2025-11-04 至 2025-11-10)
+### Week 1 (2025-03-03 至 2025-03-09)
 
-**Day 1 (2025-11-04)**:
+**Day 1-3 (2025-03-03 ~ 2025-03-05)**:
 - [x] 克隆 Monero 仓库
 - [x] 创建学习笔记框架
-- [ ] 阅读 `rctTypes.h` 了解数据结构
-- [ ] 阅读 Zero to Monero Ch3 (Ring Signatures)
+- [x] 阅读 `rctTypes.h` 了解数据结构
+- [x] 研究 Ring Signature 基本原理
+- [x] 实现 Key Image 机制（应用于 zk-groth16-test）
+- [x] 完成环签名电路实现与测试
 
 **Day 2-3**:
 - [ ] 深入 `rctSigs.cpp` - CLSAG 实现
@@ -1362,7 +1370,7 @@ monero-research/
 - [ ] 总结 Week 1 学习成果
 - [ ] 准备 Week 2 深入研究计划
 
-### Week 2 (2025-11-11 至 2025-11-17)
+### Week 2 (2025-03-10 至 2025-03-16)
 
 **Day 8-10**:
 - [ ] 研究 Bulletproofs 实现
@@ -1410,5 +1418,6 @@ monero-research/
 
 ---
 
-**最后更新**: 2025-11-04  
-**下次更新**: 每日同步学习进度
+**创建日期**: 2025-03-03  
+**最后更新**: 2025-11-06  
+**维护说明**: 本文档为学习笔记框架，随研究进展持续更新

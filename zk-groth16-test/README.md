@@ -1,5 +1,7 @@
 # zk-groth16-test
 
+开发者/作者：King Xujue
+
 Groth16 zkSNARK 原型测试项目（arkworks 生态）
 
 ## 快速开始
@@ -178,6 +180,10 @@ criterion = "0.5"
 - [zkSNARK 技术评估](../docs/research/zk-evaluation.md)
 - [Groth16 PoC 总结](../docs/research/groth16-poc-summary.md)
 - [Monero 隐私技术研究](../docs/research/monero-study-notes.md)
+- [Ring Signature 实现报告](./RING_SIGNATURE_REPORT.md)
+ - [RingCT Multi-UTXO 实现报告](./MULTI_UTXO_REPORT.md)
+ - [RingCT Multi-UTXO 对抗性测试报告](./ADVERSARIAL_TESTS_REPORT.md)
+ - [RingCT 约束优化报告](./OPTIMIZATION_REPORT.md)
 
 ### Halo2 评估（对比参考）
 - [Halo2 项目 README](../halo2-eval/README.md) - Halo2 快速入门与性能数据

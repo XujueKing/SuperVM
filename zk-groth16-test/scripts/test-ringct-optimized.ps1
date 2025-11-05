@@ -5,7 +5,8 @@ Write-Host "`n=============================================================" -Fo
 Write-Host "    RingCT Optimization Test Suite (Phase 2.1 Complete)     " -ForegroundColor Cyan
 Write-Host "=============================================================`n" -ForegroundColor Cyan
 
-$workDir = "d:\WEB3_AI开发\虚拟机开发\zk-groth16-test"
+# Determine workspace directory dynamically
+$workDir = Split-Path -Parent $PSScriptRoot
 Set-Location $workDir
 
 # 1. Aggregated Range Proof Unit Test

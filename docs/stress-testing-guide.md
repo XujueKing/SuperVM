@@ -3,6 +3,8 @@
 版本: v0.8.0  
 最后更新: 2025-11-05
 
+开发者/作者：King Xujue
+
 ## 目录
 
 - [概述](#概述)
@@ -67,7 +69,8 @@ cargo test -p vm-runtime --test mvcc_stress_test test_high_concurrency_mixed_wor
 评估混合读写负载下的系统性能，模拟真实生产环境中的典型工作负载。
 
 **测试配置**
-`ust
+`
+ust
 线程数: 8
 每线程交易数: 1000
 总键数: 100
@@ -76,7 +79,8 @@ cargo test -p vm-runtime --test mvcc_stress_test test_high_concurrency_mixed_wor
 `
 
 **GC 配置**
-`ust
+`
+ust
 let config = GcConfig {
     max_versions_per_key: 20,
     enable_time_based_gc: false,
@@ -128,7 +132,8 @@ let config = GcConfig {
 评估在极端冲突场景下的表现，验证 MVCC 冲突检测和重试机制。
 
 **测试配置**
-`ust
+`
+ust
 线程数: 16
 每线程交易数: 500
 热点键数: 5 (所有线程竞争同样的键)
@@ -136,7 +141,8 @@ let config = GcConfig {
 `
 
 **GC 配置**
-`ust
+`
+ust
 let config = GcConfig {
     max_versions_per_key: 50,  // 热点键需要更多版本
     enable_time_based_gc: false,
@@ -182,7 +188,8 @@ let config = GcConfig {
 验证 GC 能有效控制内存增长，防止版本数无限膨胀。
 
 **测试配置**
-`ust
+`
+ust
 键数: 50
 迭代次数: 20
 每次迭代更新所有键
@@ -191,7 +198,8 @@ GC 间隔: 2秒
 `
 
 **GC 配置**
-`ust
+`
+ust
 let config = GcConfig {
     max_versions_per_key: 10,
     enable_time_based_gc: false,
@@ -244,7 +252,8 @@ let config = GcConfig {
 3. **阶段 3 - 低负载**: 验证参数回归
 
 **GC 配置**
-`ust
+`
+ust
 let config = GcConfig {
     max_versions_per_key: 20,
     enable_time_based_gc: false,
@@ -302,7 +311,8 @@ let config = GcConfig {
 验证长时间运行的稳定性和内存稳定性。
 
 **测试配置**
-`ust
+`
+ust
 运行时长: 60秒 (可配置为数小时)
 线程数: 4
 键数: 200
@@ -340,7 +350,8 @@ let config = GcConfig {
 
 ### GcConfig 结构
 
-`ust
+`
+ust
 pub struct GcConfig {
     /// 每个键最多保留的版本数
     pub max_versions_per_key: usize,
@@ -358,7 +369,8 @@ pub struct GcConfig {
 
 ### AutoGcConfig 结构
 
-`ust
+`
+ust
 pub struct AutoGcConfig {
     /// GC 间隔时间（秒）
     pub interval_secs: u64,
@@ -381,7 +393,8 @@ pub struct AutoGcConfig {
 | max_versions_per_key | 10 | 每个键保留的最大版本数 | 增加可减少冲突，但会占用更多内存 |
 | interval_secs | 60 | GC 执行间隔（秒） | 缩短可更及时回收，但会增加 CPU 开销 |
 | ersion_threshold | 1000 | 触发 GC 的版本数阈值 | 降低可更激进回收，提高可延迟触发 |
-| un_on_start | false | 启动时立即执行 GC | 适合从快照恢复的场景 |
+| 
+un_on_start | false | 启动时立即执行 GC | 适合从快照恢复的场景 |
 | enable_adaptive | false | 启用自适应调整 | 推荐启用，自动优化参数 |
 
 ---
@@ -400,7 +413,8 @@ pub struct AutoGcConfig {
 
 ### 配置自适应 GC
 
-`ust
+`
+ust
 use vm_runtime::{MvccStore, GcConfig, AutoGcConfig};
 
 let config = GcConfig {
@@ -420,7 +434,8 @@ let store = MvccStore::new_with_config(config);
 
 ### 自适应策略
 
-`ust
+`
+ust
 pub struct AdaptiveGcStrategy {
     pub base_interval_secs: 60,    // 基准间隔
     pub min_interval_secs: 10,     // 最小间隔（高负载）
@@ -470,7 +485,8 @@ pub struct AdaptiveGcStrategy {
 
 **查看当前 GC 参数** (v0.8.0+):
 
-`ust
+`
+ust
 if let Some(runtime) = store.get_auto_gc_runtime() {
     println!("自适应模式: {}", runtime.enable_adaptive);
     println!("当前间隔: {} 秒", runtime.interval_secs);
@@ -480,7 +496,8 @@ if let Some(runtime) = store.get_auto_gc_runtime() {
 
 **结合 GC 统计评估效果**:
 
-`ust
+`
+ust
 let stats = store.get_gc_stats();
 let runtime = store.get_auto_gc_runtime().unwrap();
 
@@ -513,7 +530,8 @@ if stats.gc_count > 0 {
 **业务需求**: 最大化 TPS，内存充足
 
 **推荐配置**:
-`ust
+`
+ust
 GcConfig {
     max_versions_per_key: 30,      //  增加版本限制
     enable_time_based_gc: false,
@@ -543,7 +561,8 @@ GcConfig {
 **业务需求**: 内存有限，需要严格控制
 
 **推荐配置**:
-`ust
+`
+ust
 GcConfig {
     max_versions_per_key: 10,      //  降低版本限制
     enable_time_based_gc: false,
@@ -573,7 +592,8 @@ GcConfig {
 **业务需求**: 存在热点键，冲突率高
 
 **推荐配置**:
-`ust
+`
+ust
 GcConfig {
     max_versions_per_key: 50,      //  热点键需要更多版本
     enable_time_based_gc: false,
@@ -588,7 +608,8 @@ GcConfig {
 `
 
 **应用层优化**:
-`ust
+`
+ust
 // 1. 键分片（减少热点）
 let shard = hash(key) % num_shards;
 let sharded_key = format!("{}_{}", key, shard);
@@ -614,7 +635,8 @@ ro_txn.commit()?; // 直接返回，无开销
 **业务需求**: 有长时间运行的事务（如报表生成）
 
 **推荐配置**:
-`ust
+`
+ust
 GcConfig {
     max_versions_per_key: 100,     //  大幅增加
     enable_time_based_gc: false,
@@ -686,7 +708,8 @@ GcConfig {
 
 **诊断步骤**
 
-`ust
+`
+ust
 // 1. 检查 GC 是否启用
 if store.get_auto_gc_runtime().is_none() {
     println!(" 未启用自动 GC");
@@ -718,7 +741,8 @@ println!("平均版本/键: {:.2}", avg);
 
 **解决方案**
 
-`ust
+`
+ust
 // 方案 1: 调整 GC 参数
 let config = GcConfig {
     max_versions_per_key: 10,    //  降低限制
@@ -748,7 +772,8 @@ TPS 远低于基准值，系统响应缓慢。
 
 **诊断步骤**
 
-`ust
+`
+ust
 // 1. 检查 GC 频率
 let stats = store.get_gc_stats();
 let runtime = store.get_auto_gc_runtime().unwrap();
@@ -779,7 +804,8 @@ if p99_latency > p50_latency * 10.0 {
 
 **解决方案**
 
-`ust
+`
+ust
 // 方案 1: 减少 GC 频率
 let config = GcConfig {
     max_versions_per_key: 30,
@@ -816,7 +842,8 @@ for chunk in data.chunks(100) {
 
 **诊断步骤**
 
-`ust
+`
+ust
 // 1. 识别热点键
 let mut key_access_count = HashMap::new();
 for txn in &transactions {
@@ -844,7 +871,8 @@ println!("平均版本/键: {}", versions_per_key);
 
 **解决方案**
 
-`ust
+`
+ust
 // 方案 1: 增加版本数限制
 let config = GcConfig {
     max_versions_per_key: 50,  //  热点键需要更多版本
@@ -882,7 +910,8 @@ let value = ro_txn.read(b"hot_key")?; // 不会冲突
 
 **诊断步骤**
 
-`ust
+`
+ust
 // 1. 记录 GC 执行时刻
 let mut gc_timestamps = Vec::new();
 let mut last_gc_count = 0;
@@ -913,7 +942,8 @@ for entry in store.data.iter() {
 
 **解决方案**
 
-`ust
+`
+ust
 // 方案 1: 更激进的 GC
 let config = GcConfig {
     max_versions_per_key: 15,    //  减少版本限制
@@ -948,7 +978,8 @@ if gc_duration.as_millis() > 10 {
 
 建议在生产环境中持续监控以下指标:
 
-`ust
+`
+ust
 use std::time::{Duration, Instant};
 use std::thread;
 
@@ -1006,7 +1037,8 @@ production_monitor(Arc::clone(&store));
 
 在压力测试期间，实时输出详细统计:
 
-`ust
+`
+ust
 fn stress_test_monitor(store: Arc<MvccStore>, duration: Duration) {
     let start = Instant::now();
     let mut last_check = Instant::now();
@@ -1039,7 +1071,8 @@ fn stress_test_monitor(store: Arc<MvccStore>, duration: Duration) {
 
 定期运行基准测试并记录结果:
 
-`ust
+`
+ust
 // 创建基准测试记录
 struct BenchmarkResult {
     date: String,
