@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - zk-groth16-test v0.1.0 (2025-11-06)
+
+#### Ring Signature 电路与测试 ✅
+- 新增模块：`zk-groth16-test/src/ring_signature.rs`
+  - 功能：Key Image 生成与验证、环成员存在性验证（简化版环签名）
+  - 约束：ring_size=3 → 253 约束（≈84 约束/成员）
+  - 公开输入：Key Image（Poseidon 哈希）
+- 单元测试（4/4 通过）：
+  - `test_key_image_generation`
+  - `test_ring_signature_generation_and_verification`
+  - `test_ring_signature_circuit_constraints`
+  - `test_ring_signature_end_to_end`
+- 基准脚本：`zk-groth16-test/benches/ring_signature_benchmarks.rs`
+- 报告文档：`zk-groth16-test/RING_SIGNATURE_REPORT.md`
+
+#### 相关文档
+- `ROADMAP-ZK-Privacy.md`：标记“实现环签名电路（Week 5-6）”为已完成，并补充约束指标与报告链接
+- `docs/INDEX.md`：新增“隐私与零知识”板块，汇总研究与实现链接
+
 ### Added - vm-runtime v0.9.0 (2025-11-04)
 
 #### Critical Bug Fix: Write Skew Anomaly 🐛🔧

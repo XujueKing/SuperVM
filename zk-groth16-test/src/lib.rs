@@ -5,6 +5,15 @@
 //!
 //! 目标：最小可行电路（a*b=c）端到端：Trusted Setup → 生成证明 → 验证证明。
 
+pub mod pedersen;
+pub mod range_proof;
+pub mod range_proof_aggregated;
+pub mod combined;
+pub mod ringct;
+pub mod ringct_compressed;
+pub mod ringct_multi_utxo;
+pub mod ring_signature;
+
 use ark_bls12_381::Fr;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError};
 
@@ -68,10 +77,3 @@ mod tests {
     assert!(!Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[wrong]).unwrap(), "should not verify");
     }
 }
-
-// 导出电路模块
-pub mod range_proof;
-pub mod range_proof_aggregated;
-pub mod ringct;
-pub mod ringct_compressed;
-pub mod ringct_multi_utxo;

@@ -68,9 +68,12 @@
 
 #### Week 5-6: RingCT 电路完善
 - [ ] **扩展 Combined Circuit**
-  - [ ] 支持多输入/多输出（UTXO 模型）
-  - [ ] 实现环签名电路（Ring Signature）
-  - [ ] 添加金额隐藏与平衡证明
+  - [x] 支持多输入/多输出（UTXO 模型）
+  - [x] 实现环签名电路（Ring Signature）
+    - 完成情况：简化版环签名电路（Key Image + 成员验证）已实现，4 项单元测试通过
+    - 约束指标：ring_size=3 共 253 约束，约 84 约束/成员
+    - 报告文档：`zk-groth16-test/RING_SIGNATURE_REPORT.md`
+  - [x] 添加金额隐藏与平衡证明
   - [ ] 集成 Bulletproofs Range Proof（更高效）
 - [ ] **性能优化**
   - [ ] 约束数优化（目标 <200 约束）

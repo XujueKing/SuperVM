@@ -34,6 +34,17 @@ docs/
 
 ---
 
+## 隐私与零知识
+
+- 研究报告
+  - [Halo2 评估总结](./research/halo2-eval-summary.md)
+  - [zkSNARK 技术选型与评估](./research/zk-evaluation.md)
+  - [Monero 隐私技术研究笔记](./research/monero-study-notes.md)
+- 实现与进展
+  - [Ring Signature 实现报告](../zk-groth16-test/RING_SIGNATURE_REPORT.md)
+
+---
+
 ## 根据场景选择文档
 
 ### 场景 1: 我是新用户，想快速了解 SuperVM
