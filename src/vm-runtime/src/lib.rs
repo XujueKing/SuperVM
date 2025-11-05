@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 XujueKing <leadbrand@me.com>
+
 // 开发者：king
 // Developer: king
 use anyhow::Result;
@@ -11,6 +14,10 @@ mod crypto;
 pub mod parallel;
 pub mod mvcc;
 pub mod parallel_mvcc;  // v0.9.0: 新的基于 MVCC 的并行调度器
+pub mod ownership;      // v2.0: Sui-Inspired 对象所有权模型
+pub mod supervm;        // v2.0: 统一入口与模式路由
+pub mod privacy;        // Phase 2.0: Privacy Layer (Ring Signatures, Stealth Addresses, etc.)
+pub mod execution_trait; // L1: 统一执行引擎接口 (WASM/EVM)
 
 pub use storage::{Storage, MemoryStorage};
 pub use parallel::{
@@ -21,12 +28,25 @@ pub use mvcc::{MvccStore, Version, Txn, GcConfig, GcStats, AutoGcConfig, Adaptiv
 pub use parallel_mvcc::{
     MvccScheduler, MvccSchedulerConfig, MvccSchedulerStats, TxnResult, BatchTxnResult
 };
+pub use ownership::{
+    OwnershipManager, OwnershipType, ObjectMetadata, Object, AccessType, OwnershipStats,
+    ObjectId, Address
+};
+pub use supervm::{Privacy, Transaction as VmTransaction, ExecutionPath, ExecutionReceipt, SuperVM};
+pub use execution_trait::{ExecutionEngine, EngineType, ExecutionContext, ContractResult, Log, StateChange};
 use host::{HostState, storage_api, chain_api, crypto_api};
+
+// Type alias for complex transaction tuple in Runtime API
+type RuntimeTxnTuple = (TxId, VmTransaction, std::sync::Arc<dyn Fn(&mut Txn) -> Result<i32> + Send + Sync>);
 
 /// VM 运行时的主要接口
 pub struct Runtime<S: Storage = MemoryStorage> {
     engine: Engine,
     storage: Rc<RefCell<S>>,
+    /// Phase 1.3: 集成对象所有权管理
+    ownership_manager: Option<std::sync::Arc<OwnershipManager>>,
+    /// Phase 1.3: 集成 MVCC 调度器
+    scheduler: Option<std::sync::Arc<MvccScheduler>>,
 }
 
 impl<S: Storage + 'static> Runtime<S> {
@@ -35,12 +55,34 @@ impl<S: Storage + 'static> Runtime<S> {
         Self { 
             engine: Engine::default(),
             storage: Rc::new(RefCell::new(storage)),
+            ownership_manager: None,
+            scheduler: None,
+        }
+    }
+
+    /// Phase 1.3: 创建带路由能力的运行时
+    pub fn new_with_routing(storage: S) -> Self {
+        Self {
+            engine: Engine::default(),
+            storage: Rc::new(RefCell::new(storage)),
+            ownership_manager: Some(std::sync::Arc::new(OwnershipManager::new())),
+            scheduler: Some(std::sync::Arc::new(MvccScheduler::new())),
         }
     }
 
     /// 获取存储接口的不可变引用（内部为 Rc<RefCell>）
     pub fn storage(&self) -> Rc<RefCell<S>> {
         self.storage.clone()
+    }
+
+    /// Phase 1.3: 获取所有权管理器
+    pub fn ownership_manager(&self) -> Option<&std::sync::Arc<OwnershipManager>> {
+        self.ownership_manager.as_ref()
+    }
+
+    /// Phase 1.3: 获取调度器
+    pub fn scheduler(&self) -> Option<&std::sync::Arc<MvccScheduler>> {
+        self.scheduler.as_ref()
     }
 
     /// 注册 host functions 到 linker
@@ -200,6 +242,43 @@ impl<S: Storage + 'static> Runtime<S> {
                 error: Some(e.to_string()),
             }),
         }
+    }
+
+    /// Phase 1.3: 带路由的交易执行入口
+    /// 
+    /// 根据交易的隐私模式和对象所有权自动路由到 Fast/Consensus/Private 路径
+    pub fn execute_with_routing(
+        &self,
+        tx_id: TxId,
+        tx: &VmTransaction,
+        func: impl Fn(&mut Txn) -> Result<i32>,
+    ) -> Result<ExecutionReceipt> {
+        let ownership = self.ownership_manager.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Runtime not configured with routing, use new_with_routing()"))?;
+        let scheduler = self.scheduler.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Runtime not configured with scheduler"))?;
+
+        let supervm = SuperVM::new(ownership).with_scheduler(scheduler);
+        Ok(supervm.execute_transaction_with(tx_id, tx, func))
+    }
+
+    /// Phase 1.3: 带路由的批量交易执行
+    pub fn execute_batch_with_routing(
+        &self,
+        txs: Vec<RuntimeTxnTuple>,
+    ) -> Result<(BatchTxnResult, BatchTxnResult, u64)> {
+        let ownership = self.ownership_manager.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Runtime not configured with routing"))?;
+        let scheduler = self.scheduler.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Runtime not configured with scheduler"))?;
+
+        let supervm = SuperVM::new(ownership).with_scheduler(scheduler);
+        Ok(supervm.execute_batch(txs))
+    }
+
+    /// Phase 1.3: 获取路由统计
+    pub fn get_routing_stats(&self) -> Option<OwnershipStats> {
+        self.ownership_manager.as_ref().map(|m| m.get_stats())
     }
 }
 
@@ -592,5 +671,37 @@ mod tests {
         assert_eq!(graph.get_dependencies(3), vec![1]);
         
         Ok(())
+    }
+
+    #[test]
+    fn test_execution_trait() {
+        use crate::execution_trait::*;
+
+        // 测试 EngineType
+        assert_eq!(EngineType::Wasm, EngineType::Wasm);
+        assert_ne!(EngineType::Wasm, EngineType::Evm);
+
+        // 测试 ExecutionContext
+        let ctx = ExecutionContext {
+            caller: [1u8; 20],
+            contract: [2u8; 20],
+            value: 1000,
+            gas_limit: 100000,
+            block_number: 12345,
+            timestamp: 1234567890,
+        };
+        assert_eq!(ctx.value, 1000);
+        assert_eq!(ctx.gas_limit, 100000);
+
+        // 测试 ContractResult
+        let result = ContractResult {
+            success: true,
+            return_data: vec![1, 2, 3],
+            gas_used: 5000,
+            logs: vec![],
+            state_changes: vec![],
+        };
+        assert!(result.success);
+        assert_eq!(result.gas_used, 5000);
     }
 } 

@@ -1,10 +1,67 @@
-# SuperVM - WASM Runtime with Event System
+# SuperVM - Next-Generation Decentralized Virtual Machine
 
-开发者: 
-Rainbow Haruko(CHINA) / king(CHINA) / NoahX(CHINA)
-/ Alan Tang(CHINA) / Xuxu(CHINA)
+**开发者**: Rainbow Haruko(CHINA) / king(CHINA) / NoahX(CHINA) / Alan Tang(CHINA) / Xuxu(CHINA)
 
-SuperVM 是一个高性能的 WASM-first 虚拟机运行时,支持存储操作、链上下文访问和事件系统。
+---
+
+## � 项目概述
+
+SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净与并行执行：
+- ⚡ 并行执行 + MVCC 并发控制：187K+ TPS（低竞争），85K+ TPS（高竞争）
+- 🧠 内核分级保护：L0（核心运行时/调度/MVCC），L1（内核扩展），L2+（接口/插件/应用）
+- 🔌 插件化兼容：EVM 通过适配器在插件层实现，零入侵内核
+- 🔒 隐私专项：ZK/环签等在独立模块推进（参见 ROADMAP-ZK-Privacy）
+
+当前工作区版本：0.1.0（PoC，活跃开发）
+
+### � 快速入口
+- 路线图与阶段规划：`ROADMAP.md`
+- 内核速用指南（含上帝分支）：`docs/KERNEL-QUICK-START.md`
+- 内核定义与保护机制：`docs/KERNEL-DEFINITION.md`
+- 模块分级与版本索引：`docs/KERNEL-MODULES-VERSIONS.md`
+- EVM 适配器设计：`docs/evm-adapter-design.md`
+- 架构资料与对比：`docs/architecture-2.0.md`、`docs/tech-comparison.md`
+
+> 架构师可直接使用 `king/*` 分支或 `main` 分支进行内核改动，自动放行；细节见“内核速用指南”。
+
+---
+
+## 🌐 扩展能力与场景支持
+
+> 除内核性能与纯净之外，SuperVM 也面向更完整的链上生态能力：四层神经网络、绝对隐私、跨链兼容、游戏/DeFi 高性能、跨链编译器、多币种 Gas 等。
+
+### 四层神经网络（L1 → L4）
+- L1 超算层：高性能数据中心/云节点，负责重任务与聚合
+- L2 矿机层：大规模分布式节点，负责执行与存储
+- L3 边缘层：贴近用户侧的低延迟接入与加速
+- L4 移动层：终端/轻客户端参与、证明与校验
+参考：`docs/architecture-2.0.md`
+
+### 绝对隐私（Monero/SNARKs 路线）
+- 环签名、隐匿地址、RingCT 金额隐私
+- ZK 证明电路实验：Groth16、Halo2（独立实验模块）
+- 隐私交易与可验证计算分层接入，不污染内核
+参考：`ROADMAP-ZK-Privacy.md`、`halo2-eval/`、`zk-groth16-test/`
+
+### 兼容其它链（插件化）
+- EVM 兼容通过“适配器插件”提供（L3 层），零侵入内核
+- Solidity → WASM（编译器路线）与 EVM 字节码执行（适配路线）两条路径并存
+参考：`docs/evm-adapter-design.md`
+
+### 游戏 & DeFi 高性能支持
+- 所有权路由 + MVCC 并行，减少热点冲突与串行瓶颈
+- 低延迟路径适配游戏状态同步，高并发撮合/清算支持 DeFi
+参考：`docs/scenario-analysis-game-defi.md`
+
+### 跨链编译器（WODA）
+- 一次开发，多目标链部署；模型与 ABI 适配在接口层完成
+参考：`docs/compiler-and-gas-innovation.md`
+
+### 多币种 Gas 与激励
+- 根据资产/场景分层计费；结合四层网络的激励与路由策略
+参考：`docs/gas-incentive-mechanism.md`
+
+---
 
 ## 功能特性
 
@@ -362,6 +419,15 @@ t3.write(b"balance".to_vec(), b"200".to_vec());
 t4.write(b"balance".to_vec(), b"300".to_vec());
 
 // 第一个提交成功
+
+---
+
+## License
+
+本项目自有代码采用 GPL-3.0-or-later 许可协议发布。详情参见仓库根目录的 `LICENSE` 文件。
+
+第三方组件说明：
+- `solana/` 目录为第三方参考代码，不属于本项目的一部分，保持其原有许可证约束（Apache-2.0，见 `solana/LICENSE`）。本项目的构建与发布不会包含该目录。
 t3.commit()?;
 // 第二个提交失败（写写冲突）
 assert!(t4.commit().is_err());
@@ -604,19 +670,63 @@ SuperVM/
 ├── src/
 │   ├── vm-runtime/          # WASM 运行时核心
 │   │   ├── src/
-│   │   │   ├── lib.rs       # 公共 API
-│   │   │   ├── storage.rs   # 存储抽象
-│   │   │   └── host.rs      # Host functions
+│   │   │   ├── lib.rs           # 公共 API
+│   │   │   ├── runtime.rs       # 核心运行时 (L0)
+│   │   │   ├── wasm_executor.rs # WASM 执行器 (L0)
+│   │   │   ├── storage.rs       # 存储抽象 (L0)
+│   │   │   ├── parallel/        # 并行调度器 (L0)
+│   │   │   ├── mvcc/            # MVCC 引擎 (L0)
+│   │   │   ├── ownership.rs     # 所有权扩展 (L1)
+│   │   │   ├── supervm.rs       # 高级 API (L1)
+│   │   │   └── execution_trait.rs # 执行引擎 trait (L1)
 │   │   └── Cargo.toml
-│   └── node-core/           # CLI 演示程序
+│   └── node-core/           # CLI 演示程序 (L4)
 │       ├── src/
 │       │   └── main.rs
 │       └── Cargo.toml
+├── privacy-test/            # 隐私密码学实验 (L3)
+│   ├── src/
+│   │   ├── simple_ring_signature.rs
+│   │   ├── pedersen_commitment.rs
+│   │   └── hash_to_point.rs
+│   └── Cargo.toml
+├── halo2-eval/              # Halo2 ZK 评估 (L3)
+│   ├── src/
+│   └── Cargo.toml
+├── zk-groth16-test/         # Groth16 ZK 实验 (L3)
+│   ├── src/
+│   ├── benches/
+│   └── Cargo.toml
+├── examples/                # 示例程序 (L4)
+│   ├── ownership_demo.rs
+│   ├── supervm_routing_demo.rs
+│   ├── routed_batch_demo.rs
+│   └── tps_compare_demo.rs
+├── scripts/                 # 开发与部署脚本
+│   ├── install-git-hooks.ps1
+│   ├── pre-commit-hook.sh
+│   └── verify-kernel-purity.sh
+├── .github/                 # GitHub 配置
+│   ├── MAINTAINERS          # 维护者白名单
+│   ├── workflows/
+│   │   └── kernel-purity-check.yml
+│   └── ISSUE_TEMPLATE/
 ├── docs/
+│   ├── KERNEL-DEFINITION.md     # 内核保护定义 (600+ 行)
+│   ├── KERNEL-QUICK-START.md    # 架构师快速上手
+│   ├── KERNEL-QUICK-REFERENCE.md # 开发者参考卡
+│   ├── KERNEL-MODULES-VERSIONS.md # 模块分级 (L0-L4)
+│   ├── architecture-2.0.md      # 完整架构文档
+│   ├── evm-adapter-design.md    # EVM 适配器设计
+│   ├── parallel-execution.md    # 并行执行机制
+│   ├── gas-incentive-mechanism.md # GAS 激励机制
+│   ├── scenario-analysis-game-defi.md # 游戏/DeFi 场景分析
 │   └── plans/
+│       ├── phase2-privacy-layer.md
 │       └── vm-runtime-extension.md
 ├── CHANGELOG.md             # 更新日志
-├── ROADMAP.md               # 开发路线图
+├── ROADMAP.md               # 主开发路线图
+├── ROADMAP-ZK-Privacy.md    # 隐私专项路线图
 └── Cargo.toml               # Workspace 配置
 ```
 
@@ -632,41 +742,101 @@ SuperVM/
 └───────────────┼─────────────────────────────┘
                 │
                 ▼
-┌───────────────────────────────────────────────┐
-│           vm-runtime Crate                    │
-│  ┌─────────────────────────────────────────┐  │
-│  │  Runtime<S: Storage>                    │  │
-│  │  - execute_add()                        │  │
-│  │  - execute_with_context()               │  │
-│  └──────────┬──────────────────────────────┘  │
-│             │                                  │
-│  ┌──────────▼──────────┐  ┌────────────────┐ │
-│  │   Storage Trait     │  │  Host Functions│ │
-│  │  - get/set/delete   │  │  - storage_api │ │
-│  │  - scan             │  │  - chain_api   │ │
-│  └─────────────────────┘  └────────────────┘ │
-│             │                      │           │
-│  ┌──────────▼──────────┐          │           │
-│  │  MemoryStorage      │          │           │
-│  │  (BTreeMap backend) │          │           │
-│  └─────────────────────┘          │           │
-└────────────────────────────────────┼───────────┘
-                                     │
-                                     ▼
-                          ┌──────────────────┐
-                          │   wasmtime 17.0  │
-                          │   WASM Engine    │
-                          └──────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│                    vm-runtime Crate                           │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │  L4 应用层 (Application Layer)                          │ │
+│  │  - Cross-Chain Compiler (跨链编译器)                    │ │
+│  │  - DApps (游戏/DeFi/NFT 去中心化应用)                   │ │
+│  │  - node-core CLI                                         │ │
+│  │  - examples/ 示例程序                                    │ │
+│  └──────────────────────┬───────────────────────────────────┘ │
+│                         │                                      │
+│  ┌──────────────────────▼───────────────────────────────────┐ │
+│  │  L3 插件层 (Plugin Layer)                               │ │
+│  │  - EVM Adapter (solidity → WASM)                        │ │
+│  │  - Neural Network Engine (神经网络推理引擎)            │ │
+│  │  - privacy-test (RingCT, Pedersen)                      │ │
+│  │  - zk-groth16-test, halo2-eval                          │ │
+│  └──────────────────────┬───────────────────────────────────┘ │
+│                         │                                      │
+│  ┌──────────────────────▼───────────────────────────────────┐ │
+│  │  L1 扩展层 (Extension Layer) - 桥接 L0 与 L2           │ │
+│  │  - ownership.rs (所有权管理)                            │ │
+│  │  - supervm.rs (高级 API)                                │ │
+│  │  - execution_trait.rs (统一执行引擎接口) ✅            │ │
+│  │    ↑ 向下封装 L0 核心 | 向上服务 L2 适配器 ↓           │ │
+│  └──────────────────────┬───────────────────────────────────┘ │
+│                         │                                      │
+│  ┌──────────────────────▼───────────────────────────────────┐ │
+│  │  L0 核心内核 (Core Kernel) - 受保护                     │ │
+│  │  ┌────────────────────────────────────────────────────┐  │ │
+│  │  │  ParallelScheduler (并行调度器)                   │  │ │
+│  │  │  - WorkStealingScheduler 工作窃取                 │  │ │
+│  │  │  - 依赖检测与冲突解析                             │  │ │
+│  │  └────────────┬───────────────────────────────────────┘  │ │
+│  │               │                                            │ │
+│  │  ┌────────────▼───────────────────────────────────────┐  │ │
+│  │  │  MVCC Engine (多版本并发控制)                     │  │ │
+│  │  │  - MvccStore (每键版本链)                         │  │ │
+│  │  │  - 快照隔离 (Snapshot Isolation)                  │  │ │
+│  │  │  - GC (垃圾回收) + Observability                  │  │ │
+│  │  └────────────┬───────────────────────────────────────┘  │ │
+│  │               │                                            │ │
+│  │  ┌────────────▼───────────────────────────────────────┐  │ │
+│  │  │  Runtime<S: Storage>                               │  │ │
+│  │  │  - WasmExecutor (WASM 执行器)                      │  │ │
+│  │  │  - Storage Trait (存储抽象)                        │  │ │
+│  │  │  - Host Functions (链上下文/密码学/事件)           │  │ │
+│  │  └────────────┬───────────────────────────────────────┘  │ │
+│  └───────────────┼────────────────────────────────────────────┘ │
+└──────────────────┼──────────────────────────────────────────────┘
+                   │
+                   ▼
+        ┌──────────────────┐
+        │  wasmtime 17.0   │
+        │  WASM JIT Engine │
+        └──────────────────┘
 ```
 
 ## 性能特性
 
-- ⚡ **Zero-copy**: 使用指针传递避免不必要的内存复制
-- 🔒 **安全性**: Rust 内存安全 + WASM 沙箱隔离
-- 🚀 **高性能**: wasmtime JIT 编译优化
-- 📦 **模块化**: 可插拔存储后端,易于扩展
+### 🏆 核心性能指标
 
-提示: 想快速了解本项目的性能表现？请直接查看下方的“[性能摘要 (Criterion)](#性能摘要-criterion)”小节，或打开本地基准报告 HTML：`target/criterion/report/index.html`。
+- **并行TPS**: 187,000+ TPS (低冲突场景) | 85,000+ TPS (高冲突场景)
+- **内核保护**: 零侵入式内核隔离 (L0/L1 分级保护)
+- **并发模型**: MVCC 快照隔离 + 每键粒度版本链
+- **调度器**: Work-Stealing 工作窃取 + 自动依赖检测
+
+### ⚡ 性能优化技术
+
+- **Zero-copy 设计**: 指针传递避免内存复制,存储层直接引用
+- **MVCC 多版本控制**: 
+  - 每键独立版本链 (DashMap),读写并发无阻塞
+  - 快照隔离 (Snapshot Isolation),事务级一致性保证
+  - 自适应 GC,后台垃圾回收过期版本
+- **并行调度优化**:
+  - 工作窃取调度器 (WorkStealingScheduler),自动负载均衡
+  - 依赖检测与冲突解析,最大化并行度
+  - 批量操作优化 (batch_write/read/execute),减少系统调用
+- **JIT 编译加速**: wasmtime 17.0 实时编译优化,接近原生代码性能
+
+### 🔒 安全特性
+
+- **Rust 内存安全**: 编译期所有权检查,零成本抽象
+- **WASM 沙箱隔离**: 字节码验证 + 线性内存隔离,恶意合约无法逃逸
+- **内核保护机制**:
+  - L0 核心内核只读保护 (CI + pre-commit hook)
+  - 5 种覆盖方法 (环境变量/Git 配置/上帝分支/标签/文件)
+  - 维护者白名单验证 (`.github/MAINTAINERS`)
+
+### 📦 架构特性
+
+- **模块化设计**: L0-L4 分层架构,可插拔存储/调度/执行引擎
+- **跨链兼容**: EVM Adapter 支持 Solidity → WASM 编译,兼容以太坊生态
+- **可观测性**: 完整 GC 可视化 + 执行统计,实时监控系统状态
+
+提示: 完整性能报告请查看 `BENCHMARK_RESULTS.md`,或运行 `cargo bench` 查看本地基准测试 (`target/criterion/report/index.html`)。详细压测指南见 [`docs/stress-testing-guide.md`](docs/stress-testing-guide.md)。
 
 ## 开发状态
 
@@ -706,6 +876,14 @@ SuperVM/
 - 📖 [并行执行设计](docs/parallel-execution.md) - 并行调度器与冲突检测
 - 📖 [压力测试与调优指南](docs/stress-testing-guide.md) - MVCC 压力测试与自适应 GC (v0.8.0)
 - 📖 [GC 运行时可观测性](docs/gc-observability.md) - 实时监控 GC 参数 (v0.8.0)
+- 📖 [游戏与 DeFi 场景分析](docs/scenario-analysis-game-defi.md) - 面向业务场景的性能路径
+- 📖 [跨链编译器与多币种 Gas](docs/compiler-and-gas-innovation.md) - 编译与计费创新
+- 📖 [Gas 激励机制](docs/gas-incentive-mechanism.md) - 四层网络下的激励设计
+- 📖 [ZK 隐私专项计划](ROADMAP-ZK-Privacy.md) - 隐私路线与里程碑
+- 📖 [内核速用指南](docs/KERNEL-QUICK-START.md) - 架构师/Owner 上帝分支与覆盖
+- 📖 [内核定义与保护](docs/KERNEL-DEFINITION.md) - L0/L1/L2/L3/L4 规则
+- 📖 [模块分级与版本索引](docs/KERNEL-MODULES-VERSIONS.md) - 模块层级与版本策略
+- 📖 [EVM 适配器设计](docs/evm-adapter-design.md) - 插件化零入侵方案
 - 📖 [变更日志](CHANGELOG.md) - 版本历史与更新
 - 📖 [贡献指南](CONTRIBUTING.md) - 如何参与开发
 - 📖 [开发者文档](DEVELOPER.md) - 开发流程与规范
@@ -717,7 +895,10 @@ SuperVM/
 
 ## 许可证
 
-MIT OR Apache-2.0
+本项目自有代码采用 GPL-3.0-or-later 许可协议发布，详见根目录 `LICENSE`。
+
+第三方组件说明：
+- `solana/` 目录为第三方参考代码，不属于本项目的一部分，保持其原有许可证约束（Apache-2.0，见 `solana/LICENSE`）。本项目的构建与发布不会包含该目录。
 
 ## 联系方式
 
