@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### 相关文档
 - `ROADMAP-ZK-Privacy.md`：标记“实现环签名电路（Week 5-6）”为已完成，并补充约束指标与报告链接
 - `docs/INDEX.md`：新增“隐私与零知识”板块，汇总研究与实现链接
+ - `ROADMAP.md`：将 Phase 5 进度从 30% → 35%，并新增 `scripts/update-roadmaps.ps1` 自动化脚本
 
 ### Added - vm-runtime v0.9.0 (2025-11-04)
 

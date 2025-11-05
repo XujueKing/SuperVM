@@ -1,28 +1,43 @@
-﻿{
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Run Roadmap Script",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "Set-Content -Path 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1' -Value ([System.Text.Encoding]::UTF8.GetString([System.Text.Encoding]::Default.GetBytes((Get-Content -Path 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1' -Raw)))) -Encoding UTF8; Unblock-File 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1'; & 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1'"
-            ],
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "problemMatcher": []
-        }
-    ]
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Roadmap Script",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Set-Content -Path 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1' -Value ([System.Text.Encoding]::UTF8.GetString([System.Text.Encoding]::Default.GetBytes((Get-Content -Path 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1' -Raw)))) -Encoding UTF8; Unblock-File 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1'; & 'd:\\WEB3_AI开发\\虚拟机开发\\scripts\\create-roadmap-and-templates.ps1'"
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Auto Sync Roadmap Progress",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"scripts/auto-sync-progress.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
 }
