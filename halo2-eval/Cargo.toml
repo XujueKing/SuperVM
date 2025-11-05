@@ -1,0 +1,11 @@
+[package]
+name = "halo2-eval"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+halo2_proofs = "0.3"
+halo2curves = "0.6"
+rand = "0.8"
+blake2 = "0.10"
