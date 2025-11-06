@@ -18,11 +18,12 @@ pub mod ring_signature;
 pub mod stealth_address;
 pub mod commitment;
 pub mod range_proof;
-// pub mod zksnark;  // Phase 2.2.4
+pub mod zksnark;  // Phase 2.2.4
 // pub mod ringct;   // Phase 2.2.5
 // pub mod mixing;   // Phase 2.2.6
 
 pub use types::*;
+pub use zksnark::{ZkVerifier, NoopVerifier, ZkError, ZkCircuitId};
 // pub use ring_signature::*;
 // pub use stealth_address::*;
 // pub use commitment::*;
