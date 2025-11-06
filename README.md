@@ -21,6 +21,54 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 - 模块分级与版本索引：`docs/KERNEL-MODULES-VERSIONS.md`
 - EVM 适配器设计：`docs/evm-adapter-design.md`
 - 架构资料与对比：`docs/architecture-2.0.md`、`docs/tech-comparison.md`
+- 热键与 LFU 分层调优：`docs/LFU-HOTKEY-TUNING.md`
+
+### 🔬 热点调优与基准脚本
+
+- 生成阈值对比报告(Markdown):
+
+  ```powershell
+  # 运行多组 Medium/High 阈值,收集 TPS 与 extreme/medium/batch 计数
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-hotkey-report.ps1 `
+    -MediumThresholds 20,40 `
+    -HighThresholds 50,120 `
+    -DecayPeriod 10 `
+    -DecayFactor 0.9 `
+    -Batches 2 `
+    -Output hotkey-report.md
+  ```
+
+- 运行最小分层示例(`lfu_hotkey_demo`):
+
+  ```powershell
+  # 可选:设置环境变量以调整阈值与衰减参数
+  $env:LFU_MEDIUM=40; $env:LFU_HIGH=120; $env:LFU_DECAY_PERIOD=10; $env:LFU_DECAY_FACTOR=0.9; $env:LFU_BATCHES=3
+
+  # 运行最小示例(输出包含 TPS 与 extreme/medium/batch 计数)
+  cargo run -p vm-runtime --release --example lfu_hotkey_demo
+  ```
+
+- 自定义基准测试参数(workload + LFU):
+
+  ```powershell
+  # 工作负载参数: 线程数、每线程事务数、批次大小
+  $env:NUM_THREADS=4; $env:TX_PER_THREAD=100; $env:BATCH_SIZE=10
+  
+  # LFU 参数: Medium/High 阈值、衰减周期/因子、批次热键阈值、自适应开关
+  $env:LFU_MEDIUM=30; $env:LFU_HIGH=80; $env:LFU_DECAY_PERIOD=10; $env:LFU_DECAY_FACTOR=0.9; $env:HOT_KEY_THRESHOLD=5; $env:ADAPTIVE=true
+
+  # 运行完整基准测试
+  cargo run --release --bin ownership_sharding_mixed_bench
+  ```
+
+> **环境变量完整列表**:
+> - **工作负载**: `NUM_THREADS`(默认8)、`TX_PER_THREAD`(默认200)、`BATCH_SIZE`(默认20)
+> - **LFU 阈值**: `LFU_MEDIUM`(默认20)、`LFU_HIGH`(默认50)
+> - **LFU 衰减**: `LFU_DECAY_PERIOD`(默认10批次)、`LFU_DECAY_FACTOR`(默认0.9)
+> - **批次热键**: `HOT_KEY_THRESHOLD`(默认5次访问)
+> - **自适应**: `ADAPTIVE`(默认false,设为"1"或"true"启用)
+
+> 更多调优细节与推荐默认值,见 `docs/LFU-HOTKEY-TUNING.md`。
 
 > 架构师可直接使用 `king/*` 分支或 `main` 分支进行内核改动，自动放行；细节见“内核速用指南”。
 

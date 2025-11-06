@@ -43,6 +43,7 @@ SuperVM/
 │   ├── design-complete-report.md          - 设计总结报告
 │   ├── API.md                             - API 文档
 │   ├── parallel-execution.md              - 并行执行设计
+│   ├── LFU-HOTKEY-TUNING.md               - LFU 全局热点与分层热键调优指南
 │   ├── stress-testing-guide.md            - 压力测试指南
 │   ├── gc-observability.md                - GC 可观测性
 │   ├── evm-adapter-design.md              - EVM 适配器插件化设计
@@ -149,6 +150,16 @@ SuperVM/
 
 ### 设计文档
 - [RingCT 电路设计](./design/ringct-circuit-design.md) - RingCT 电路架构与约束设计
+
+### 系统可用性与分布式存储
+- [受限网络下的可用性设计](./restricted-network-availability.md) - 合规前提下的抗干扰与降级方案（Policy、队列、白名单传输）
+- [智能分布式存储与性能优化方案](./intelligent-distributed-storage-and-optimization.md) - 三温分级、自动迁移、RocksDB 高性能路径
+
+### 四层网络与部署
+- [四层网络硬件部署与算力调度](./four-layer-network-deployment-and-compute-scheduling.md) - 四层硬件规格、安装与任务分工、神经网络寻址与 L4 参与
+
+### 去中心化应用指南
+- [去中心化聊天（四层神经网络）](./decentralized-chat-on-four-layer-network.md) - 无中心服务器的接入即服务、E2E 加密与可选 L1 备份实现指南
 
 ---
 
