@@ -2352,6 +2352,7 @@ dependencies = [
  "wasmi",
  "wasmtime",
  "wat",
+ "zk-groth16-test",
 ]
 
 [[package]]

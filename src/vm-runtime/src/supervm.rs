@@ -8,6 +8,8 @@
 // 目标：提供统一入口，根据隐私模式与对象所有权路由到快速/共识/隐私路径
 
 use crate::{OwnershipManager, ObjectId, Address};
+#[cfg(feature = "groth16-verifier")]
+use crate::privacy::{ZkVerifier, ZkCircuitId, ZkError};
 use crate::parallel_mvcc::{MvccScheduler, BatchTxnResult, TxId};
 use crate::mvcc::Txn;
 use std::sync::Arc;
@@ -51,16 +53,42 @@ pub struct ExecutionReceipt {
 pub struct SuperVM<'a> {
     ownership: &'a OwnershipManager,
     scheduler: Option<&'a MvccScheduler>,
+    /// Optional ZK verifier (feature-gated usage)
+    #[cfg(feature = "groth16-verifier")]
+    zk: Option<&'a dyn ZkVerifier>,
 }
 
 impl<'a> SuperVM<'a> {
     pub fn new(ownership: &'a OwnershipManager) -> Self {
-        Self { ownership, scheduler: None }
+        Self {
+            ownership,
+            scheduler: None,
+            #[cfg(feature = "groth16-verifier")]
+            zk: None,
+        }
     }
 
     pub fn with_scheduler(mut self, scheduler: &'a MvccScheduler) -> Self {
         self.scheduler = Some(scheduler);
         self
+    }
+
+    /// 注入可选的 ZK 验证器（最小接入）
+    #[cfg(feature = "groth16-verifier")]
+    pub fn with_verifier(mut self, verifier: &'a dyn ZkVerifier) -> Self {
+        self.zk = Some(verifier);
+        self
+    }
+
+    /// 供上层在进入隐私路径前主动调用的验证入口（可选）
+    #[cfg(feature = "groth16-verifier")]
+    pub fn verify_with(&self, circuit: &ZkCircuitId, proof: &[u8], public_inputs: &[u8]) -> Result<bool, ZkError> {
+        if let Some(v) = self.zk {
+            v.verify_proof(circuit, proof, public_inputs)
+        } else {
+            // 未配置验证器时，默认返回 false（由调用方决定是否放行）
+            Ok(false)
+        }
     }
 
     /// 路由到执行路径（不执行）

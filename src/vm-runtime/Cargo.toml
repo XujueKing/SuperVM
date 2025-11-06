@@ -33,6 +33,14 @@ serde = { version = "1.0", features = ["derive"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 rand = "0.8"
 
+[features]
+default = []
+groth16-verifier = ["dep:zk-groth16-test"]
+
+[dependencies.zk-groth16-test]
+path = "../../zk-groth16-test"
+optional = true
+
 [[bench]]
 name = "parallel_benchmark"
 harness = false

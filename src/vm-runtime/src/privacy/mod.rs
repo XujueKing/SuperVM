@@ -19,11 +19,15 @@ pub mod stealth_address;
 pub mod commitment;
 pub mod range_proof;
 pub mod zksnark;  // Phase 2.2.4
+#[cfg(feature = "groth16-verifier")]
+pub mod groth16_verifier; // Optional: Groth16 backend adapter
 // pub mod ringct;   // Phase 2.2.5
 // pub mod mixing;   // Phase 2.2.6
 
 pub use types::*;
 pub use zksnark::{ZkVerifier, NoopVerifier, ZkError, ZkCircuitId};
+#[cfg(feature = "groth16-verifier")]
+pub use groth16_verifier::Groth16Verifier;
 // pub use ring_signature::*;
 // pub use stealth_address::*;
 // pub use commitment::*;
