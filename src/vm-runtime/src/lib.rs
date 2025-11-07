@@ -20,6 +20,7 @@ pub mod privacy;        // Phase 2.0: Privacy Layer (Ring Signatures, Stealth Ad
 pub mod execution_trait; // L1: 统一执行引擎接口 (WASM/EVM)
 pub mod bloom_filter;   // Phase 4.1: 布隆过滤器 (冲突检测优化)
 pub mod optimized_mvcc; // Phase 4.1: 优化的 MVCC 调度器 (集成布隆过滤器)
+pub mod auto_tuner;     // Phase 4.2: 自适应性能调优器 (智能参数调节)
 
 pub use storage::{Storage, MemoryStorage};
 pub use parallel::{
@@ -36,6 +37,7 @@ pub use ownership::{
 };
 pub use bloom_filter::{BloomFilter, BloomFilterCache, BloomFilterCacheStats};
 pub use optimized_mvcc::{OptimizedMvccScheduler, OptimizedSchedulerConfig, OptimizedSchedulerStats};
+pub use auto_tuner::{AutoTuner, AutoTunerSummary};
 pub use supervm::{Privacy, Transaction as VmTransaction, ExecutionPath, ExecutionReceipt, SuperVM};
 pub use execution_trait::{ExecutionEngine, EngineType, ExecutionContext, ContractResult, Log, StateChange};
 use host::{HostState, storage_api, chain_api, crypto_api};

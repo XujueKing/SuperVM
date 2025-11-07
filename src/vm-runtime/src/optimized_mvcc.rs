@@ -159,6 +159,10 @@ pub struct OptimizedSchedulerConfig {
     pub lfu_hot_key_threshold_medium: u64,
     /// LFU 极热键阈值（高于该值的键视为极热键）
     pub lfu_hot_key_threshold_high: u64,
+    /// 启用自动性能调优 (AutoTuner)
+    pub enable_auto_tuning: bool,
+    /// 自动调优评估间隔 (每 N 个批次触发一次)
+    pub auto_tuning_interval: usize,
 }
 
 impl Default for OptimizedSchedulerConfig {
@@ -196,6 +200,8 @@ impl Default for OptimizedSchedulerConfig {
             lfu_hot_key_threshold: 20,               // 兼容字段：作为中热键阈值
             lfu_hot_key_threshold_medium: 20,        // 中热键阈值（降低以展示分层效果）
             lfu_hot_key_threshold_high: 50,          // 极热键阈值（降低以展示分层效果）
+            enable_auto_tuning: true,                // 默认启用自动调优
+            auto_tuning_interval: 10,                // 每 10 批次评估一次
         }
     }
 }
@@ -236,6 +242,8 @@ pub struct OptimizedMvccScheduler {
     diag_extreme_hot_count: Arc<AtomicU64>,
     diag_medium_hot_count: Arc<AtomicU64>,
     diag_batch_hot_count: Arc<AtomicU64>,
+    // --- 自动调优器 (Phase 4.2) ---
+    auto_tuner: Option<Arc<crate::auto_tuner::AutoTuner>>,
 }
 
 struct AdaptiveState {
@@ -302,6 +310,11 @@ impl OptimizedMvccScheduler {
             diag_extreme_hot_count: Arc::new(AtomicU64::new(0)),
             diag_medium_hot_count: Arc::new(AtomicU64::new(0)),
             diag_batch_hot_count: Arc::new(AtomicU64::new(0)),
+            auto_tuner: if config.enable_auto_tuning {
+                Some(Arc::new(crate::auto_tuner::AutoTuner::new(config.auto_tuning_interval)))
+            } else {
+                None
+            },
         }
     }
 
@@ -344,6 +357,11 @@ impl OptimizedMvccScheduler {
     /// 获取底层 MVCC 存储
     pub fn store(&self) -> &Arc<MvccStore> {
         &self.store
+    }
+    
+    /// 获取自动调优器摘要 (如果启用)
+    pub fn get_auto_tuner_summary(&self) -> Option<crate::auto_tuner::AutoTunerSummary> {
+        self.auto_tuner.as_ref().map(|t| t.summary())
     }
     
     /// 获取统计信息
@@ -491,17 +509,35 @@ impl OptimizedMvccScheduler {
     where
         F: Fn(&mut Txn) -> Result<i32> + Send + Sync,
     {
+        let start_time = std::time::Instant::now();
+        let total_txns = transactions.len();
+        
         // 自适应：若历史上冲突极低，则绕过 Bloom 以避免开销
-        let should_use_bloom = self.config.enable_bloom_filter
-            && self.adaptive_bloom_runtime.load(Ordering::Relaxed);
+        let should_use_bloom = if let Some(tuner) = &self.auto_tuner {
+            tuner.recommended_bloom_enabled()
+        } else {
+            self.config.enable_bloom_filter && self.adaptive_bloom_runtime.load(Ordering::Relaxed)
+        };
 
-        if self.config.enable_batch_commit 
+        let result = if self.config.enable_batch_commit 
             && transactions.len() >= self.config.min_batch_size 
         {
             self.execute_batch_sharding_first(transactions, should_use_bloom)
         } else {
             self.execute_batch_simple(transactions)
+        };
+        
+        // 记录到 AutoTuner (用于后续调优)
+        if let Some(tuner) = &self.auto_tuner {
+            let duration = start_time.elapsed().as_secs_f64();
+            let conflict_rate = result.conflicts as f64 / total_txns.max(1) as f64;
+            // 简化: 假设平均读写集大小 = 预期值 (实际可从 txn context 计算)
+            let avg_rw_set = self.config.expected_keys_per_txn;
+            let batch_size = self.config.min_batch_size;
+            tuner.record_batch(batch_size, duration, total_txns, conflict_rate, should_use_bloom, avg_rw_set);
         }
+        
+        result
     }
 
     /// 批量执行（先分片快路径，再决定是否启用 Bloom 分组）

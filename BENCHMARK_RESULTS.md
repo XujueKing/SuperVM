@@ -93,6 +93,46 @@
 
 ---
 
+## 0.3 Bloom Filter 公平基准(批量路径,触发 Bloom 统计)
+
+> 目的: 修正 0.2 的“未触发 Bloom 过滤逻辑”的偏差,在批量提交路径下验证 Bloom 的真实效果。
+
+**基准入口**: `cargo run -p node-core --example bloom_fair_bench --release`
+
+**默认参数**:
+- 线程: 16 (`THREADS`)
+- 每线程交易数: 2000 (`TXNS_PER_THREAD`)
+- 批量大小: 200/500 (`BATCH_SIZE`)
+- 冲突模式: Medium(100) (`CONTENTION=medium100`)
+- 说明: 显式禁用 owner/sharding 快路径,放宽候选密度回退阈值,确保走 Bloom 分组并产生 hits/misses 统计。
+
+**结果(本机 i7-9750H)**:
+
+| 配置 | 无 Bloom TPS | 有 Bloom TPS | 变化 | Bloom 命中 | 误报 | 效率 |
+|---|---:|---:|---:|---:|---:|---:|
+| batch=200, Medium(100) | 476,554 | 318,951 | -33.07% | 16,000 | 0 | 100% |
+| batch=500, Medium(100) | 294,111 | 197,383 | -32.89% | 64,000 | 0 | 100% |
+
+**解读**:
+- 本基准在批量路径下,已触发 Bloom 统计(命中>0,效率=100%),证明过滤逻辑被实际应用。
+- 但在“单键写入”为主的工作负载下,建立过滤器与分组的计算开销 > 并行收益 → 总体 TPS 下降 ~33%。
+- 在 SuperVM 中,更有效的优化是“所有权/分片快路径”(owner_sharding); 该路径对“单键事务”直接并行提交,无需 Bloom 预筛选。
+
+**结论**:
+- 对于“小读写集(1-2 键)、小到中等批量”的场景,建议默认关闭 Bloom Filter。
+- 当交易读写集较大(>10 keys)、或需要在较大批量(≥1000)下快速剪枝候选边时,可考虑开启并微调阈值,再评估收益。
+
+**可复现(可选参数)**:
+```
+# PowerShell
+$env:THREADS='16'; $env:TXNS_PER_THREAD='2000'; $env:BATCH_SIZE='200'; $env:CONTENTION='medium100'; cargo run -p node-core --example bloom_fair_bench --release
+$env:BATCH_SIZE='500'; cargo run -p node-core --example bloom_fair_bench --release
+# 自动选择最优批量大小(快速探测):
+$env:AUTO_BATCH='1'; $env:BATCH_SIZE='auto'; $env:CONTENTION='medium100'; cargo run -p node-core --example bloom_fair_bench --release
+```
+
+---
+
 ## 1. 结果总览(本次 CI)
 
 > 等待 CI 完成后，从 artifact “performance-report” 下载并打开 `target/criterion/report/index.html`，将关键分组的相对变化粘贴到下表。
