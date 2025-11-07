@@ -44,6 +44,8 @@ SuperVM/
 │   ├── API.md                             - API 文档
 │   ├── parallel-execution.md              - 并行执行设计
 │   ├── LFU-HOTKEY-TUNING.md               - LFU 全局热点与分层热键调优指南
+│   ├── AUTO-TUNER.md                      - 自适应性能调优 (AutoTuner)
+│   ├── bloom-filter-optimization-report.md - Bloom Filter 优化分析报告
 │   ├── stress-testing-guide.md            - 压力测试指南
 │   ├── gc-observability.md                - GC 可观测性
 │   ├── evm-adapter-design.md              - EVM 适配器插件化设计

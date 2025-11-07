@@ -90,6 +90,7 @@
   - Bloom Hits/Misses 均为 0,未有效触发过滤逻辑
   - 当前批量大小(20)可能低于 Bloom 生效阈值
 - 建议: 在批量 ≥ 100 或极高并发(16+ 线程)时再启用 Bloom
+- 📖 详细分析: 参见 `docs/bloom-filter-optimization-report.md`
 
 ---
 

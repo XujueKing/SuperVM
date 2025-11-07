@@ -22,8 +22,31 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 - EVM 适配器设计：`docs/evm-adapter-design.md`
 - 架构资料与对比：`docs/architecture-2.0.md`、`docs/tech-comparison.md`
 - 热键与 LFU 分层调优：`docs/LFU-HOTKEY-TUNING.md`
+- **自适应性能调优 (AutoTuner)**: `docs/AUTO-TUNER.md` ⭐ **NEW**
+- Bloom Filter 优化分析：`docs/bloom-filter-optimization-report.md`
 
-### 🔬 热点调优与基准脚本
+### 🔬 性能调优与基准测试
+
+#### 自适应调优演示 (AutoTuner)
+
+```powershell
+# 运行自适应 vs 手动配置对比演示
+cargo run -p node-core --example auto_tuner_demo --release
+
+# 预期输出: Manual ~425K TPS, Auto ~487K TPS (+14.59%)
+```
+
+#### Bloom Filter 公平基准测试
+
+```powershell
+# 固定批次大小测试
+$env:BATCH_SIZE='200'; cargo run -p node-core --example bloom_fair_bench --release
+
+# 自动探测最优批次大小 (推荐)
+$env:AUTO_BATCH='1'; cargo run -p node-core --example bloom_fair_bench --release
+```
+
+#### 热点调优与基准脚本
 
 - 生成阈值对比报告(Markdown):
 
