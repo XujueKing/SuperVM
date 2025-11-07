@@ -116,6 +116,10 @@ pub struct MvccStore {
     /// 全局提交锁（确保多键事务的原子性）
     /// 所有写事务在 commit 时必须持有此锁
     commit_lock: Arc<Mutex<()>>,
+    /// 每键粒度提交锁：用于并行提交时对写集合加锁，避免写写竞争
+    key_locks: DashMap<Vec<u8>, Arc<Mutex<()>>>,
+    /// 提交中的计数：>0 时阻塞新事务 begin，确保新事务不会看到部分提交
+    commit_in_progress: AtomicU64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +171,8 @@ impl MvccStore {
             current_gc_interval_secs: Arc::new(AtomicU64::new(config.auto_gc.as_ref().map(|c| c.interval_secs).unwrap_or(0))),
             current_gc_threshold: Arc::new(AtomicU64::new(config.auto_gc.as_ref().map(|c| c.version_threshold as u64).unwrap_or(0))),
             commit_lock: Arc::new(Mutex::new(())),
+            key_locks: DashMap::new(),
+            commit_in_progress: AtomicU64::new(0),
         });
         
         // 如果配置了自动 GC，启动后台线程
@@ -179,6 +185,10 @@ impl MvccStore {
 
     /// 开启一个事务，分配 start_ts（快照版本）
     pub fn begin(self: &Arc<Self>) -> Txn {
+        // 简单屏障：若有提交进行中，等待其完成，避免新事务看到部分提交
+        while self.commit_in_progress.load(Ordering::SeqCst) > 0 {
+            std::thread::yield_now();
+        }
         let start_ts = self.ts.fetch_add(1, Ordering::SeqCst) + 1;
         
         // 注册活跃事务
@@ -570,21 +580,34 @@ impl Txn {
             return Ok(self.start_ts);
         }
 
-        // **全局提交锁方案**: 确保多键事务的原子性
-        // 虽然会降低并发性能，但保证了正确性
-        // TODO: 未来可考虑 Solana 风格的细粒度账户锁（需重构数据结构）
-        let _commit_guard = self.store.commit_lock.lock().unwrap();
-        
-        // **同时持有 active_txns 锁，阻止新事务在 commit 写入期间开始**
-        // 这确保了事务要么看到 commit 前的所有值，要么看到 commit 后的所有值
-        // 避免看到部分写入的中间状态（Write Skew 的另一种形式）
-        let _active_guard = self.store.active_txns.lock().unwrap();
-
-        let commit_ts = self.store.next_ts();
+        // 细粒度提交锁方案：对写集合内的键按序加锁，避免写写冲突并允许不同键集并行提交
+        // 1) 按键排序（字节序）
+        // 2) 为每个键获取/创建独立互斥锁，并按序加锁，避免死锁
+        // 3) 在持锁状态下执行最终验证与写入，确保原子性
 
         // 按键排序以避免死锁
         let mut sorted_keys: Vec<_> = self.writes.keys().cloned().collect();
         sorted_keys.sort();
+
+        // 获取各键的互斥锁（Arc clone），随后按顺序加锁
+        let mut key_mutexes: Vec<Arc<Mutex<()>>> = Vec::with_capacity(sorted_keys.len());
+        for k in &sorted_keys {
+            let lock_arc = self.store
+                .key_locks
+                .entry(k.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone();
+            key_mutexes.push(lock_arc);
+        }
+
+        // 按排序顺序逐个加锁，持有到提交结束
+        let mut _guards = Vec::with_capacity(key_mutexes.len());
+        for m in &key_mutexes {
+            _guards.push(m.lock().unwrap());
+        }
+
+        // 为本次提交分配提交时间戳（在持锁之后分配，保证随后的检测与写入一致）
+        let commit_ts = self.store.next_ts();
 
         // **三阶段提交**：检测读冲突 → 检测写冲突 → 写入
         // 阶段0：检测读集合中**所有键**是否被修改（包括写集合里的键！）
@@ -611,7 +634,7 @@ impl Txn {
             }
         }
         
-        // 阶段2：写入新版本（持有全局锁，确保原子性）
+        // 阶段2：写入新版本（在持有每键锁的情况下，确保原子性）
         for key in &sorted_keys {
             let entry = self.store.data.entry(key.clone())
                 .or_insert_with(|| RwLock::new(Vec::new()));
@@ -631,6 +654,100 @@ impl Txn {
     /// 放弃事务（丢弃本地写集合）
     pub fn abort(self) {
         // Drop trait 会自动注销
+    }
+}
+
+impl Txn {
+    /// 获取事务的读集合（键集合，克隆返回，避免借用生命周期问题）
+    /// 用于调度器在执行后期统计和冲突快速判断（Bloom 记录）
+    pub fn read_set(&self) -> std::collections::HashSet<Vec<u8>> {
+        self.reads.clone()
+    }
+
+    /// 获取事务的写集合（仅返回键集合，克隆返回）
+    /// 调度器仅需要键即可用于冲突快速判断
+    pub fn write_set(&self) -> std::collections::HashSet<Vec<u8>> {
+        self.writes.keys().cloned().collect()
+    }
+
+    /// 并行提交版本：
+    /// - 不使用全局提交锁；使用每键锁 + 提交屏障，允许不同键集合的事务并发提交
+    /// - 提交开始前自增 commit_in_progress，阻止新 begin；结束后自减
+    /// - 仍按键排序获取锁，避免死锁
+    pub fn commit_parallel(mut self) -> Result<u64, String> {
+        if self.committed { return Err("txn already committed".into()); }
+
+        // 只读事务快速路径
+        if self.read_only {
+            self.committed = true;
+            self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
+            return Ok(self.start_ts);
+        }
+
+        // 标记有提交进行中，阻止新 begin
+        self.store.commit_in_progress.fetch_add(1, Ordering::SeqCst);
+
+        // 排序写键并获取每键锁
+        let mut sorted_keys: Vec<_> = self.writes.keys().cloned().collect();
+        sorted_keys.sort();
+
+        // 先收集锁的 Arc，确保后续 guard 的借用生命周期统一
+        let mut lock_arcs: Vec<Arc<Mutex<()>>> = Vec::with_capacity(sorted_keys.len());
+        for key in &sorted_keys {
+            let arc = self
+                .store
+                .key_locks
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone();
+            lock_arcs.push(arc);
+        }
+        // 然后获取所有锁的 guard，保持到提交结束
+        let mut _key_guards: Vec<std::sync::MutexGuard<'_, ()>> = Vec::with_capacity(lock_arcs.len());
+        for arc in &lock_arcs {
+            _key_guards.push(arc.lock().unwrap());
+        }
+
+        // 验证阶段（无全局锁）：读冲突与写写冲突检查
+        for key in &self.reads {
+            if let Some(entry) = self.store.data.get(key) {
+                let versions = entry.value().read();
+                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
+                    // 释放提交屏障
+                    self.store.commit_in_progress.fetch_sub(1, Ordering::SeqCst);
+                    return Err(format!("read-write conflict on key {:?}", String::from_utf8_lossy(key)));
+                }
+            }
+        }
+        for key in &sorted_keys {
+            if let Some(entry) = self.store.data.get(key) {
+                let versions = entry.value().read();
+                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
+                    self.store.commit_in_progress.fetch_sub(1, Ordering::SeqCst);
+                    return Err(format!("write-write conflict on key {:?}", String::from_utf8_lossy(key)));
+                }
+            }
+        }
+
+        // 分配提交 ts 并写入
+        let commit_ts = self.store.next_ts();
+        for key in &sorted_keys {
+            let entry = self
+                .store
+                .data
+                .entry(key.clone())
+                .or_insert_with(|| RwLock::new(Vec::new()));
+            let mut versions = entry.value().write();
+            let value = self.writes.get(key).unwrap().clone();
+            versions.push(Version { ts: commit_ts, value });
+        }
+
+        self.committed = true;
+        self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
+
+        // 提交结束，解除屏障
+        self.store.commit_in_progress.fetch_sub(1, Ordering::SeqCst);
+        Ok(commit_ts)
     }
 }
 

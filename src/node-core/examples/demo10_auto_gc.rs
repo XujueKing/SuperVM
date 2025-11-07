@@ -24,6 +24,7 @@ fn demo_auto_gc_periodic() {
             interval_secs: 2,         // 每 2 秒
             version_threshold: 0,     // 禁用阈值触发
             run_on_start: false,
+            enable_adaptive: false,
         }),
     };
     
@@ -66,6 +67,7 @@ fn demo_auto_gc_threshold() {
             interval_secs: 10,        // 周期较长
             version_threshold: 15,    // 阈值触发
             run_on_start: false,
+            enable_adaptive: false,
         }),
     };
     
@@ -108,6 +110,7 @@ fn demo_auto_gc_control() {
             interval_secs: 1,
             version_threshold: 10,
             run_on_start: false,
+            enable_adaptive: false,
         }),
     };
     
@@ -143,6 +146,7 @@ fn demo_auto_gc_control() {
         interval_secs: 30,        // 改为 30 秒
         version_threshold: 100,   // 提高阈值
         run_on_start: false,
+        enable_adaptive: false,
     }));
     println!("  🔧 已更新配置: interval=30s, threshold=100");
     
@@ -182,6 +186,7 @@ fn demo_auto_gc_vs_manual() {
             interval_secs: 1,
             version_threshold: 20,
             run_on_start: false,
+            enable_adaptive: false,
         }),
     };
     let auto_store = Arc::new(MvccStore::new_with_config(config));

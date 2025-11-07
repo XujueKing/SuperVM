@@ -1,8 +1,5 @@
-fn main() {// SuperVM 2.0 - Object Ownership Example
-
-    println!("ownership_demo placeholder - build check only");//
-
-}// 架构师: KING XU (CHINA)
+// SuperVM 2.0 - Object Ownership Example
+// 架构师: KING XU (CHINA)
 
 // 
 // 演示对象所有权系统的使用
