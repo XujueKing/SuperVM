@@ -1,8 +1,4 @@
-fn main() {// SuperVM 2.0 - Fallback Demo (Fast → Consensus)
-
-    println!("fallback_demo placeholder - build check only");// 架构师: KING XU (CHINA)
-
-}//
+// SuperVM 2.0 - Fallback Demo (Fast → Consensus)
 
 // 演示：execute_transaction_with() 单笔执行与快速路径回退
 

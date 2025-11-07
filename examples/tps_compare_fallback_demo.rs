@@ -1,8 +1,4 @@
-fn main() {// SuperVM 2.0 - TPS Compare Demo (Fast vs Consensus with Fallback)
-
-    println!("tps_compare_fallback_demo placeholder - build check only");// 架构师: KING XU (CHINA)
-
-}
+// SuperVM 2.0 - TPS Compare Demo (Fast vs Consensus with Fallback)
 
 use anyhow::Result;
 use std::time::Instant;

@@ -1,8 +1,4 @@
-fn main() {// SuperVM 2.0 - Routed Batch Execution Demo
-
-    println!("routed_batch_demo placeholder - build check only");// 架构师: KING XU (CHINA)
-
-}
+// SuperVM 2.0 - Routed Batch Execution Demo
 
 use vm_runtime::{OwnershipManager, OwnershipType, ObjectMetadata, SuperVM, Privacy};
 use vm_runtime::{MvccScheduler, VmTransaction, Address};

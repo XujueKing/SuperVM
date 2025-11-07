@@ -35,10 +35,45 @@ rand = "0.8"
 
 [features]
 default = []
-groth16-verifier = ["dep:zk-groth16-test"]
+demos = []
+groth16-verifier = [
+    "dep:zk-groth16-test",
+    "dep:ark-groth16",
+    "dep:ark-bls12-381",
+    "dep:ark-snark",
+    "dep:ark-serialize",
+    "dep:ark-crypto-primitives",
+    "dep:ark-std",
+]
 
 [dependencies.zk-groth16-test]
 path = "../../zk-groth16-test"
+optional = true
+
+# Arkworks deps used only when feature "groth16-verifier" is enabled
+[dependencies.ark-groth16]
+version = "0.4"
+optional = true
+
+[dependencies.ark-bls12-381]
+version = "0.4"
+optional = true
+
+[dependencies.ark-snark]
+version = "0.4"
+optional = true
+
+[dependencies.ark-serialize]
+version = "0.4"
+optional = true
+
+[dependencies.ark-crypto-primitives]
+version = "0.4"
+features = ["crh"]
+optional = true
+
+[dependencies.ark-std]
+version = "0.4"
 optional = true
 
 [[bench]]
@@ -48,6 +83,7 @@ harness = false
 [[example]]
 name = "ownership_demo"
 path = "../../examples/ownership_demo.rs"
+required-features = ["demos"]
 
 [[example]]
 name = "supervm_routing_demo"
@@ -80,3 +116,27 @@ path = "../../examples/large_scale_tps_bench.rs"
 [[example]]
 name = "mixed_workload_test"
 path = "../../examples/mixed_workload_test.rs"
+
+[[example]]
+name = "zk_verify_multiply"
+path = "../../examples/zk_verify_multiply.rs"
+required-features = ["groth16-verifier"]
+
+[[example]]
+name = "zk_verify_ring_signature"
+path = "../../examples/zk_verify_ring_signature.rs"
+required-features = ["groth16-verifier"]
+
+[[example]]
+name = "zk_verify_range_proof"
+path = "../../examples/zk_verify_range_proof.rs"
+required-features = ["groth16-verifier"]
+
+[[example]]
+name = "zk_verify_ringct"
+path = "../../examples/zk_verify_ringct.rs"
+required-features = ["groth16-verifier"]
+
+[[example]]
+name = "lfu_hotkey_demo"
+path = "../../examples/lfu_hotkey_demo.rs"

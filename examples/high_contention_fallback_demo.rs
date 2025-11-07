@@ -1,8 +1,4 @@
-fn main() {// SuperVM 2.0 - High Contention Fallback Demo
-
-    println!("high_contention_fallback_demo placeholder - build check only");// 架构师: KING XU (CHINA)
-
-}//
+// SuperVM 2.0 - High Contention Fallback Demo
 
 // 目的：构造高竞争场景，强制触发 Fast Path 失败并验证自动回退机制
 

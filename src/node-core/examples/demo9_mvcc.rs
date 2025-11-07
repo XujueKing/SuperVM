@@ -24,7 +24,7 @@ fn demo_basic_mvcc() {
     println!("  ✅ T1 提交成功 (ts={}): Alice=1000, Bob=500", ts1);
 
     // 事务 2: 读取数据
-    let t2 = store.begin();
+    let mut t2 = store.begin();
     let alice_balance = t2.read(b"account_alice").unwrap();
     let bob_balance = t2.read(b"account_bob").unwrap();
     println!("  📖 T2 读取: Alice={}, Bob={}", 
@@ -46,7 +46,7 @@ fn demo_read_only_fast_path() {
     println!("  💾 初始化 10 个产品");
 
     // 使用只读事务查询（快速路径）
-    let ro_txn = store.begin_read_only();
+    let mut ro_txn = store.begin_read_only();
     println!("  🔍 只读事务查询 (is_read_only={})", ro_txn.is_read_only());
     
     for i in 0..5 {
@@ -73,7 +73,7 @@ fn demo_snapshot_isolation() {
     t0.commit().unwrap();
 
     // T1 开启快照
-    let t1 = store.begin();
+    let mut t1 = store.begin();
     let v1 = t1.read(b"counter").unwrap();
     println!("  📸 T1 快照: counter={}", String::from_utf8_lossy(&v1));
 
@@ -89,7 +89,7 @@ fn demo_snapshot_isolation() {
         String::from_utf8_lossy(&v1_after));
 
     // 新事务 T3 看到新值
-    let t3 = store.begin();
+    let mut t3 = store.begin();
     let v3 = t3.read(b"counter").unwrap();
     println!("  ✨ T3 读取（新快照）: counter={} (最新值)", 
         String::from_utf8_lossy(&v3));
@@ -151,7 +151,7 @@ fn demo_concurrent_performance() {
         .map(|tid| {
             let store_clone = Arc::clone(&store);
             thread::spawn(move || {
-                let txn = store_clone.begin();
+                let mut txn = store_clone.begin();
                 let mut sum = 0u64;
                 for i in 0..100 {
                     let key = format!("account_{}", i).into_bytes();

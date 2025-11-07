@@ -1,10 +1,6 @@
-fn main() {// SuperVM 2.0 - Mixed Workload Test (70% Fast + 30% Consensus)
-
-    println!("mixed_workload_test placeholder - build check only");// 架构师: KING XU (CHINA)
-
-}//
-
-// Phase 1.3: 测试混合路径，输出分层统计与路由比例
+// SuperVM 2.0 - Mixed Workload Test (70% Fast + 30% Consensus)
+// Phase 1.3: 测试混合路径,输出分层统计与路由比例
+// 架构师: KING XU (CHINA)
 
 use anyhow::Result;
 use std::time::Instant;
