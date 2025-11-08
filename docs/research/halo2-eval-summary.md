@@ -1,4 +1,4 @@
-﻿# Halo2 评估总结
+# Halo2 评估总结
 
 开发者/作者：King Xujue
 

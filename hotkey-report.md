@@ -1,4 +1,4 @@
-﻿# Hot Key LFU Report (ownership_sharding_mixed_bench)
+# Hot Key LFU Report (ownership_sharding_mixed_bench)
 
 鍙傛暟: decay_period=10 decay_factor=0.9 batches=1 hot_key_thr=5 adaptive=False tx_per_thread=200 threads=8 batch_size=20
 

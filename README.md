@@ -4,17 +4,88 @@
 
 ---
 
-## � 项目概述
+## 项目概述
 
 SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净与并行执行：
-- ⚡ 并行执行 + MVCC 并发控制：187K+ TPS（低竞争），85K+ TPS（高竞争）
+- ⚡ 并行执行 + MVCC 并发控制：单线程 242K TPS（Windows 本地），多线程高竞争 ~290K TPS（本地基准）；批量写入峰值 754K–860K ops/s（存储微基准，非 TPS）
 - 🧠 内核分级保护：L0（核心运行时/调度/MVCC），L1（内核扩展），L2+（接口/插件/应用）
 - 🔌 插件化兼容：EVM 通过适配器在插件层实现，零入侵内核
 - 🔒 隐私专项：ZK/环签等在独立模块推进（参见 ROADMAP-ZK-Privacy）
 
-当前工作区版本：0.1.0（PoC，活跃开发）
+当前工作区版本：0.5.0（活跃开发）
 
-### � 快速入口
+## 🚩 最新进展亮点（2025-11-08）
+
+- 🆕 **快照管理/恢复/自动清理**：支持 create_checkpoint、restore_from_checkpoint、maybe_create_snapshot、cleanup_old_snapshots，3 个测试用例全部通过
+- 🆕 **MVCC 自动刷新机制**：flush_to_storage、load_from_storage，支持双触发器（时间+区块数），demo 稳定运行
+- 🆕 **Prometheus 指标集成**：metrics.rs 模块（MetricsCollector + LatencyHistogram），集成到 MVCC commit/commit_parallel，export_prometheus 导出，metrics_demo 运行成功（TPS≈669, 成功率≈98.61%，该 demo 仅用于健康检查，不代表性能上限）
+- 🆕 **HTTP /metrics 端点**：metrics_http_demo 提供 Prometheus 监控接口，支持 GET http://127.0.0.1:8080/metrics
+- 🆕 **状态裁剪功能**：prune_old_versions 批量清理历史版本，state_pruning_demo 成功清理 150 版本（10 键 × 15 旧版本）
+- 🆕 **文档/编码规范升级**：90 个 Markdown 文件批量转换为 UTF-8，.vscode/settings.json 强制 UTF-8 编码
+- 🆕 **新文档**：`docs/METRICS-COLLECTOR.md`（指标收集器）、`docs/PHASE-4.3-WEEK3-4-SUMMARY.md`（阶段总结）、`docs/ROCKSDB-ADAPTIVE-QUICK-START.md`（批量写入指南）
+ - 🆕 **Phase 5 三通道路由**：Fast/Consensus/Private 路径落地，新增基准与 E2E 示例（见下）
+
+### ⏳ 待补充/优化
+- [ ] Grafana Dashboard 配置（性能可视化）
+- [ ] 24小时稳定性测试（长期运行验证）
+- [ ] 单元测试/集成测试补充
+- [ ] API.md 文档补全（新 API 汇总）
+
+---
+
+## 🚀 快速演示命令
+
+```powershell
+# Phase 5：Fast Path 基准（可设置 FAST_PATH_ITERS/FAST_PATH_OBJECTS）
+cargo run -p vm-runtime --example fast_path_bench --release
+
+# Phase 5：混合负载基准（可设置 MIXED_ITERS/OWNED_RATIO/OWNED_OBJECTS/SHARED_OBJECTS）
+cargo run -p vm-runtime --example mixed_path_bench --release
+
+# Phase 5：混合负载 + /metrics（可选：边跑边抓路由/FastPath/Consensus 指标）
+cargo run -p vm-runtime --example mixed_path_bench --release -- --serve-metrics:8082
+
+# Phase 5：三通道 E2E 验证
+cargo run -p vm-runtime --example e2e_three_channel_test --release
+
+# 快照/恢复/自动清理功能演示
+cargo run -p vm-runtime --example mvcc_auto_flush_demo --release --features rocksdb-storage
+
+# Prometheus 指标采集演示
+cargo run -p vm-runtime --example metrics_demo --release
+
+# HTTP /metrics 端点演示 (监听 http://127.0.0.1:8080/metrics)
+cargo run -p vm-runtime --example metrics_http_demo --release
+
+# 状态裁剪演示 (清理历史版本)
+cargo run -p vm-runtime --example state_pruning_demo --release --features rocksdb-storage
+
+# RocksDB 批量写入基准测试
+cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --features rocksdb-storage
+```
+
+---
+
+## 📚 关键文档入口
+
+- [METRICS-COLLECTOR.md](docs/METRICS-COLLECTOR.md) - Prometheus 指标收集器文档
+- [PHASE-4.3-WEEK3-4-SUMMARY.md](docs/PHASE-4.3-WEEK3-4-SUMMARY.md) - Week 3-4 阶段总结
+- [ROCKSDB-ADAPTIVE-QUICK-START.md](docs/ROCKSDB-ADAPTIVE-QUICK-START.md) - RocksDB 批量写入快速指南
+- [sui-smart-contract-analysis.md](docs/sui-smart-contract-analysis.md) - Sui 对象模型与 SuperVM 三通道路由（Phase 5）
+- [ROADMAP.md](ROADMAP.md) - 项目进度与阶段目标
+- [docs/INDEX.md](docs/INDEX.md) - 全部文档导航
+
+---
+
+## 📝 阶段性总结（2025-11-08）
+
+1. 快照、自动刷新、Prometheus 指标、HTTP /metrics 端点、状态裁剪五大功能全部落地，demo 与测试用例均通过。
+2. 性能数据对齐：单线程事务提交 242K TPS；多线程高竞争 ~290K TPS；RocksDB 批量写入 754K–860K ops/s；metrics_demo 指标（TPS≈669）仅作健康检查参考；状态裁剪清理 150 版本。
+3. 文档与编码规范同步升级，90+ 文档批量转换为 UTF-8，开发体验与可维护性提升。
+4. 剩余任务已明确，下一步聚焦 Grafana Dashboard、长期稳定性测试、单元/集成测试补充。
+5. 详细进展、数据与代码示例见 `docs/PHASE-4.3-WEEK3-4-SUMMARY.md`、`docs/METRICS-COLLECTOR.md`。
+
+### 快速入口
 - 路线图与阶段规划：`ROADMAP.md`
 - 内核速用指南（含上帝分支）：`docs/KERNEL-QUICK-START.md`
 - 内核定义与保护机制：`docs/KERNEL-DEFINITION.md`
@@ -24,8 +95,25 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 - 热键与 LFU 分层调优：`docs/LFU-HOTKEY-TUNING.md`
 - **自适应性能调优 (AutoTuner)**: `docs/AUTO-TUNER.md` ⭐ **NEW**
 - Bloom Filter 优化分析：`docs/bloom-filter-optimization-report.md`
+- **RocksDB 持久化存储**: `docs/PHASE-4.3-ROCKSDB-INTEGRATION.md` 🔥
+- **自适应批量写入快速开始**: `docs/ROCKSDB-ADAPTIVE-QUICK-START.md` 🚀 **NEW**
+- **性能指标收集 (Prometheus)**: `docs/METRICS-COLLECTOR.md` 📊 **NEW**
+- **Phase 4.3 Week 3-4 总结**: `docs/PHASE-4.3-WEEK3-4-SUMMARY.md` 📝 **NEW**
 
 ### 🔬 性能调优与基准测试
+
+#### 性能矩阵（当前验证）
+
+- 单线程 MVCC 提交: 242K TPS（Windows 本地）
+- 多线程高竞争（并行提交）: ~290K TPS（本地基准）
+- RocksDB 批量写入微基准: 754K–860K ops/s（存储吞吐，非 TPS）
+- 指标字段（Prometheus 导出）:
+  - mvcc_tps（总体 TPS，自启动以来）
+  - mvcc_tps_window（窗口 TPS，滚动计算）
+  - mvcc_tps_peak（峰值 TPS，以窗口为口径）
+  - mvcc_txn_latency_ms{quantile="0.5|0.9|0.99"}（事务延迟百分位，单位 ms）
+
+注：examples/metrics_demo 与 metrics_http_demo 输出仅用于健康检测，不代表性能上限。
 
 #### 自适应调优演示 (AutoTuner)
 
@@ -44,6 +132,24 @@ $env:BATCH_SIZE='200'; cargo run -p node-core --example bloom_fair_bench --relea
 
 # 自动探测最优批次大小 (推荐)
 $env:AUTO_BATCH='1'; cargo run -p node-core --example bloom_fair_bench --release
+```
+
+#### RocksDB 持久化存储演示 (Phase 4.3)
+
+```powershell
+# RocksDB 自适应批量写入基准测试
+cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --features rocksdb-storage
+
+# MVCC 自动刷新演示 (时间+区块双触发器)
+cargo run -p vm-runtime --example mvcc_auto_flush_demo --release --features rocksdb-storage
+
+# 性能指标收集演示 (Prometheus 格式)
+cargo run -p vm-runtime --example metrics_demo --release
+
+# 预期输出:
+# - 自适应批量写入: 754K-860K ops/s (远超 200K 目标)
+# - MVCC 自动刷新: 每 5 区块或 2 秒触发
+# - Metrics: TPS 669, 成功率 98.61%, P50/P90/P99 延迟 <1ms
 ```
 
 #### 热点调优与基准脚本

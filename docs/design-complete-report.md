@@ -1,4 +1,4 @@
-﻿# SuperVM 2.0 Design Complete - Summary Report
+# SuperVM 2.0 Design Complete - Summary Report
 
 **架构师**: KING XU (CHINA)  
 **日期**: 2025-03-24  

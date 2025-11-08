@@ -22,14 +22,14 @@ impl RangeProofGenerator {
     pub fn new() -> Self {
         todo!("Phase 2.2.3: Implement range proof generator")
     }
-    
+
     /// 生成范围证明
-    /// 
+    ///
     /// # 参数
     /// - `amount`: 金额 (0 到 2^64-1)
     /// - `blinding_factor`: 致盲因子 (与 commitment 相同)
     /// - `max_bits`: 范围位数 (默认 64)
-    /// 
+    ///
     /// # 返回
     /// Range Proof 证明 amount ∈ [0, 2^max_bits)
     pub fn prove_range(
@@ -40,7 +40,7 @@ impl RangeProofGenerator {
     ) -> Result<RangeProof> {
         todo!("Phase 2.2.3: Implement Bulletproof range proof generation")
     }
-    
+
     /// 批量生成多个范围证明 (性能优化)
     pub fn prove_range_batch(
         &self,
@@ -63,21 +63,21 @@ impl RangeProofVerifier {
     pub fn new() -> Self {
         todo!("Phase 2.2.3: Implement range proof verifier")
     }
-    
+
     /// 验证范围证明
-    /// 
+    ///
     /// # 参数
     /// - `commitment`: Pedersen Commitment
     /// - `proof`: Range Proof
-    /// 
+    ///
     /// # 返回
     /// 验证是否通过
     pub fn verify_range(&self, _commitment: &Commitment, _proof: &RangeProof) -> Result<bool> {
         todo!("Phase 2.2.3: Implement range proof verification")
     }
-    
+
     /// 批量验证多个范围证明 (性能优化)
-    /// 
+    ///
     /// Batch verification 可以显著提升性能
     /// 单个验证: ~10ms, 批量 10 个: ~30ms (平均 3ms/个)
     pub fn verify_range_batch(
@@ -90,7 +90,7 @@ impl RangeProofVerifier {
 }
 
 /// 估算范围证明大小 (bytes)
-/// 
+///
 /// Bulletproofs size: ~700 bytes (64-bit range)
 /// Aggregated (n outputs): ~700 + 32*log2(n) bytes
 pub fn estimate_proof_size(_max_bits: usize, _num_outputs: usize) -> usize {
@@ -100,13 +100,13 @@ pub fn estimate_proof_size(_max_bits: usize, _num_outputs: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     #[should_panic(expected = "not yet implemented")]
     fn test_range_proof_generator_placeholder() {
         let _generator = RangeProofGenerator::new();
     }
-    
+
     #[test]
     #[should_panic(expected = "not yet implemented")]
     fn test_range_proof_verifier_placeholder() {

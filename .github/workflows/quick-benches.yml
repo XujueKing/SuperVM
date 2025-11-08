@@ -1,0 +1,43 @@
+name: Quick Benches
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - king/l0-mvcc-privacy-verification
+    paths:
+      - 'src/vm-runtime/examples/quick_*'
+      - 'scripts/run-quick-benches.ps1'
+      - '.github/workflows/quick-benches.yml'
+
+jobs:
+  quick-bench:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: quick-bench-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run quick benches
+        shell: pwsh
+        run: |
+          ./scripts/run-quick-benches.ps1 -OutDir data/quick_bench
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-bench-results
+          path: |
+            data/quick_bench

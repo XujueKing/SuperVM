@@ -8,26 +8,26 @@
 
 use ark_bls12_381::Fr;
 use ark_ff::{Field, PrimeField};
-use ark_std::Zero;
-use ark_relations::r1cs::{
-    ConstraintSynthesizer, ConstraintSystemRef, SynthesisError,
-};
 use ark_r1cs_std::alloc::AllocVar;
+use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::fields::FieldVar;
-use ark_r1cs_std::boolean::Boolean;
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use ark_std::Zero;
 
 // Pedersen commitment (native only)
 use ark_crypto_primitives::commitment::pedersen as pedersen_commit;
-use ark_crypto_primitives::commitment::CommitmentScheme;
 use ark_crypto_primitives::commitment::pedersen::Window;
+use ark_crypto_primitives::commitment::CommitmentScheme;
 use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective as PedersenCurve;
 
 // Poseidon for hashing commitments and Merkle tree
-use ark_crypto_primitives::crh::poseidon::constraints as poseidon_constraints;
-use ark_crypto_primitives::crh::{CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget};
 use ark_crypto_primitives::crh::poseidon as poseidon_crh;
+use ark_crypto_primitives::crh::poseidon::constraints as poseidon_constraints;
+use ark_crypto_primitives::crh::{
+    CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget,
+};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 // Reuse Ring Signature types
 use crate::ring_signature::RingMember as RSMember;
@@ -47,14 +47,14 @@ impl pedersen_commit::Window for MultiUTXOPedersenWindow {
 pub struct UTXO {
     /// 承诺哈希 H(C) = Poseidon(commitment_x, commitment_y)（公开）
     pub commitment_hash: Fr,
-    
+
     /// 原始承诺坐标（私有，仅用于 Prover）
     pub commitment_x: Option<Fr>,
     pub commitment_y: Option<Fr>,
-    
+
     /// 金额（私有）
     pub value: Option<u64>,
-    
+
     /// 盲因子（私有）
     pub blinding: Option<[u8; 32]>,
 }
@@ -70,7 +70,9 @@ impl UTXO {
         // 1. 生成 Pedersen 承诺
         let mut msg = value.to_le_bytes().to_vec();
         let required = MultiUTXOPedersenWindow::WINDOW_SIZE;
-        if msg.len() < required { msg.resize(required, 0u8); }
+        if msg.len() < required {
+            msg.resize(required, 0u8);
+        }
         msg.truncate(required);
 
         let blind_scalar = ark_ed_on_bls12_381_bandersnatch::Fr::from_le_bytes_mod_order(&blinding);
@@ -80,13 +82,12 @@ impl UTXO {
             params,
             &msg,
             &randomness,
-        ).expect("pedersen commit");
+        )
+        .expect("pedersen commit");
 
         // 2. 计算承诺哈希
-        let commitment_hash = poseidon_crh::CRH::<Fr>::evaluate(
-            poseidon_cfg,
-            vec![aff.x, aff.y],
-        ).expect("poseidon hash");
+        let commitment_hash = poseidon_crh::CRH::<Fr>::evaluate(poseidon_cfg, vec![aff.x, aff.y])
+            .expect("poseidon hash");
 
         Self {
             commitment_hash,
@@ -96,7 +97,7 @@ impl UTXO {
             blinding: Some(blinding),
         }
     }
-    
+
     /// 创建公开 UTXO（仅 Verifier 视角）
     pub fn public(commitment_hash: Fr) -> Self {
         Self {
@@ -121,13 +122,21 @@ pub struct MerkleProof {
 impl MerkleProof {
     pub fn verify(&self, poseidon_cfg: &PoseidonConfig<Fr>) -> bool {
         let mut current = self.leaf;
-        
+
         for (sibling, &direction) in self.path.iter().zip(&self.directions) {
-            let (left, right) = if direction { (current, *sibling) } else { (*sibling, current) };
-            current = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(poseidon_cfg, &left, &right)
-                .expect("poseidon 2-to-1");
+            let (left, right) = if direction {
+                (current, *sibling)
+            } else {
+                (*sibling, current)
+            };
+            current = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                poseidon_cfg,
+                &left,
+                &right,
+            )
+            .expect("poseidon 2-to-1");
         }
-        
+
         current == self.root
     }
 }
@@ -164,7 +173,7 @@ impl MultiUTXORingCTCircuit {
         use rand::rngs::OsRng;
         use rand::RngCore;
         let mut rng = OsRng;
-        
+
         // Poseidon 配置
         let poseidon_cfg = {
             let full_rounds: usize = 8;
@@ -175,7 +184,9 @@ impl MultiUTXORingCTCircuit {
             let capacity: usize = 1;
 
             let mut mds = vec![vec![Fr::from(0u64); width]; width];
-            for i in 0..width { mds[i][i] = Fr::from(1u64); }
+            for i in 0..width {
+                mds[i][i] = Fr::from(1u64);
+            }
 
             let rounds = full_rounds + partial_rounds;
             let ark = vec![vec![Fr::from(0u64); width]; rounds];
@@ -184,8 +195,9 @@ impl MultiUTXORingCTCircuit {
         };
 
         // Pedersen 参数
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         // 创建 2 个输入 UTXO (总额 1500)
         let values_in = [1000u64, 500u64];
@@ -203,7 +215,7 @@ impl MultiUTXORingCTCircuit {
             UTXO::new(values_out[i], r, &pedersen_params, &poseidon_cfg)
         });
 
-    // 创建 2 个 Merkle 证明
+        // 创建 2 个 Merkle 证明
         let merkle_proofs: [MerkleProof; 2] = std::array::from_fn(|i| {
             let leaf = Fr::from((100 + i) as u64);
             let path = vec![Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)];
@@ -211,12 +223,25 @@ impl MultiUTXORingCTCircuit {
 
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right)
-                    .expect("poseidon evaluate");
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .expect("poseidon evaluate");
             }
 
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         // 创建环签名授权（每个输入一个，ring_size=3）
@@ -227,16 +252,35 @@ impl MultiUTXORingCTCircuit {
             let secret_key = Fr::rand(&mut rng);
             let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
             for j in 0..ring_size {
-                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
-                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+                let pk = if j == real_index {
+                    secret_key
+                } else {
+                    Fr::rand(&mut rng)
+                };
+                ring_members.push(RSMember {
+                    public_key: pk,
+                    merkle_root: None,
+                });
             }
             let public_key = ring_members[real_index].public_key;
-            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
-                .expect("poseidon ki");
-            RingAuth { ring_members, real_index, secret_key, key_image }
+            let key_image =
+                poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
+                    .expect("poseidon ki");
+            RingAuth {
+                ring_members,
+                real_index,
+                secret_key,
+                key_image,
+            }
         });
 
-        Self { inputs, outputs, merkle_proofs, ring_auths, poseidon_cfg }
+        Self {
+            inputs,
+            outputs,
+            merkle_proofs,
+            ring_auths,
+            poseidon_cfg,
+        }
     }
 }
 
@@ -275,13 +319,20 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
         let mut input_coords = Vec::new();
         for i in 0..2 {
             let v = FpVar::<Fr>::new_witness(cs.clone(), || {
-                self.inputs[i].value.map(Fr::from).ok_or(SynthesisError::AssignmentMissing)
+                self.inputs[i]
+                    .value
+                    .map(Fr::from)
+                    .ok_or(SynthesisError::AssignmentMissing)
             })?;
             let x = FpVar::<Fr>::new_witness(cs.clone(), || {
-                self.inputs[i].commitment_x.ok_or(SynthesisError::AssignmentMissing)
+                self.inputs[i]
+                    .commitment_x
+                    .ok_or(SynthesisError::AssignmentMissing)
             })?;
             let y = FpVar::<Fr>::new_witness(cs.clone(), || {
-                self.inputs[i].commitment_y.ok_or(SynthesisError::AssignmentMissing)
+                self.inputs[i]
+                    .commitment_y
+                    .ok_or(SynthesisError::AssignmentMissing)
             })?;
             input_values.push(v);
             input_coords.push((x, y));
@@ -292,13 +343,20 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
         let mut output_coords = Vec::new();
         for i in 0..2 {
             let v = FpVar::<Fr>::new_witness(cs.clone(), || {
-                self.outputs[i].value.map(Fr::from).ok_or(SynthesisError::AssignmentMissing)
+                self.outputs[i]
+                    .value
+                    .map(Fr::from)
+                    .ok_or(SynthesisError::AssignmentMissing)
             })?;
             let x = FpVar::<Fr>::new_witness(cs.clone(), || {
-                self.outputs[i].commitment_x.ok_or(SynthesisError::AssignmentMissing)
+                self.outputs[i]
+                    .commitment_x
+                    .ok_or(SynthesisError::AssignmentMissing)
             })?;
             let y = FpVar::<Fr>::new_witness(cs.clone(), || {
-                self.outputs[i].commitment_y.ok_or(SynthesisError::AssignmentMissing)
+                self.outputs[i]
+                    .commitment_y
+                    .ok_or(SynthesisError::AssignmentMissing)
             })?;
             output_values.push(v);
             output_coords.push((x, y));
@@ -306,8 +364,11 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
 
         // ===== 约束 1: 承诺哈希验证（4 个承诺）=====
         {
-            let params_var = poseidon_constraints::CRHParametersVar::new_constant(cs.clone(), &self.poseidon_cfg)?;
-            
+            let params_var = poseidon_constraints::CRHParametersVar::new_constant(
+                cs.clone(),
+                &self.poseidon_cfg,
+            )?;
+
             // 验证输入承诺哈希
             for i in 0..2 {
                 let (x, y) = &input_coords[i];
@@ -317,7 +378,7 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
                 )?;
                 hash.enforce_equal(&input_commitment_hashes[i])?;
             }
-            
+
             // 验证输出承诺哈希
             for i in 0..2 {
                 let (x, y) = &output_coords[i];
@@ -348,7 +409,7 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
         // 为每个输入金额做范围证明
         for i in 0..2 {
             let value_u64 = self.inputs[i].value.unwrap_or(0);
-            
+
             // 手动位分解
             let mut bits = Vec::with_capacity(64);
             for j in 0..64 {
@@ -365,11 +426,11 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
             }
             reconstructed.enforce_equal(&input_values[i])?;
         }
-        
+
         // 为每个输出金额做范围证明
         for i in 0..2 {
             let value_u64 = self.outputs[i].value.unwrap_or(0);
-            
+
             // 手动位分解
             let mut bits = Vec::with_capacity(64);
             for j in 0..64 {
@@ -389,24 +450,34 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
 
         // ===== 约束 4: Merkle 成员证明（2 个证明）=====
         {
-            let params_var = poseidon_constraints::CRHParametersVar::new_constant(cs.clone(), &self.poseidon_cfg)?;
+            let params_var = poseidon_constraints::CRHParametersVar::new_constant(
+                cs.clone(),
+                &self.poseidon_cfg,
+            )?;
 
             for i in 0..2 {
-                let mut current = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.merkle_proofs[i].leaf))?;
+                let mut current =
+                    FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.merkle_proofs[i].leaf))?;
 
                 for (j, sibling_val) in self.merkle_proofs[i].path.iter().enumerate() {
-                    let dir_right = self.merkle_proofs[i].directions.get(j).copied().unwrap_or(false);
+                    let dir_right = self.merkle_proofs[i]
+                        .directions
+                        .get(j)
+                        .copied()
+                        .unwrap_or(false);
                     let sibling = FpVar::<Fr>::new_witness(cs.clone(), || Ok(*sibling_val))?;
 
-                    let (left, right) = if dir_right { 
-                        (current.clone(), sibling) 
-                    } else { 
-                        (sibling, current.clone()) 
+                    let (left, right) = if dir_right {
+                        (current.clone(), sibling)
+                    } else {
+                        (sibling, current.clone())
                     };
-                    
-                    let next = <poseidon_constraints::TwoToOneCRHGadget<Fr> as TwoToOneCRHSchemeGadget<_, _>>::evaluate(
-                        &params_var, &left, &right
-                    )?;
+
+                    let next =
+                        <poseidon_constraints::TwoToOneCRHGadget<Fr> as TwoToOneCRHSchemeGadget<
+                            _,
+                            _,
+                        >>::evaluate(&params_var, &left, &right)?;
                     current = next;
                 }
 
@@ -424,13 +495,18 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
 
             for i in 0..2 {
                 // witness: secret_key, real public_key
-                let sk_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.ring_auths[i].secret_key))?;
-                let real_pk = self.ring_auths[i].ring_members[self.ring_auths[i].real_index].public_key;
+                let sk_var =
+                    FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.ring_auths[i].secret_key))?;
+                let real_pk =
+                    self.ring_auths[i].ring_members[self.ring_auths[i].real_index].public_key;
                 let pk_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(real_pk))?;
                 pk_vars.push(pk_var.clone());
 
                 // Key Image correctness: KI = H(sk, pk)
-                let expected_ki = PoseidonCRHGadget::<Fr>::evaluate(&params_var, &[sk_var.clone(), pk_var.clone()])?;
+                let expected_ki = PoseidonCRHGadget::<Fr>::evaluate(
+                    &params_var,
+                    &[sk_var.clone(), pk_var.clone()],
+                )?;
                 expected_ki.enforce_equal(&key_images[i])?;
 
                 // Membership: pk in ring_members (OR over equality)
@@ -448,7 +524,9 @@ impl ConstraintSynthesizer<Fr> for MultiUTXORingCTCircuit {
             let diff = &key_images[0] - &key_images[1];
             let inv = FpVar::<Fr>::new_witness(cs.clone(), || {
                 let d = self.ring_auths[0].key_image - self.ring_auths[1].key_image;
-                if d.is_zero() { return Err(SynthesisError::Unsatisfiable); }
+                if d.is_zero() {
+                    return Err(SynthesisError::Unsatisfiable);
+                }
                 Ok(d.inverse().unwrap())
             })?;
             (diff * inv).enforce_equal(&FpVar::<Fr>::constant(Fr::from(1u64)))?;
@@ -469,41 +547,53 @@ mod tests {
     #[test]
     fn test_multi_utxo_ringct_constraints() {
         use ark_relations::r1cs::ConstraintSystem;
-        
+
         let cs = ConstraintSystem::<Fr>::new_ref();
         let circuit = MultiUTXORingCTCircuit::example();
-        
+
         circuit.generate_constraints(cs.clone()).unwrap();
-        
+
         let num_constraints = cs.num_constraints();
-        println!("✅ Multi-UTXO RingCT 约束数 (2-in-2-out): {}", num_constraints);
-        println!("📊 vs. 单 UTXO (309): 扩展系数 {:.2}x", num_constraints as f64 / 309.0);
-        println!("📊 vs. 预期 (~531): {:.1}%", (num_constraints as f64 / 531.0) * 100.0);
-        
-        assert!(cs.is_satisfied().unwrap(), "Constraints should be satisfied");
+        println!(
+            "✅ Multi-UTXO RingCT 约束数 (2-in-2-out): {}",
+            num_constraints
+        );
+        println!(
+            "📊 vs. 单 UTXO (309): 扩展系数 {:.2}x",
+            num_constraints as f64 / 309.0
+        );
+        println!(
+            "📊 vs. 预期 (~531): {:.1}%",
+            (num_constraints as f64 / 531.0) * 100.0
+        );
+
+        assert!(
+            cs.is_satisfied().unwrap(),
+            "Constraints should be satisfied"
+        );
     }
 
     #[test]
     fn test_multi_utxo_ringct_end_to_end() {
         let mut rng = OsRng;
-        
+
         // Setup
-    let setup_circuit = MultiUTXORingCTCircuit::example();
+        let setup_circuit = MultiUTXORingCTCircuit::example();
         let mut setup_circuit_clone = setup_circuit.clone();
-        
+
         // 清空私有见证用于 setup
         for i in 0..2 {
             setup_circuit_clone.inputs[i] = UTXO::public(setup_circuit.inputs[i].commitment_hash);
             setup_circuit_clone.outputs[i] = UTXO::public(setup_circuit.outputs[i].commitment_hash);
         }
-        
+
         let (pk, vk) = Groth16::<Bls12_381>::circuit_specific_setup(setup_circuit_clone, &mut rng)
             .expect("setup failed");
-        
+
         // Prove
         let proof = Groth16::<Bls12_381>::prove(&pk, setup_circuit.clone(), &mut rng)
             .expect("prove failed");
-        
+
         // Verify
         let mut public_inputs = Vec::new();
         // 输入承诺哈希
@@ -522,10 +612,10 @@ mod tests {
         for i in 0..2 {
             public_inputs.push(setup_circuit.ring_auths[i].key_image);
         }
-        
-        let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof)
-            .expect("verify failed");
-        
+
+        let valid =
+            Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof).expect("verify failed");
+
         assert!(valid, "Proof should be valid");
         println!("✅ Multi-UTXO RingCT end-to-end test passed!");
     }
@@ -538,7 +628,7 @@ mod tests {
         use rand::RngCore;
         let mut rng = OsRng;
 
-    let poseidon_cfg = {
+        let poseidon_cfg = {
             let full_rounds: usize = 8;
             let partial_rounds: usize = 57;
             let alpha: u64 = 5;
@@ -547,7 +637,9 @@ mod tests {
             let capacity: usize = 1;
 
             let mut mds = vec![vec![Fr::from(0u64); width]; width];
-            for i in 0..width { mds[i][i] = Fr::from(1u64); }
+            for i in 0..width {
+                mds[i][i] = Fr::from(1u64);
+            }
 
             let rounds = full_rounds + partial_rounds;
             let ark = vec![vec![Fr::from(0u64); width]; rounds];
@@ -555,8 +647,9 @@ mod tests {
             PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
         };
 
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         // 创建不平衡的交易：输入 1500，输出 1400（少了 100）
         let values_in = [1000u64, 500u64];
@@ -580,12 +673,25 @@ mod tests {
 
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right)
-                    .expect("poseidon evaluate");
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .expect("poseidon evaluate");
             }
 
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         // 构造环签名授权（使环签名部分满足）
@@ -596,12 +702,26 @@ mod tests {
             let secret_key = Fr::rand(&mut rng);
             let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
             for j in 0..ring_size {
-                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
-                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+                let pk = if j == real_index {
+                    secret_key
+                } else {
+                    Fr::rand(&mut rng)
+                };
+                ring_members.push(RSMember {
+                    public_key: pk,
+                    merkle_root: None,
+                });
             }
             let public_key = ring_members[real_index].public_key;
-            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
-            RingAuth { ring_members, real_index, secret_key, key_image }
+            let key_image =
+                poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
+                    .unwrap();
+            RingAuth {
+                ring_members,
+                real_index,
+                secret_key,
+                key_image,
+            }
         });
 
         let circuit = MultiUTXORingCTCircuit {
@@ -614,9 +734,12 @@ mod tests {
 
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit.generate_constraints(cs.clone()).unwrap();
-        
+
         // 约束应该不满足（金额不平衡）
-        assert!(!cs.is_satisfied().unwrap(), "Unbalanced transaction should fail");
+        assert!(
+            !cs.is_satisfied().unwrap(),
+            "Unbalanced transaction should fail"
+        );
         println!("✅ Balance check test passed: unbalanced transaction correctly rejected");
     }
 }

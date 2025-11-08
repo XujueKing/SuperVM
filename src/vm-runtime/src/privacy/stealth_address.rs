@@ -21,14 +21,14 @@ impl StealthAddressGenerator {
     pub fn new() -> Self {
         todo!("Phase 2.2.2: Implement stealth address generator")
     }
-    
+
     /// 生成隐形地址
-    /// 
+    ///
     /// # 参数
     /// - `receiver_spend_public`: 接收方的花费公钥
     /// - `receiver_view_public`: 接收方的查看公钥
     /// - `tx_secret`: 交易私钥 (随机生成)
-    /// 
+    ///
     /// # 返回
     /// 隐形地址和交易公钥
     pub fn generate(
@@ -52,18 +52,18 @@ impl StealthAddressScanner {
     pub fn new(_wallet_keys: &WalletKeys) -> Self {
         todo!("Phase 2.2.2: Implement stealth address scanner")
     }
-    
+
     /// 扫描交易输出,检查是否属于自己
-    /// 
+    ///
     /// # 参数
     /// - `output`: 交易输出
-    /// 
+    ///
     /// # 返回
     /// 如果属于自己,返回用于花费的私钥
     pub fn scan_output(&self, _output: &PrivacyOutput) -> Result<Option<SecretKey>> {
         todo!("Phase 2.2.2: Implement output scanning")
     }
-    
+
     /// 批量扫描多个输出
     pub fn scan_outputs(&self, _outputs: &[PrivacyOutput]) -> Result<Vec<Option<SecretKey>>> {
         todo!("Phase 2.2.2: Implement batch scanning")
@@ -88,13 +88,13 @@ pub fn generate_wallet_keys() -> Result<WalletKeys> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     #[should_panic(expected = "not yet implemented")]
     fn test_stealth_generator_placeholder() {
         let _generator = StealthAddressGenerator::new();
     }
-    
+
     #[test]
     #[should_panic(expected = "not yet implemented")]
     fn test_wallet_keys_placeholder() {

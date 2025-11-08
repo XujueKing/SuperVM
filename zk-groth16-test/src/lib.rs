@@ -5,17 +5,19 @@
 //!
 //! 目标：最小可行电路（a*b=c）端到端：Trusted Setup → 生成证明 → 验证证明。
 
+pub mod combined;
 pub mod pedersen;
 pub mod range_proof;
 pub mod range_proof_aggregated;
-pub mod combined;
+pub mod ring_signature;
 pub mod ringct;
 pub mod ringct_compressed;
 pub mod ringct_multi_utxo;
-pub mod ring_signature;
 
 use ark_bls12_381::Fr;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError};
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError,
+};
 
 #[derive(Clone)]
 pub struct MultiplyCircuit {
@@ -37,7 +39,11 @@ impl ConstraintSynthesizer<Fr> for MultiplyCircuit {
         })?;
 
         // 约束：a * b = c
-        cs.enforce_constraint(LinearCombination::from(a), LinearCombination::from(b), LinearCombination::from(c))?;
+        cs.enforce_constraint(
+            LinearCombination::from(a),
+            LinearCombination::from(b),
+            LinearCombination::from(c),
+        )?;
         Ok(())
     }
 }
@@ -46,7 +52,7 @@ impl ConstraintSynthesizer<Fr> for MultiplyCircuit {
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_groth16::{Groth16, prepare_verifying_key};
+    use ark_groth16::{prepare_verifying_key, Groth16};
     use ark_snark::SNARK;
     use rand::rngs::OsRng;
 
@@ -65,15 +71,28 @@ mod tests {
         let b = Fr::from(5u64);
         let c = a * b;
 
-        let proof = Groth16::<Bls12_381>::prove(&params, MultiplyCircuit { a: Some(a), b: Some(b) }, rng)
-            .expect("proving failed");
+        let proof = Groth16::<Bls12_381>::prove(
+            &params,
+            MultiplyCircuit {
+                a: Some(a),
+                b: Some(b),
+            },
+            rng,
+        )
+        .expect("proving failed");
 
         // 3) 验证证明：正确公开输入
         let pvk = prepare_verifying_key(&params.vk);
-        assert!(Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[c]).unwrap(), "should verify");
+        assert!(
+            Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[c]).unwrap(),
+            "should verify"
+        );
 
         // 4) 验证证明：错误公开输入
-    let wrong = Fr::from(999u64);
-    assert!(!Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[wrong]).unwrap(), "should not verify");
+        let wrong = Fr::from(999u64);
+        assert!(
+            !Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[wrong]).unwrap(),
+            "should not verify"
+        );
     }
 }

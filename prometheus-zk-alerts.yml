@@ -1,0 +1,63 @@
+# SuperVM ZK Verification Latency Alert Rules
+# 使用方法: 在 prometheus.yml 中添加:
+#   rule_files:
+#     - "prometheus-zk-alerts.yml"
+
+groups:
+  - name: supervm_zk_latency
+    interval: 10s
+    rules:
+      # P95 延迟持续过高告警
+      - alert: ZKVerificationP95High
+        expr: vm_privacy_zk_verify_p95_latency_ms > 15
+        for: 30s
+        labels:
+          severity: warning
+          component: zk-verifier
+        annotations:
+          summary: "ZK verification P95 latency is high (instance {{ $labels.instance }})"
+          description: "P95 latency is {{ $value }}ms, exceeding 15ms threshold for 30s. Consider reducing privacy path concurrency or enabling batch processing."
+
+      # P95 延迟极高告警（紧急）
+      - alert: ZKVerificationP95Critical
+        expr: vm_privacy_zk_verify_p95_latency_ms > 25
+        for: 15s
+        labels:
+          severity: critical
+          component: zk-verifier
+        annotations:
+          summary: "ZK verification P95 latency is critically high (instance {{ $labels.instance }})"
+          description: "P95 latency is {{ $value }}ms, exceeding 25ms threshold for 15s. Immediate action required to prevent privacy path degradation."
+
+      # 平均延迟异常升高
+      - alert: ZKVerificationAvgLatencyHigh
+        expr: vm_privacy_zk_verify_avg_latency_ms > 10
+        for: 1m
+        labels:
+          severity: warning
+          component: zk-verifier
+        annotations:
+          summary: "ZK verification average latency is high (instance {{ $labels.instance }})"
+          description: "Average latency is {{ $value }}ms, exceeding 10ms threshold for 1m. May indicate system resource contention."
+
+      # 验证计数停滞（可能服务挂起）
+      - alert: ZKVerificationStalled
+        expr: rate(vm_privacy_zk_verify_count_total[2m]) == 0 and vm_privacy_zk_verify_count_total > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: zk-verifier
+        annotations:
+          summary: "ZK verification appears stalled (instance {{ $labels.instance }})"
+          description: "No new verifications in the last 2m despite prior activity. Service may be hung or paused."
+
+      # 滑动窗口未满（可能刚启动或样本不足）
+      - alert: ZKVerificationWindowNotFull
+        expr: vm_privacy_zk_verify_window_size < 64 and vm_privacy_zk_verify_count_total > 10
+        for: 5m
+        labels:
+          severity: info
+          component: zk-verifier
+        annotations:
+          summary: "ZK verification window not fully populated (instance {{ $labels.instance }})"
+          description: "Window size is {{ $value }} samples (< 64). Percentiles may be less accurate until window fills."

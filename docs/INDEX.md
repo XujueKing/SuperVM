@@ -46,6 +46,10 @@ SuperVM/
 │   ├── LFU-HOTKEY-TUNING.md               - LFU 全局热点与分层热键调优指南
 │   ├── AUTO-TUNER.md                      - 自适应性能调优 (AutoTuner)
 │   ├── bloom-filter-optimization-report.md - Bloom Filter 优化分析报告
+│   ├── PHASE-4.3-ROCKSDB-INTEGRATION.md   - RocksDB 持久化存储集成 🔥
+│   ├── ROCKSDB-ADAPTIVE-QUICK-START.md    - 自适应批量写入快速开始 🚀
+│   ├── METRICS-COLLECTOR.md               - 性能指标收集 (Prometheus) 📊
+│   ├── PHASE-4.3-WEEK3-4-SUMMARY.md       - Phase 4.3 Week 3-4 总结 📝
 │   ├── stress-testing-guide.md            - 压力测试指南
 │   ├── gc-observability.md                - GC 可观测性
 │   ├── evm-adapter-design.md              - EVM 适配器插件化设计
@@ -68,6 +72,12 @@ SuperVM/
 │       ├── gas-incentive-mechanism.md     - 四层网络 Gas 激励机制
 │       ├── scenario-analysis-game-defi.md - 游戏与 DeFi 场景深度分析
 │       └── compiler-and-gas-innovation.md - 跨链编译器与多币种 Gas
+│
+│   🧭 Phase 5 快速入口（三通道路由）
+│       ├── sui-smart-contract-analysis.md  - 新增三通道架构 / 路由决策 / 性能目标
+│       ├── examples/fast_path_bench.rs     - FastPath 基准（500K+ TPS 目标）
+│       ├── examples/mixed_path_bench.rs    - 混合负载基准（owned_ratio 梯度）
+│       └── examples/e2e_three_channel_test.rs - 三通道端到端验证示例
 │
 ├── 🔐 zk-groth16-test/ - Groth16 隐私层实现
 │   ├── README.md                          - 项目文档与性能数据
@@ -236,11 +246,45 @@ SuperVM/
 3. [parallel-execution.md](./parallel-execution.md) - 并行执行
    - 冲突检测
    - 工作窃取
+4. [AUTO-TUNER.md](./AUTO-TUNER.md) - 自适应调优 **NEW**
+   - 自动参数调节
+   - Manual vs Auto 对比
+5. [LFU-HOTKEY-TUNING.md](./LFU-HOTKEY-TUNING.md) - 热点调优
+   - 分层热键识别
+   - LFU 参数配置
 
 关键问题:
 - 如何进行性能压测？
 - 如何调优 GC？
 - 如何提升并发度？
+
+---
+
+### 场景 5: 我想了解 Phase 4.3 持久化存储
+
+推荐路径（1.5 小时）:
+1. [PHASE-4.3-ROCKSDB-INTEGRATION.md](./PHASE-4.3-ROCKSDB-INTEGRATION.md) - RocksDB 集成指南 🔥
+   - Storage Trait 实现
+   - 配置优化
+   - 批量写入 API
+2. [ROCKSDB-ADAPTIVE-QUICK-START.md](./ROCKSDB-ADAPTIVE-QUICK-START.md) - 快速开始 🚀
+   - 自适应批量写入
+   - 性能基准 (754K-860K ops/s)
+   - 运行时配置
+3. [METRICS-COLLECTOR.md](./METRICS-COLLECTOR.md) - 性能监控 📊
+   - Prometheus 集成
+   - MVCC 指标
+   - 延迟直方图
+4. [PHASE-4.3-WEEK3-4-SUMMARY.md](./PHASE-4.3-WEEK3-4-SUMMARY.md) - 完成总结 📝
+   - Checkpoint 快照
+   - MVCC 自动刷新
+   - Demo 程序
+
+关键问题:
+- 如何集成 RocksDB？
+- 自适应批量写入如何工作？
+- 如何监控性能指标？
+- 快照和自动刷新如何使用？
 
 ---
 
@@ -340,6 +384,33 @@ SuperVM/
 ---
 
 ### 4. tech-comparison.md
+---
+
+## 🚩 最新进展与阶段性总结（2025-11-08）
+
+- 🆕 **快照管理/恢复/自动清理**：支持 create_checkpoint、restore_from_checkpoint、maybe_create_snapshot、cleanup_old_snapshots，3 个测试用例全部通过
+- 🆕 **MVCC 自动刷新机制**：flush_to_storage、load_from_storage，支持双触发器（时间+区块数），demo 稳定运行
+- 🆕 **Prometheus 指标集成**：metrics.rs 模块（MetricsCollector + LatencyHistogram），集成到 MVCC commit/commit_parallel，export_prometheus 导出，metrics_demo 运行成功（TPS:669, 成功率:98.61%）
+- 🆕 **HTTP /metrics 端点**：metrics_http_demo 提供 Prometheus 监控接口，支持 GET http://127.0.0.1:8080/metrics
+- 🆕 **状态裁剪功能**：prune_old_versions 批量清理历史版本，state_pruning_demo 成功清理 150 版本（10 键 × 15 旧版本）
+- 🆕 **文档/编码规范升级**：90 个 Markdown 文件批量转换为 UTF-8，.vscode/settings.json 强制 UTF-8 编码
+- 🆕 **新文档**：
+  - [METRICS-COLLECTOR.md](./METRICS-COLLECTOR.md) - Prometheus 指标收集器文档
+  - [PHASE-4.3-WEEK3-4-SUMMARY.md](./PHASE-4.3-WEEK3-4-SUMMARY.md) - Week 3-4 阶段总结
+  - [ROCKSDB-ADAPTIVE-QUICK-START.md](./ROCKSDB-ADAPTIVE-QUICK-START.md) - RocksDB 批量写入快速指南
+
+### ⏳ 待补充/优化
+- [ ] Grafana Dashboard 配置（性能可视化）
+- [ ] 24小时稳定性测试（长期运行验证）
+- [ ] 单元测试/集成测试补充
+- [ ] API.md 文档补全（新 API 汇总）
+
+---
+
+## 📈 进度总览
+
+- **Phase 4.3 持久化存储集成**：45%（7/11 任务完成）
+- 详细进展、数据与代码示例见 [PHASE-4.3-WEEK3-4-SUMMARY.md](./PHASE-4.3-WEEK3-4-SUMMARY.md)、[METRICS-COLLECTOR.md](./METRICS-COLLECTOR.md)---
 
 **大小**: 26KB  
 **阅读时间**: 30-45 分钟  
@@ -566,7 +637,95 @@ SuperVM/
 
 ---
 
-### 14. API.md
+### 14. PHASE-4.3-ROCKSDB-INTEGRATION.md 🔥
+
+**大小**: 15KB  
+**阅读时间**: 35 分钟  
+**适合人群**: 存储系统开发者、性能工程师  
+**内容**:
+- RocksDB 集成完整指南
+- Storage Trait 实现
+- 批量写入优化 (basic/chunked/adaptive)
+- Week 1-4 完整实施计划
+- 性能基准测试结果
+- 配置优化建议
+
+**关键成就**:
+- 批量写入: 754K-860K ops/s (超预期 3-4×)
+- 自适应算法: RSD 0.26%-24.79%
+
+**何时阅读**: 集成持久化存储时
+
+---
+
+### 15. ROCKSDB-ADAPTIVE-QUICK-START.md 🚀
+
+**大小**: 12KB  
+**阅读时间**: 20 分钟  
+**适合人群**: 应用开发者、运维工程师  
+**内容**:
+- 自适应批量写入快速开始
+- 3 种写入策略对比
+- 运行时环境变量配置
+- 性能基准测试脚本
+- CSV 数据导出与分析
+- 生产环境配置建议
+
+**快速命令**:
+```powershell
+cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --features rocksdb-storage
+```
+
+**何时阅读**: 需要快速上手 RocksDB 时
+
+---
+
+### 16. METRICS-COLLECTOR.md 📊
+
+**大小**: 8KB  
+**阅读时间**: 15 分钟  
+**适合人群**: 运维工程师、监控开发者  
+**内容**:
+- Prometheus 指标收集器
+- MVCC 事务指标 (started/committed/aborted, TPS, 成功率)
+- 延迟直方图 (P50/P90/P99)
+- GC 和 Flush 指标
+- export_prometheus() API
+- Grafana Dashboard 设计建议
+
+**关键特性**:
+- 轻量级无锁设计 (AtomicU64)
+- 可选启用/禁用
+- 性能开销 <1%
+
+**何时阅读**: 需要监控系统性能时
+
+---
+
+### 17. PHASE-4.3-WEEK3-4-SUMMARY.md 📝
+
+**大小**: 12KB  
+**阅读时间**: 25 分钟  
+**适合人群**: 项目管理者、技术总监  
+**内容**:
+- Week 3-4 完整完成总结
+- Checkpoint 快照管理系统
+- MVCC 自动刷新机制
+- Prometheus 指标集成
+- 测试结果与验证数据
+- 示例程序说明
+
+**核心成就**:
+- 2 个示例程序 (mvcc_auto_flush_demo, metrics_demo)
+- 2 个测试用例 (2/2 通过)
+- 2 份完整文档
+- 90 个 Markdown 文件编码统一
+
+**何时阅读**: 了解 Phase 4.3 最新进展时
+
+---
+
+### 18. API.md
 
 **大小**: 15KB  
 **阅读时间**: 30 分钟  

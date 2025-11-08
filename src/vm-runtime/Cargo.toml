@@ -13,6 +13,9 @@ thiserror = "1.0"
 log = "0.4"
 wat = "1.0"
 
+# HTTP 服务依赖（用于 /metrics 端点 demo）
+tiny_http = "0.12"
+
 # 密码学库
 sha2 = "0.10"
 sha3 = "0.10"
@@ -29,13 +32,25 @@ parking_lot = "0.12"
 # 序列化库
 serde = { version = "1.0", features = ["derive"] }
 
+# Phase 6: 跨分片事务依赖
+rand = "0.8"  # 用于模拟和测试
+
+# 持久化存储 (Phase 4.3)
+# 简化依赖: 禁用 default features 避免 libclang/bindgen 依赖
+rocksdb = { version = "0.22", optional = true, default-features = false }
+
+# 时间戳支持（用于 CSV 基准导出）
+chrono = "0.4"
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
+tempfile = "3.8"  # Phase 4.3: 用于 RocksDB 测试的临时目录
 
 [features]
 default = []
 demos = []
+rocksdb-storage = ["dep:rocksdb"]  # Phase 4.3: RocksDB 持久化存储特性
+unstable-examples = [] # 临时隔离编译失败或未完成示例，默认不启用
 groth16-verifier = [
     "dep:zk-groth16-test",
     "dep:ark-groth16",
@@ -78,6 +93,14 @@ optional = true
 
 [[bench]]
 name = "parallel_benchmark"
+harness = false
+
+[[bench]]
+name = "retry_policy_benchmark"
+harness = false
+
+[[bench]]
+name = "flush_batch_benchmark"
 harness = false
 
 [[example]]
@@ -140,3 +163,69 @@ required-features = ["groth16-verifier"]
 [[example]]
 name = "lfu_hotkey_demo"
 path = "../../examples/lfu_hotkey_demo.rs"
+
+[[example]]
+name = "rocksdb_batch_size_bench"
+path = "../../examples/rocksdb_batch_size_bench.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "rocksdb_monitor"
+path = "../../examples/rocksdb_monitor.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "rocksdb_adaptive_compare"
+path = "../../examples/rocksdb_adaptive_compare.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "rocksdb_adaptive_batch_bench"
+path = "../../src/node-core/examples/rocksdb_adaptive_batch_bench.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "mvcc_auto_flush_demo"
+path = "examples/mvcc_auto_flush_demo.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "metrics_demo"
+path = "examples/metrics_demo.rs"
+
+[[example]]
+name = "metrics_http_demo"
+path = "examples/metrics_http_demo.rs"
+
+[[example]]
+name = "mixed_path_bench"
+path = "examples/mixed_path_bench.rs"
+
+[[example]]
+name = "routing_metrics_http_demo"
+path = "examples/routing_metrics_http_demo.rs"
+
+[[example]]
+name = "state_pruning_demo"
+path = "examples/state_pruning_demo.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "stability_test_24h"
+path = "examples/stability_test_24h.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "quick_retry_bench"
+path = "examples/quick_retry_bench.rs"
+
+[[example]]
+name = "quick_flush_bench"
+path = "examples/quick_flush_bench.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "zk_parallel_bench"
+path = "examples/zk_parallel_bench.rs"
+required-features = ["groth16-verifier"]
+

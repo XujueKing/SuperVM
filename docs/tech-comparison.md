@@ -1,4 +1,4 @@
-﻿# Technology Comparison: SuperVM vs Major Blockchains
+# Technology Comparison: SuperVM vs Major Blockchains
 
 开发者/作者：King Xujue
 

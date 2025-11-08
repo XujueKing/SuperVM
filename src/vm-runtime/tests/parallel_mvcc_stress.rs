@@ -1,6 +1,6 @@
-use std::time::Instant;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use std::time::Instant;
 use vm_runtime::{MvccScheduler, MvccSchedulerConfig, Txn};
 
 enum Op {
@@ -8,7 +8,13 @@ enum Op {
     Write(Vec<u8>),
 }
 
-fn pct(x: u64, y: u64) -> f64 { if y == 0 { 0.0 } else { (x as f64) / (y as f64) * 100.0 } }
+fn pct(x: u64, y: u64) -> f64 {
+    if y == 0 {
+        0.0
+    } else {
+        (x as f64) / (y as f64) * 100.0
+    }
+}
 
 #[test]
 fn test_mvcc_scheduler_high_concurrency() {
@@ -16,9 +22,13 @@ fn test_mvcc_scheduler_high_concurrency() {
     let scheduler = MvccScheduler::new_with_config(MvccSchedulerConfig::default());
 
     // 生成初始数据
-    scheduler.batch_write(
-        (0..100).map(|i| (format!("k{}", i).into_bytes(), b"0".to_vec())).collect()
-    ).unwrap();
+    scheduler
+        .batch_write(
+            (0..100)
+                .map(|i| (format!("k{}", i).into_bytes(), b"0".to_vec()))
+                .collect(),
+        )
+        .unwrap();
 
     // 高并发混合负载：8 线程 * 2000 交易，共 16K 笔
     let threads = 8u64;
@@ -84,7 +94,11 @@ fn test_mvcc_scheduler_high_concurrency() {
 
     // 断言：高成功率 + 合理 TPS
     // 注意：使用全局提交锁后，性能从177K降至~40K TPS，但保证了正确性
-    assert!(success_rate > 95.0, "success_rate too low: {:.2}%", success_rate);
+    assert!(
+        success_rate > 95.0,
+        "success_rate too low: {:.2}%",
+        success_rate
+    );
     assert!(tps > 20_000.0, "TPS too low: {:.2}", tps);
 }
 
@@ -94,7 +108,14 @@ fn test_mvcc_scheduler_hotspot_contention() {
 
     // 热点 5 个键
     let hot_keys: Vec<_> = (0..5).map(|i| format!("hot{}", i).into_bytes()).collect();
-    scheduler.batch_write(hot_keys.iter().map(|k| (k.clone(), b"0".to_vec())).collect()).unwrap();
+    scheduler
+        .batch_write(
+            hot_keys
+                .iter()
+                .map(|k| (k.clone(), b"0".to_vec()))
+                .collect(),
+        )
+        .unwrap();
 
     // 16 线程 * 500 交易，全部写热点键
     let threads = 16u64;

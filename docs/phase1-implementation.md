@@ -1,4 +1,4 @@
-﻿# SuperVM 2.0 Implementation Plan
+# SuperVM 2.0 Implementation Plan
 
 > **从当前 v0.9.0 到完整 SuperVM 2.0 的实施路线图**
 

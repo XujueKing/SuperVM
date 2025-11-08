@@ -7,7 +7,7 @@
 //! - 多输入/多输出 UTXO 模型
 //!
 //! ## 架构设计
-//! 
+//!
 //! Phase 2.1: 简化版（单输入/单输出，环大小=5）
 //! - 约束数目标: < 200
 //! - 证明时间: < 100ms
@@ -18,9 +18,7 @@
 
 use ark_bls12_381::Fr;
 use ark_ff::PrimeField;
-use ark_relations::r1cs::{
-    ConstraintSynthesizer, ConstraintSystemRef, SynthesisError,
-};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use std::vec::Vec;
 // Poseidon (to replace placeholder Merkle hash)
 use ark_r1cs_std::alloc::AllocVar;
@@ -28,20 +26,20 @@ use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_r1cs_std::prelude::Boolean;
 // Pedersen commitment
+use ark_crypto_primitives::commitment::constraints::CommitmentGadget;
 use ark_crypto_primitives::commitment::pedersen as pedersen_commit;
 use ark_crypto_primitives::commitment::pedersen::constraints as pedersen_gadgets;
-use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective as PedersenCurve;
-use ark_ed_on_bls12_381_bandersnatch::constraints::EdwardsVar as PedersenCurveVar;
+use ark_crypto_primitives::commitment::pedersen::Window;
+use ark_crypto_primitives::commitment::CommitmentScheme;
+use ark_crypto_primitives::crh::poseidon as poseidon_crh;
 use ark_crypto_primitives::crh::poseidon::constraints as poseidon_constraints;
 use ark_crypto_primitives::crh::{TwoToOneCRHScheme as TwoToOneCRHTrait, TwoToOneCRHSchemeGadget};
-use ark_crypto_primitives::crh::poseidon as poseidon_crh;
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use ark_crypto_primitives::commitment::constraints::CommitmentGadget;
-use ark_crypto_primitives::commitment::CommitmentScheme;
-use ark_crypto_primitives::commitment::pedersen::Window;
-use ark_r1cs_std::ToBitsGadget;
+use ark_ed_on_bls12_381_bandersnatch::constraints::EdwardsVar as PedersenCurveVar;
+use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective as PedersenCurve;
 use ark_r1cs_std::fields::FieldVar;
 use ark_r1cs_std::uint8::UInt8;
+use ark_r1cs_std::ToBitsGadget;
 
 // ===== 数据结构定义 =====
 
@@ -52,21 +50,27 @@ pub struct UTXO {
     /// 使用 Pedersen 承诺的椭圆曲线点坐标 (x, y)
     pub commitment_x: Fr,
     pub commitment_y: Fr,
-    
+
     /// 金额（私有，仅 Prover 知道）
     pub value: Option<u64>,
-    
+
     /// 盲因子（私有，仅 Prover 知道，作为 32 字节）
     pub blinding: Option<[u8; 32]>,
 }
 
 impl UTXO {
     /// 创建新的 UTXO
-    pub fn new(value: u64, blinding: [u8; 32], params: &pedersen_commit::Parameters<PedersenCurve>) -> Self {
+    pub fn new(
+        value: u64,
+        blinding: [u8; 32],
+        params: &pedersen_commit::Parameters<PedersenCurve>,
+    ) -> Self {
         // 消息：u64 的小端字节，补零到窗口需求（4 字节）
         let mut msg = value.to_le_bytes().to_vec();
         let required = PedersenWindow::WINDOW_SIZE;
-        if msg.len() < required { msg.resize(required, 0u8); }
+        if msg.len() < required {
+            msg.resize(required, 0u8);
+        }
         msg.truncate(required);
 
         // 随机性：将 32 字节映射为 Bandersnatch 标量
@@ -77,7 +81,8 @@ impl UTXO {
             params,
             &msg,
             &randomness,
-        ).expect("pedersen commit");
+        )
+        .expect("pedersen commit");
         Self {
             commitment_x: aff.x,
             commitment_y: aff.y,
@@ -85,7 +90,7 @@ impl UTXO {
             blinding: Some(blinding),
         }
     }
-    
+
     /// 创建公开 UTXO（仅 Verifier 视角）
     pub fn public(commitment_x: Fr, commitment_y: Fr) -> Self {
         Self {
@@ -111,13 +116,13 @@ impl pedersen_commit::Window for PedersenWindow {
 pub struct MerkleProof {
     /// 叶子节点（公钥哈希）
     pub leaf: Fr,
-    
+
     /// Merkle 路径（从叶子到根）
     pub path: Vec<Fr>,
-    
+
     /// 路径方向（0=左，1=右）
     pub directions: Vec<bool>,
-    
+
     /// Merkle 根（公开）
     pub root: Fr,
 }
@@ -126,7 +131,7 @@ impl MerkleProof {
     /// 验证 Merkle 证明
     pub fn verify(&self) -> bool {
         let mut current = self.leaf;
-        
+
         for (sibling, &direction) in self.path.iter().zip(&self.directions) {
             // 简化哈希：H(a, b) = a + b（实际应使用 Poseidon）
             current = if direction {
@@ -135,7 +140,7 @@ impl MerkleProof {
                 *sibling + current // current 在左
             };
         }
-        
+
         current == self.root
     }
 }
@@ -163,10 +168,10 @@ impl MerkleProof {
 pub struct SimpleRingCTCircuit {
     /// 输入 UTXO
     pub input: UTXO,
-    
+
     /// 输出 UTXO
     pub output: UTXO,
-    
+
     /// Merkle 成员证明
     pub merkle_proof: MerkleProof,
 
@@ -183,21 +188,22 @@ impl SimpleRingCTCircuit {
         use rand::rngs::OsRng;
         use rand::RngCore;
         let mut rng = OsRng;
-        
+
         // Pedersen 参数
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, PedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, PedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         // 创建输入/输出 UTXO（使用 Pedersen 承诺）
-    let value = 1000u64;
-    let mut r_in = [0u8; 32];
-    rng.fill_bytes(&mut r_in);
-    let input = UTXO::new(value, r_in, &pedersen_params);
+        let value = 1000u64;
+        let mut r_in = [0u8; 32];
+        rng.fill_bytes(&mut r_in);
+        let input = UTXO::new(value, r_in, &pedersen_params);
 
-    let mut r_out = [0u8; 32];
-    rng.fill_bytes(&mut r_out);
-    let output = UTXO::new(value, r_out, &pedersen_params);
-        
+        let mut r_out = [0u8; 32];
+        rng.fill_bytes(&mut r_out);
+        let output = UTXO::new(value, r_out, &pedersen_params);
+
         // 构造 Poseidon 配置（width=3, rate=2, alpha=5, 采用标准轮数）
         let poseidon_cfg = {
             // 常见参数：BLS12-381 Fr，alpha=5，full=8，partial=57，width=3，rate=2
@@ -214,7 +220,9 @@ impl SimpleRingCTCircuit {
 
             // 单位 MDS 矩阵
             let mut mds = vec![vec![Fr::from(0u64); width]; width];
-            for i in 0..width { mds[i][i] = Fr::from(1u64); }
+            for i in 0..width {
+                mds[i][i] = Fr::from(1u64);
+            }
 
             // 轮常数：全零（rounds = full + partial）
             let rounds = full_rounds + partial_rounds;
@@ -231,18 +239,26 @@ impl SimpleRingCTCircuit {
         // 计算 Merkle 根（使用 Poseidon 2-to-1）
         let mut root = leaf;
         for (sibling, &direction) in path.iter().zip(&directions) {
-            let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-            root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHTrait>::evaluate(&poseidon_cfg, &left, &right)
-                .expect("poseidon evaluate failed");
+            let (left, right) = if direction {
+                (root, *sibling)
+            } else {
+                (*sibling, root)
+            };
+            root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHTrait>::evaluate(
+                &poseidon_cfg,
+                &left,
+                &right,
+            )
+            .expect("poseidon evaluate failed");
         }
-        
+
         let merkle_proof = MerkleProof {
             leaf,
             path,
             directions,
             root,
         };
-        
+
         Self {
             input,
             output,
@@ -256,10 +272,14 @@ impl SimpleRingCTCircuit {
 impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         // ===== 公开输入 =====
-        let input_commitment_x = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.input.commitment_x))?;
-        let input_commitment_y = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.input.commitment_y))?;
-        let output_commitment_x = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.output.commitment_x))?;
-        let output_commitment_y = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.output.commitment_y))?;
+        let input_commitment_x =
+            FpVar::<Fr>::new_input(cs.clone(), || Ok(self.input.commitment_x))?;
+        let input_commitment_y =
+            FpVar::<Fr>::new_input(cs.clone(), || Ok(self.input.commitment_y))?;
+        let output_commitment_x =
+            FpVar::<Fr>::new_input(cs.clone(), || Ok(self.output.commitment_x))?;
+        let output_commitment_y =
+            FpVar::<Fr>::new_input(cs.clone(), || Ok(self.output.commitment_y))?;
 
         // ===== 私有输入（作为 FpVar Witness） =====
         let v_in = FpVar::<Fr>::new_witness(cs.clone(), || {
@@ -291,17 +311,22 @@ impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
             let scalar = ark_ed_on_bls12_381_bandersnatch::Fr::from_le_bytes_mod_order(&bytes);
             Ok(pedersen_commit::Randomness::<PedersenCurve>(scalar))
         })?;
-        
+
         // ===== 约束 1 & 2: Pedersen 承诺验证（输入 + 输出） =====
         {
             // 参数常量
-            let params_var = pedersen_gadgets::ParametersVar::<PedersenCurve, PedersenCurveVar>::new_constant(
-                cs.clone(),
-                &self.pedersen_params,
-            )?;
+            let params_var =
+                pedersen_gadgets::ParametersVar::<PedersenCurve, PedersenCurveVar>::new_constant(
+                    cs.clone(),
+                    &self.pedersen_params,
+                )?;
 
             // Helper：计算承诺并与公开 (x,y) 比较
-            let commit_and_check = |v_fp: &FpVar<Fr>, rand_var: &pedersen_gadgets::RandomnessVar<Fr>, x_pub: &FpVar<Fr>, y_pub: &FpVar<Fr>| -> Result<(), SynthesisError> {
+            let commit_and_check = |v_fp: &FpVar<Fr>,
+                                    rand_var: &pedersen_gadgets::RandomnessVar<Fr>,
+                                    x_pub: &FpVar<Fr>,
+                                    y_pub: &FpVar<Fr>|
+             -> Result<(), SynthesisError> {
                 // 消息：取 64-bit 的前 4 个字节（LE，32 位）
                 let bits = v_fp.to_bits_le()?;
                 let required = PedersenWindow::WINDOW_SIZE;
@@ -320,7 +345,12 @@ impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
 
                 // 承诺并比较坐标
                 #[allow(unused_parens)]
-                fn commit_helper<G: CommitmentGadget<pedersen_commit::Commitment<PedersenCurve, PedersenWindow>, Fr>>(
+                fn commit_helper<
+                    G: CommitmentGadget<
+                        pedersen_commit::Commitment<PedersenCurve, PedersenWindow>,
+                        Fr,
+                    >,
+                >(
                     params: &G::ParametersVar,
                     input: &[UInt8<Fr>],
                     randomness: &G::RandomnessVar,
@@ -328,20 +358,27 @@ impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
                     G::commit(params, input, randomness)
                 }
 
-                let com_var: PedersenCurveVar = commit_helper::<pedersen_gadgets::CommGadget<PedersenCurve, PedersenCurveVar, PedersenWindow>>(&params_var, &msg, rand_var)?;
+                let com_var: PedersenCurveVar = commit_helper::<
+                    pedersen_gadgets::CommGadget<PedersenCurve, PedersenCurveVar, PedersenWindow>,
+                >(&params_var, &msg, rand_var)?;
                 com_var.x.enforce_equal(x_pub)?;
                 com_var.y.enforce_equal(y_pub)?;
                 Ok(())
             };
 
             commit_and_check(&v_in, &r_in_rand, &input_commitment_x, &input_commitment_y)?;
-            commit_and_check(&v_out, &r_out_rand, &output_commitment_x, &output_commitment_y)?;
+            commit_and_check(
+                &v_out,
+                &r_out_rand,
+                &output_commitment_x,
+                &output_commitment_y,
+            )?;
         }
-        
+
         // ===== 约束 3: 金额平衡 =====
         // v_in = v_out
         v_in.enforce_equal(&v_out)?;
-        
+
         // ===== 约束 4: 范围证明（64-bit 位分解） =====
         // 将 v_in 按 64 位进行位分解，并验证 Σ b_i·2^i = v_in。
         {
@@ -353,21 +390,37 @@ impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
             }
             sum.enforce_equal(&v_in)?;
         }
-        
+
         // ===== 约束 5: Merkle 成员证明（Poseidon 2-to-1） =====
         {
             // 当前节点值（FpVar）
             let mut current = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.merkle_proof.leaf))?;
 
             // Poseidon 参数常量（CRHParametersVar 实际承载的是 PoseidonConfig）
-            let params_var = poseidon_constraints::CRHParametersVar::new_constant(cs.clone(), &self.poseidon_cfg)?;
+            let params_var = poseidon_constraints::CRHParametersVar::new_constant(
+                cs.clone(),
+                &self.poseidon_cfg,
+            )?;
 
             for (i, sibling_val) in self.merkle_proof.path.iter().enumerate() {
-                let dir_right = self.merkle_proof.directions.get(i).copied().unwrap_or(false);
+                let dir_right = self
+                    .merkle_proof
+                    .directions
+                    .get(i)
+                    .copied()
+                    .unwrap_or(false);
                 let sibling = FpVar::<Fr>::new_witness(cs.clone(), || Ok(*sibling_val))?;
 
-                let (left, right) = if dir_right { (current.clone(), sibling) } else { (sibling, current.clone()) };
-                let next = poseidon_constraints::TwoToOneCRHGadget::<Fr>::evaluate(&params_var, &left, &right)?;
+                let (left, right) = if dir_right {
+                    (current.clone(), sibling)
+                } else {
+                    (sibling, current.clone())
+                };
+                let next = poseidon_constraints::TwoToOneCRHGadget::<Fr>::evaluate(
+                    &params_var,
+                    &left,
+                    &right,
+                )?;
                 current = next;
             }
 
@@ -375,7 +428,7 @@ impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
             let root_var = FpVar::<Fr>::new_input(cs.clone(), || Ok(self.merkle_proof.root))?;
             current.enforce_equal(&root_var)?;
         }
-        
+
         Ok(())
     }
 }
@@ -384,9 +437,7 @@ impl ConstraintSynthesizer<Fr> for SimpleRingCTCircuit {
 
 /// 位分解（将 u64 转换为位数组）
 pub fn bit_decompose(value: u64, num_bits: usize) -> Vec<bool> {
-    (0..num_bits)
-        .map(|i| (value >> i) & 1 == 1)
-        .collect()
+    (0..num_bits).map(|i| (value >> i) & 1 == 1).collect()
 }
 
 /// 简化哈希函数（用于 Merkle 树）
@@ -398,73 +449,78 @@ pub fn simple_hash(left: Fr, right: Fr) -> Fr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ark_bls12_381::Bls12_381;
+    use ark_crypto_primitives::commitment::CommitmentScheme;
     use ark_groth16::Groth16;
     use ark_snark::SNARK;
     use rand::rngs::OsRng;
-    use ark_bls12_381::Bls12_381;
-    use ark_crypto_primitives::commitment::CommitmentScheme;
     use rand::RngCore;
-    
+
     #[test]
     fn test_utxo_creation() {
-    let mut rng = OsRng;
-    let value = 1000u64;
-    let mut blinding = [0u8; 32];
-    rng.fill_bytes(&mut blinding);
+        let mut rng = OsRng;
+        let value = 1000u64;
+        let mut blinding = [0u8; 32];
+        rng.fill_bytes(&mut blinding);
 
-    let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, PedersenWindow>::setup(&mut rng).unwrap();
-    let utxo = UTXO::new(value, blinding, &pedersen_params);
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, PedersenWindow>::setup(&mut rng).unwrap();
+        let utxo = UTXO::new(value, blinding, &pedersen_params);
         assert!(utxo.value.is_some());
         assert!(utxo.blinding.is_some());
-        
-    // 坐标不全为零（弱检查）
-    assert!(utxo.commitment_x != Fr::from(0u64) || utxo.commitment_y != Fr::from(0u64));
+
+        // 坐标不全为零（弱检查）
+        assert!(utxo.commitment_x != Fr::from(0u64) || utxo.commitment_y != Fr::from(0u64));
     }
-    
+
     #[test]
     fn test_merkle_proof() {
         let leaf = Fr::from(123u64);
         let path = vec![Fr::from(1u64), Fr::from(2u64)];
         let directions = vec![false, true];
-        
+
         // 计算根
         let mut root = leaf;
         for (sibling, &dir) in path.iter().zip(&directions) {
-            root = if dir { root + *sibling } else { *sibling + root };
+            root = if dir {
+                root + *sibling
+            } else {
+                *sibling + root
+            };
         }
-        
+
         let proof = MerkleProof {
             leaf,
             path,
             directions,
             root,
         };
-        
+
         assert!(proof.verify());
     }
-    
+
     #[test]
     fn test_simple_ringct_circuit() {
         let circuit = SimpleRingCTCircuit::example();
-        
+
         // 验证约束满足
         use ark_relations::r1cs::ConstraintSystem;
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit.clone().generate_constraints(cs.clone()).unwrap();
-        
+
         println!("Total constraints: {}", cs.num_constraints());
         assert!(cs.is_satisfied().unwrap());
     }
-    
+
     #[test]
     fn test_simple_ringct_end_to_end() {
         let mut rng = OsRng;
         let circuit = SimpleRingCTCircuit::example();
-        
+
         // Setup
         let (pk, vk) = Groth16::<Bls12_381>::circuit_specific_setup(circuit.clone(), &mut rng)
             .expect("Setup failed");
-        
+
         // 公开输入
         let public_inputs = vec![
             circuit.input.commitment_x,
@@ -473,19 +529,19 @@ mod tests {
             circuit.output.commitment_y,
             circuit.merkle_proof.root,
         ];
-        
+
         // Prove
-        let proof = Groth16::<Bls12_381>::prove(&pk, circuit.clone(), &mut rng)
-            .expect("Prove failed");
-        
+        let proof =
+            Groth16::<Bls12_381>::prove(&pk, circuit.clone(), &mut rng).expect("Prove failed");
+
         // Verify
-        let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof)
-            .expect("Verify failed");
-        
+        let valid =
+            Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof).expect("Verify failed");
+
         assert!(valid, "Proof verification failed");
         println!("✅ SimpleRingCT end-to-end test passed!");
     }
-    
+
     #[test]
     fn test_bit_decompose() {
         assert_eq!(bit_decompose(0, 4), vec![false, false, false, false]);

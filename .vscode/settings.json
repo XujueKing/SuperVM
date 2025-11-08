@@ -1,6 +1,22 @@
-﻿{
+{
   "terminal.integrated.defaultProfile.windows": "Windows PowerShell",
   "code-runner.runInTerminal": true,
-  "powershell.codeFormatting.preset": "Default",
-  "powershell.integratedConsole.showOnStartup": false
+  "powershell.codeFormatting.preset": "OTBS",
+  "powershell.integratedConsole.showOnStartup": false,
+  
+  // 统一编码配置: UTF-8 without BOM
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false,
+  "[markdown]": {
+    "files.encoding": "utf8"
+  },
+  "[rust]": {
+    "files.encoding": "utf8"
+  },
+  "[python]": {
+    "files.encoding": "utf8"
+  },
+  "[powershell]": {
+    "files.encoding": "utf8"
+  }
 }

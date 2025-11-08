@@ -4,7 +4,7 @@
 // SuperVM 2.0 - Privacy Layer
 // 架构师: KING XU (CHINA)
 // Phase 2: Privacy Layer Implementation
-// 
+//
 // 本模块实现隐私交易功能,包括:
 // - Ring Signatures (环签名)
 // - Stealth Addresses (隐形地址)
@@ -13,21 +13,23 @@
 // - Zero-Knowledge Proofs (零知识证明)
 // - Mixing Pool (混币池)
 
-pub mod types;
+pub mod commitment;
+#[cfg(feature = "groth16-verifier")]
+pub mod groth16_verifier;
+pub mod range_proof;
 pub mod ring_signature;
 pub mod stealth_address;
-pub mod commitment;
-pub mod range_proof;
-pub mod zksnark;  // Phase 2.2.4
-#[cfg(feature = "groth16-verifier")]
-pub mod groth16_verifier; // Optional: Groth16 backend adapter
-// pub mod ringct;   // Phase 2.2.5
-// pub mod mixing;   // Phase 2.2.6
+pub mod types;
+pub mod zksnark; // Phase 2.2.4 // Optional: Groth16 backend adapter
+pub mod parallel_prover; // Phase 2.2.X: 并行证明生成 (rayon 批量 prove)
+                                // pub mod ringct;   // Phase 2.2.5
+                                // pub mod mixing;   // Phase 2.2.6
 
-pub use types::*;
-pub use zksnark::{ZkVerifier, NoopVerifier, ZkError, ZkCircuitId};
 #[cfg(feature = "groth16-verifier")]
 pub use groth16_verifier::Groth16Verifier;
+pub use types::*;
+pub use zksnark::{NoopVerifier, ZkCircuitId, ZkError, ZkVerifier};
+pub use parallel_prover::{ParallelProveConfig, ParallelProofStats, ParallelProver};
 // pub use ring_signature::*;
 // pub use stealth_address::*;
 // pub use commitment::*;

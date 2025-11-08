@@ -1,0 +1,27 @@
+﻿=== Quick RetryPolicy Benchmark ===
+
+馃搳 RetryPolicy (3 failures before success):
+  Total iterations: 1500
+  Successes: 1500
+  Total time: 2.73s
+  Avg per op: 1.82ms
+  Throughput: 548 ops/sec
+
+馃搳 Manual Retry Loop (baseline):
+  Total iterations: 1500
+  Successes: 1500
+  Total time: 9.00碌s
+  Avg per op: 6.00ns
+  Throughput: 166666667 ops/sec
+
+鈿栵笍  RetryPolicy overhead: 30386870.00%
+
+=== Execution Statistics ===
+Total transactions: 6000
+Successful: 1500
+Failed: 4500
+Retry count: 4500
+
+    Finished `release` profile [optimized] target(s) in 0.43s
+     Running `target\release\examples\quick_retry_bench.exe`
+

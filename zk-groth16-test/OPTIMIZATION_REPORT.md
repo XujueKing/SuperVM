@@ -160,18 +160,46 @@ cargo test ringct_compressed::tests::test_compressed_ringct_circuit -- --nocaptu
 cargo run --release --example ringct_optimized_perf
 ```
 
+## � Phase 2.2: 多输入多输出扩展（已完成）
+
+基于 Phase 2.1 的压缩承诺与聚合范围证明，我们实现并验证了 2-in-2-out 的 Multi-UTXO RingCT 扩展，结果如下：
+
+### 2-in-2-out 实测性能
+
+```
+Setup:   58.33 ms
+Prove:   44.71 ms
+Verify:   5.63 ms
+Total:  108.67 ms
+Constraints: 747  (vs 1-in-1-out: 309, ×2.42)
+```
+
+### 与单 UTXO 对比
+- 约束数：309 → 747（×2.42）
+- 证明时间：21.30ms → 44.71ms（×2.10）
+- 平均每 UTXO 约束：≈187
+- 平均每 UTXO 证明时间：≈11.18ms
+
+### 可扩展性预测（线性外推）
+- 4-in-4-out: ~1494 约束, ~89ms 证明
+- 8-in-8-out: ~2988 约束, ~179ms 证明
+
+结论：多输入多输出扩展表现出良好的近线性扩展，证明时间略优于完全线性（由于共享组件复用）。
+
 ## 📈 未来优化方向
 
 ### Phase 2.2: 多输入输出支持（下一步）
-- **目标**: 实现 2-in-2-out UTXO 模型
-- **预期约束**: ~531（线性扩展）
-- **技术**: 复用现有优化技术
+（已完成，见上节“多输入多输出扩展（已完成）”）
 
 ### 进一步优化潜力
 - ✅ **承诺验证**: 已达理论最优（Poseidon ~10 约束/哈希）
 - ✅ **范围证明**: 已接近最优（Bulletproofs 风格 ~60-70 约束）
 - ⚠️ **Merkle 证明**: 可考虑更浅树（80 → 50，需权衡匿名集大小）
 - ⚠️ **辅助变量**: R1CS 系统固有开销，优化空间有限
+
+### 并行与批处理（下一步）
+- 并行证明生成：rayon 线程池批量 prove（目标：4 核 > 400 TPS）
+- Groth16 批量验证：3-5× 加速（用于节点验证与网关聚合）
 
 ### 长期规划
 1. **链上集成**: 导出 Solidity verifier，Gas 成本测试

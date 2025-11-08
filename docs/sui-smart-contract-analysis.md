@@ -163,6 +163,116 @@ pub enum TransactionType {
 1. **开发者教育**：优先使用独占对象设计合约
 2. **自动分析**：编译器检测对象类型，提示优化建议
 3. **批量处理**：共享对象交易批量提交，减少共识轮次
+4. **三通道路由**：根据对象所有权 + 隐私标记自动分派至 Fast / Consensus / Private 通道
+
+---
+
+## 🧭 三通道架构（SuperVM Phase 5）
+
+```mermaid
+flowchart LR
+    A[Tx Submit] --> B{Privacy?}
+    B -- Private --> P[Private Path (ZK Proof Verify - Mock)]
+    B -- Public --> C{Ownership Analysis}
+    C -- Owned/Immutable --> F[Fast Path Executor]\n(FastPathExecutor)
+    C -- Shared --> S[MvccScheduler]\n(Consensus Path)
+    P --> S
+    F --> R[Receipt]
+    S --> R
+```
+
+### 路由决策逻辑
+```rust
+match (tx.privacy, ownership.types(&tx.objects)) {
+    (Privacy::Private, _) => ExecutionPath::PrivatePath,
+    (Privacy::Public, all_owned_or_immutable) => ExecutionPath::FastPath,
+    _ => ExecutionPath::ConsensusPath,
+}
+```
+
+### 通道特性对比
+| 通道 | 输入条件 | 典型场景 | TPS 目标 | 延迟 | 共识开销 | 当前实现阶段 |
+|------|----------|----------|---------|------|----------|--------------|
+| Fast | Owned / Immutable (Public) | NFT 转移 / 游戏操作 / 钱包支付 | 500K+ | <1ms (目标 P50 < 1µs) | 无 | ✅ 已实现执行器 |
+| Consensus | Shared (Public) | DEX Swap / DAO 投票 / 池清算 | 290K (高竞争优化) | 2-5s (逻辑延迟) | 有 | ✅ 已集成调度器 |
+| Private | Any (Private) | 私密资产转账 / 隐私合约调用 | 50K (占位) | <50ms (验证) | 共享底层 | 🚧 验证占位 |
+
+### 当前实现状态
+```text
+FastPathExecutor     : 完成（零事务闭包直执行）
+MvccScheduler        : 完成（Phase 4.1 优化 + 冲突重试）
+PrivatePath (Mock)   : 已占位（verify_zk_proof() 恒真）
+execute_transaction_routed(): 根据路径物理分离执行
+mixed_path_bench     : 混合吞吐验证工具
+e2e_three_channel_test: 三通道端到端校验
+```
+
+### 初步性能基线（本地模拟）
+| 测试 | 参数 | Fast 成功率 | Consensus 冲突率 | Fast 估算 TPS | 综合 TPS |
+|------|------|-------------|------------------|---------------|----------|
+| fast_path_bench | 200K iters / 10K objects | >99% | N/A | ~推导自 avg_latency | 待正式采集 |
+| mixed_path_bench | 200K iters / owned_ratio=0.8 | ~80% | 视随机写入集 | FastPathStats.estimated_tps | 总执行数 / 秒 |
+| e2e_three_channel_test | 3 事务 (功能验证) | 100% | 0% | 样例级 | 样例级 |
+
+> 后续将通过持续基准（adaptive + batch 系列）补充真实数据并写入 BENCHMARK_RESULTS.md。
+
+---
+
+## 📐 三通道性能对比（目标值）
+
+| 指标 | Fast Path | Consensus Path | Private Path (Mock) |
+|------|-----------|----------------|---------------------|
+| TPS 峰值 | 500K+ | 290K (高竞争) | 50K (占位) |
+| P50 延迟 | < 1µs | 5-20ms (执行阶段) | < 50ms (验证+执行) |
+| 冲突处理 | 无需（对象独占） | MVCC + 自适应重试 | 复用共识层 |
+| 可扩展性 | 横向线程扩展 | 受共享状态热点分布影响 | 依赖 ZK 优化 |
+| 主要瓶颈 | CPU 指令路径 | 热点键冲突 / 写扩散 | 证明生成 / 验证时延 |
+
+### 优化路线图
+1. FastPath：指令内联 + 内存池复用 + 零分配执行
+2. Consensus：冲突预测（BloomFilter + 热点自适应调度）
+3. Private：批量证明聚合 + GPU 加速验证（Phase 6 之后）
+
+---
+
+## 🔍 示例：路由统计使用
+```rust
+let stats = vm.routing_stats();
+println!("fast={} consensus={} privacy={} ratio={:.2}/{:.2}/{:.2}",
+    stats.fast_path_count,
+    stats.consensus_path_count,
+    stats.privacy_path_count,
+    stats.fast_path_ratio(),
+    stats.consensus_path_ratio(),
+    stats.privacy_path_ratio(),
+);
+```
+
+---
+## 🧪 下一步验证计划 (Phase 5 剩余)
+| 项目 | 说明 | 状态 |
+|------|------|------|
+| FastPath 微基准 | 延迟分布 P50/P90/P99 | 待采集 |
+| 混合吞吐曲线 | owned_ratio 从 0.5→0.9 梯度 | 待采集 |
+| 隐私路径延迟 | verify_zk_proof() 替换真实验证 | 规划中 |
+| E2E 扩展 | 增加失败回退 & 重试场景 | 规划中 |
+
+---
+
+## 🧩 与现有文档的连接
+- Phase 4.1 性能优化细节：`PHASE-4.3-WEEK3-4-SUMMARY.md`
+- RocksDB 持久化与批量：`PHASE-4.3-ROCKSDB-INTEGRATION.md`
+- 隐私层规划：`ROADMAP-ZK-Privacy.md`
+- 四层网络：`four-layer-network-deployment-and-compute-scheduling.md`
+
+---
+
+## ✅ 总结（更新 after Phase 5 初始实现）
+- 三通道架构已落地，Fast/Consensus/Private 基本路径成型
+- FastPath 具备独立执行器（后续继续深度微优化）
+- 共识路径复用优化 MVCC，保持高竞争 290K TPS 目标
+- 隐私路径先行占位，为后续 ZK 集成打基础
+- 已具备性能基准与 E2E 验证入口，准备进入数据采集与文档沉淀阶段
 
 ---
 

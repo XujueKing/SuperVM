@@ -1,5 +1,5 @@
 //! RingCT 性能测试示例
-//! 
+//!
 //! 快速测量 setup/prove/verify 的实际耗时
 
 use ark_bls12_381::{Bls12_381, Fr};
@@ -11,10 +11,10 @@ use zk_groth16_test::ringct::SimpleRingCTCircuit;
 
 fn main() {
     println!("=== RingCT Performance Test ===\n");
-    
+
     let mut rng = OsRng;
     let circuit = SimpleRingCTCircuit::example();
-    
+
     // Setup
     println!("🔧 Running setup...");
     let start = Instant::now();
@@ -22,15 +22,14 @@ fn main() {
         .expect("Setup failed");
     let setup_time = start.elapsed();
     println!("   ✅ Setup time: {:?}\n", setup_time);
-    
+
     // Prove
     println!("🔐 Generating proof...");
     let start = Instant::now();
-    let proof = Groth16::<Bls12_381>::prove(&pk, circuit.clone(), &mut rng)
-        .expect("Prove failed");
+    let proof = Groth16::<Bls12_381>::prove(&pk, circuit.clone(), &mut rng).expect("Prove failed");
     let prove_time = start.elapsed();
     println!("   ✅ Prove time: {:?}\n", prove_time);
-    
+
     // Verify
     println!("✓ Verifying proof...");
     let public_inputs = vec![
@@ -40,14 +39,13 @@ fn main() {
         circuit.output.commitment_y,
         circuit.merkle_proof.root,
     ];
-    
+
     let start = Instant::now();
-    let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof)
-        .expect("Verify failed");
+    let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof).expect("Verify failed");
     let verify_time = start.elapsed();
     println!("   ✅ Verify time: {:?}", verify_time);
     println!("   ✅ Proof valid: {}\n", valid);
-    
+
     // Summary
     println!("=== Summary ===");
     println!("Setup:  {:>8.2?}", setup_time);

@@ -1,35 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2025 XujueKing <leadbrand@me.com>
 
-use privacy_test::{
-    ristretto_basics,
-    hash_to_point,
-    pedersen_commitment,
-    simple_ring_signature,
-};
+use privacy_test::{hash_to_point, pedersen_commitment, ristretto_basics, simple_ring_signature};
 
 fn main() {
     println!("╔═══════════════════════════════════════════════════════╗");
     println!("║  Privacy Cryptography 实践教程                        ║");
     println!("║  基于 curve25519-dalek 学习 Monero 密码学原语        ║");
     println!("╚═══════════════════════════════════════════════════════╝");
-    
+
     println!("\n📘 第一章: RistrettoPoint 基础操作");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     ristretto_basics::run_all_examples();
-    
+
     println!("\n\n📘 第二章: Hash-to-Point (Key Image 生成)");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     hash_to_point::run_all_examples();
-    
+
     println!("\n\n📘 第三章: Pedersen Commitment (隐藏金额)");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     pedersen_commitment::run_all_examples();
-    
+
     println!("\n\n📘 第四章: 简单 Ring Signature (2-of-3)");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     simple_ring_signature::run_all_examples();
-    
+
     println!("\n\n╔═══════════════════════════════════════════════════════╗");
     println!("║  🎉 所有示例运行完成!                                 ║");
     println!("║                                                       ║");

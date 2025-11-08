@@ -1,10 +1,13 @@
 // MVCC 压力测试套件
 // 测试高并发、长时间运行、内存稳定性等场景
 
-use vm_runtime::{MvccStore, GcConfig, AutoGcConfig};
-use std::sync::{Arc, atomic::{AtomicU64, AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::{Duration, Instant};
+use vm_runtime::{AutoGcConfig, GcConfig, MvccStore};
 
 /// 压力测试统计信息
 #[derive(Debug, Clone)]
@@ -28,33 +31,65 @@ impl StressTestStats {
         println!("\n╔═══════════════════════════════════════════════════════════╗");
         println!("║         MVCC 压力测试报告                                  ║");
         println!("╠═══════════════════════════════════════════════════════════╣");
-        println!("║ 总交易数:     {:>10} 笔                              ║", self.total_transactions);
-        println!("║ 成功交易:     {:>10} 笔 ({:.1}%)                     ║", 
+        println!(
+            "║ 总交易数:     {:>10} 笔                              ║",
+            self.total_transactions
+        );
+        println!(
+            "║ 成功交易:     {:>10} 笔 ({:.1}%)                     ║",
             self.successful_transactions,
             self.successful_transactions as f64 / self.total_transactions as f64 * 100.0
         );
-        println!("║ 失败交易:     {:>10} 笔 ({:.1}%)                     ║", 
+        println!(
+            "║ 失败交易:     {:>10} 笔 ({:.1}%)                     ║",
             self.failed_transactions,
             self.failed_transactions as f64 / self.total_transactions as f64 * 100.0
         );
-        println!("║ 冲突数:       {:>10} 次                              ║", self.conflicts);
+        println!(
+            "║ 冲突数:       {:>10} 次                              ║",
+            self.conflicts
+        );
         println!("╠═══════════════════════════════════════════════════════════╣");
-        println!("║ 总读操作:     {:>10} 次                              ║", self.total_reads);
-        println!("║ 总写操作:     {:>10} 次                              ║", self.total_writes);
+        println!(
+            "║ 总读操作:     {:>10} 次                              ║",
+            self.total_reads
+        );
+        println!(
+            "║ 总写操作:     {:>10} 次                              ║",
+            self.total_writes
+        );
         println!("╠═══════════════════════════════════════════════════════════╣");
-        println!("║ 运行时间:     {:>10.2} 秒                            ║", self.duration_secs);
-        println!("║ 吞吐量:       {:>10.2} TPS                           ║", self.throughput_tps);
-        println!("║ 平均延迟:     {:>10.2} μs                            ║", self.avg_latency_us);
-        println!("║ P99 延迟:     {:>10.2} μs                            ║", self.p99_latency_us);
+        println!(
+            "║ 运行时间:     {:>10.2} 秒                            ║",
+            self.duration_secs
+        );
+        println!(
+            "║ 吞吐量:       {:>10.2} TPS                           ║",
+            self.throughput_tps
+        );
+        println!(
+            "║ 平均延迟:     {:>10.2} μs                            ║",
+            self.avg_latency_us
+        );
+        println!(
+            "║ P99 延迟:     {:>10.2} μs                            ║",
+            self.p99_latency_us
+        );
         println!("╠═══════════════════════════════════════════════════════════╣");
-        println!("║ 内存版本数:   {:>10} 个                              ║", self.memory_versions);
-        println!("║ 内存键数:     {:>10} 个                              ║", self.memory_keys);
+        println!(
+            "║ 内存版本数:   {:>10} 个                              ║",
+            self.memory_versions
+        );
+        println!(
+            "║ 内存键数:     {:>10} 个                              ║",
+            self.memory_keys
+        );
         println!("╚═══════════════════════════════════════════════════════════╝\n");
     }
 }
 
 /// 高并发读写测试
-/// 
+///
 /// 参数:
 /// - num_threads: 并发线程数
 /// - num_txs_per_thread: 每个线程执行的交易数
@@ -114,7 +149,7 @@ fn test_high_concurrency_mixed_workload() {
 
         let handle = thread::spawn(move || {
             let mut rng = thread_id as u64; // 简单的伪随机数
-            
+
             for _ in 0..num_txs_per_thread {
                 let tx_start = Instant::now();
                 let mut txn = store.begin();
@@ -190,7 +225,10 @@ fn test_high_concurrency_mixed_workload() {
     // 验证
     assert!(stats.successful_transactions > 0, "应该有成功的交易");
     assert!(stats.throughput_tps > 100.0, "吞吐量应该 > 100 TPS");
-    assert!(stats.memory_versions < num_keys * 30, "版本数应该被 GC 控制");
+    assert!(
+        stats.memory_versions < num_keys * 30,
+        "版本数应该被 GC 控制"
+    );
 }
 
 /// 高冲突场景压力测试
@@ -240,7 +278,7 @@ fn test_high_contention_hotspot() {
 
         let handle = thread::spawn(move || {
             let mut rng = thread_id as u64;
-            
+
             for _ in 0..num_txs_per_thread {
                 let mut txn = store.begin();
 
@@ -250,7 +288,8 @@ fn test_high_contention_hotspot() {
                 let key = format!("hot_{}", key_idx);
 
                 // 读取当前值
-                let current = txn.read(key.as_bytes())
+                let current = txn
+                    .read(key.as_bytes())
                     .and_then(|v| String::from_utf8(v).ok())
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(0);
@@ -361,17 +400,18 @@ fn test_long_running_stability() {
     let monitor_handle = thread::spawn(move || {
         let start = Instant::now();
         let mut last_gc_stats = monitor_store.get_gc_stats();
-        
+
         while monitor_running.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_secs(10));
-            
+
             let elapsed = start.elapsed().as_secs();
             let txs = monitor_tx_count.load(Ordering::Relaxed);
             let versions = monitor_store.total_versions();
             let keys = monitor_store.total_keys();
             let gc_stats = monitor_store.get_gc_stats();
 
-            println!("   [{}s] TPS: {:.0}, 版本数: {}, 键数: {}, GC 次数: {}, 清理版本: {}",
+            println!(
+                "   [{}s] TPS: {:.0}, 版本数: {}, 键数: {}, GC 次数: {}, 清理版本: {}",
                 elapsed,
                 txs as f64 / elapsed as f64,
                 versions,
@@ -395,7 +435,7 @@ fn test_long_running_stability() {
 
         let handle = thread::spawn(move || {
             let mut rng = thread_id as u64;
-            
+
             while running.load(Ordering::Relaxed) {
                 let mut txn = store.begin();
 
@@ -439,7 +479,10 @@ fn test_long_running_stability() {
 
     println!("\n✅ 长时间测试完成");
     println!("   总交易数: {}", total_txs);
-    println!("   平均 TPS: {:.2}", total_txs as f64 / duration.as_secs_f64());
+    println!(
+        "   平均 TPS: {:.2}",
+        total_txs as f64 / duration.as_secs_f64()
+    );
     println!("   最终版本数: {}", store.total_versions());
     println!("   最终键数: {}", store.total_keys());
 
@@ -483,7 +526,7 @@ fn test_memory_growth_control() {
             let mut txn = store.begin();
             txn.write(
                 format!("key_{}", i).into_bytes(),
-                format!("value_{}", iteration).into_bytes()
+                format!("value_{}", iteration).into_bytes(),
             );
             txn.commit().unwrap();
         }
@@ -492,8 +535,13 @@ fn test_memory_growth_control() {
         let keys = store.total_keys();
         let avg_versions_per_key = versions as f64 / keys as f64;
 
-        println!("   迭代 {:2}: 版本数 = {:4}, 键数 = {:3}, 平均版本/键 = {:.2}",
-            iteration + 1, versions, keys, avg_versions_per_key);
+        println!(
+            "   迭代 {:2}: 版本数 = {:4}, 键数 = {:3}, 平均版本/键 = {:.2}",
+            iteration + 1,
+            versions,
+            keys,
+            avg_versions_per_key
+        );
 
         // 等待 GC 运行
         thread::sleep(Duration::from_millis(500));
@@ -537,10 +585,10 @@ fn test_adaptive_gc() {
         enable_time_based_gc: false,
         version_ttl_secs: 3600,
         auto_gc: Some(AutoGcConfig {
-            interval_secs: 10,      // 初始 10 秒间隔
+            interval_secs: 10, // 初始 10 秒间隔
             version_threshold: 1000,
             run_on_start: false,
-            enable_adaptive: true,  // 启用自适应
+            enable_adaptive: true, // 启用自适应
         }),
     };
 
@@ -557,16 +605,16 @@ fn test_adaptive_gc() {
             let mut txn = store.begin();
             txn.write(
                 format!("key_{}", j).into_bytes(),
-                format!("value_{}_{}", i, j).into_bytes()
+                format!("value_{}_{}", i, j).into_bytes(),
             );
             txn.commit().unwrap();
         }
     }
     println!("     写入 5000 个版本");
     println!("     版本数: {}", store.total_versions());
-    
+
     thread::sleep(Duration::from_secs(3));
-    
+
     let gc_stats_1 = store.get_gc_stats();
     println!("     GC 次数: {}", gc_stats_1.gc_count);
     println!("     清理版本: {}", gc_stats_1.versions_cleaned);
@@ -577,21 +625,28 @@ fn test_adaptive_gc() {
         thread::sleep(Duration::from_secs(3));
         let versions = store.total_versions();
         let gc_stats = store.get_gc_stats();
-        println!("     {}s: 版本数 = {}, GC 次数 = {}",
-            (i + 1) * 3, versions, gc_stats.gc_count);
+        println!(
+            "     {}s: 版本数 = {}, GC 次数 = {}",
+            (i + 1) * 3,
+            versions,
+            gc_stats.gc_count
+        );
     }
 
     // 阶段 3: 低负载（少量写入）
     println!("\n   [阶段 3] 低负载写入...");
     for i in 0..10 {
         let mut txn = store.begin();
-        txn.write(b"low_load_key".to_vec(), format!("value_{}", i).into_bytes());
+        txn.write(
+            b"low_load_key".to_vec(),
+            format!("value_{}", i).into_bytes(),
+        );
         txn.commit().unwrap();
     }
     println!("     写入 10 个版本");
-    
+
     thread::sleep(Duration::from_secs(5));
-    
+
     let final_stats = store.get_gc_stats();
     let final_versions = store.total_versions();
 
