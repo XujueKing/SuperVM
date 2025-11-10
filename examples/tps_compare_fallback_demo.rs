@@ -124,7 +124,7 @@ fn main() -> Result<()> {
 
     // Run batch with fallback tracking
     let t0 = Instant::now();
-    let (fast_res, cons_res, fallbacks) = supervm.execute_batch(all_txs);
+    let (fast_res, cons_res, fallbacks, _fallback_ids) = supervm.execute_batch(all_txs);
     let dt_total = t0.elapsed();
 
     // Stats

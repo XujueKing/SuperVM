@@ -7,6 +7,195 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### [WHITEPAPER V1.0] 白皮书发布与内容营销素材 (2025-11-XX)
+
+**Summary:**
+- **专业白皮书创作**:
+  - 中英文双语白皮书 (WHITEPAPER.md + WHITEPAPER_EN.md)
+  - 神经网络生物学类比贯穿全文 (感知/自主/协作)
+  - 四大创新: 242K TPS / 多链融合 / 内置隐私 / 自组织通信
+  - 三大革命性场景: 灾难应急 / 审查抵抗 / 普惠金融
+- **多渠道营销素材**:
+  - 社交媒体模板 (Twitter/Medium/Reddit/LinkedIn/YouTube)
+  - 投资者 Pitch Deck (18 页专业演示)
+  - PDF 生成指南 (Pandoc 自动化)
+  - 视觉资产指南 (Mermaid/Graphviz/Chart.js)
+
+**Files Added:**
+- `WHITEPAPER.md`: 中文白皮书 (~1000 行)
+  - 核心定位: Web3 操作系统 (非跨链桥)
+  - 技术数据: 242K TPS, 99.3% Gas 减少, $2B 桥被盗对比
+  - 经济模型: 1B 供应量, 50% Gas 燃烧, 8-12% 质押 APY
+  - 路线图: 2024-2026 分阶段实施
+- `WHITEPAPER_EN.md`: 英文白皮书 (~800 行)
+  - 完整翻译中文版本
+  - 适配国际受众 (idioms/metaphors 本地化)
+- `docs/SOCIAL-MEDIA-TEMPLATES.md`: 社交媒体发布素材
+  - Twitter/X Thread (10 条推文串)
+  - Medium 长文章模板 (2000+ 字)
+  - Reddit 发布 (r/CryptoCurrency + r/ethereum)
+  - Discord/LinkedIn/YouTube 脚本
+  - 数据可视化建议 + 发布检查清单
+- `docs/INVESTOR-PITCH-DECK.md`: 投资者演示文稿 (18 页)
+  - Slide 1-3: 问题/愿景/解决方案
+  - Slide 4-6: 架构/多链融合/市场机会
+  - Slide 7-9: 竞争格局/商业模式/代币经济
+  - Slide 10-13: 路线图/团队/增长数据/场景
+  - Slide 14-16: 融资需求 ($5M Seed) / 风险 / 时机
+  - Slide 17-18: 总结 + Appendix (技术细节)
+- `docs/PDF-GENERATION-GUIDE.md`: PDF 生成完整指南
+  - Pandoc 安装与配置 (Windows/macOS/Linux)
+  - 中英文白皮书转换命令
+  - 专业版模板 (封面/页眉页脚/水印)
+  - 自动化脚本 (PowerShell + Bash)
+  - 质量检查清单
+- `docs/VISUAL-ASSETS-GUIDE.md`: 视觉资产创作指南
+  - Mermaid 架构图 (四层神经网络)
+  - Graphviz 网络拓扑图 (自组织通信)
+  - Chart.js 性能对比图 (TPS/Gas 费用)
+  - Python 可视化脚本 (代币分配饼图)
+  - ASCII 灾难场景示意图
+  - 品牌色彩规范 + 设计工具推荐
+
+**Documentation Updates:**
+- `docs/INDEX.md`: 新增 "白皮书与宣传材料" 章节
+  - 链接到 6 个新文档 (白皮书/社交/Pitch/PDF/视觉)
+- `README.md`: 添加白皮书导航链接 (已在之前更新)
+
+**Content Highlights:**
+- **神经网络类比**: L1=大脑皮层, L2=脊髓, L3=神经节, L4=感觉神经元
+- **自愈合能力**: 3 秒重连, 30 秒 Mesh 切换, 72 小时离线容忍
+- **市场定位**: $85B TAM (多链基础设施), 99.3% Gas 成本优势
+- **融资目标**: $5M Seed, $20M 估值, 18 个月达到主网
+
+**Next Steps (营销执行)**:
+- [ ] 生成所有 PDF 版本 (运行 `scripts/generate-pdfs.ps1`)
+- [ ] 创建视觉资产 (运行 `scripts/generate-visuals.ps1`)
+- [ ] 发布社交媒体 Thread (Twitter/X)
+- [ ] 投递 Medium/CoinDesk/The Block
+- [ ] 联系 KOL/influencer 预热
+- [ ] 安排 AMA (Ask Me Anything) 时间
+
+### [PHASE 9.5] 原生监控客户端规划 - DRAFT (2025-11-10)
+
+**Summary:**
+- **零依赖监控解决方案**:
+  - 使用 egui (纯 Rust GUI 框架) 开发跨平台原生客户端
+  - 替代 Grafana + Prometheus 浏览器方案
+  - 单一可执行文件, 无需 Docker/Node.js/浏览器
+  - 目标性能: < 50MB 内存, < 5% CPU, < 500ms 启动时间
+
+**Files Added:**
+- `docs/NATIVE-MONITOR-DESIGN.md`: 原生监控客户端完整技术方案
+  - GUI 框架选型 (egui vs Tauri)
+  - 系统架构设计 (UI/数据采集/存储/通信)
+  - 实施路径 (5个阶段, 共7周)
+  - UI/UX 设计原则 (类 VS Code 风格)
+
+**Documentation Updates:**
+- `ROADMAP.md`: 新增 Phase 9.5 (原生监控客户端, 7周)
+  - M1: MVP 基础 (2周) - 基础 Dashboard + /metrics 拉取
+  - M2: 实时图表与本地存储 (2周) - egui_plot + RocksDB 时序存储
+  - M3: 节点管理与多连接 (1周) - 多节点支持
+  - M4: 告警引擎与通知 (1周) - 规则引擎 + 系统通知
+  - M5: 跨平台打包与优化 (1周) - Windows/Linux/macOS 打包
+- `docs/INDEX.md`: 新增 `NATIVE-MONITOR-DESIGN.md` 链接
+
+**Next Steps (Phase 9.5 M1)**:
+- [ ] 创建 `native-monitor/` crate
+- [ ] 搭建 egui + eframe 项目结构
+- [ ] 实现 HTTP 客户端拉取 /metrics
+- [ ] 开发基础 Dashboard UI (TPS/Latency/Success Rate)
+
+### [PHASE 10 M1] 插件规范 v0 发布 - DRAFT (2025-11-10)
+
+**Summary:**
+- **插件系统规范草案**:
+  - 定义热插拔子模块/插件接口规范（Native ABI + gRPC 双模式）
+  - 支持原链节点（Bitcoin Core/Geth/Solana）作为可插拔子模块运行
+  - 提供三级运行策略（Strict/Permissive/Dev）与沙箱隔离机制
+  - 统一 IR 镜像层（TxIR/BlockIR/StateIR）用于跨链状态查询
+
+**Files Added:**
+- `docs/plugins/README.md`: 插件架构总览与快速开始指南
+- `docs/plugins/PLUGIN-SPEC.md`: 插件规范草案（生命周期/ABI/安全策略）
+- `docs/plugins/example-plugin.yaml`: 插件清单示例（Bitcoin 子模块）
+- `proto/plugin_host.proto`: gRPC 数据平面与控制 RPC 定义（Register/StreamBlocks/SubmitTx/Health）
+- `sdk/plugin-sdk-rs/README.md`: Rust SDK 占位说明
+
+**Documentation Updates:**
+- `docs/INDEX.md`: 新增 `🔌 plugins/` 插件系统规范章节
+- `ROADMAP.md Phase 10 M1`: 标记插件规范 v0 相关交付物（已完成 4/6 项）
+
+**Next Steps (Pending):**
+- [ ] 补全 `docs/plugins/plugin-manifest.schema.json` (JSON Schema 校验)
+- [ ] 添加 `docs/plugins/submodule-adapter.md` (SubmoduleAdapter trait 详细说明)
+- [ ] 生成 Rust protobuf 绑定并集成到 SDK
+- [ ] 创建 Native Plugin 与 gRPC Plugin 的完整示例代码
+
+### [PHASE 2.3] RingCT 并行证明与批量验证 - VERIFIED (2025-01-XX)
+
+**Summary:**
+- **RingCT 并行证明优化**:
+  - 实现全局 ProvingKey 单例缓存(once_cell),消除重复setup开销(节省1-2秒/实例)
+  - 添加 RingCtParallelProver 支持真实 MultiUTXORingCTCircuit witness
+  - 创建 zk_parallel_http_bench.rs HTTP基准测试(端口9090,端点/metrics和/summary)
+  - 新增 vm_privacy_zk_parallel_* 系列指标: proof_total/failed, batches_total, latency_ms, tps
+- **批量验证模块**:
+  - 新增 batch_verifier.rs 支持并行验证多个Groth16证明
+  - 实现 PreparedVerifyingKey 优化验证性能
+  - 验证性能提升8倍: 13.1 → 104.6 verifications/sec (32批次)
+- **Fast→Consensus Fallback**:
+  - 添加环境变量控制: SUPERVM_ENABLE_FAST_FALLBACK, SUPERVM_FALLBACK_ON_ERRORS
+  - SuperVM::with_fallback() 方法支持可配置错误白名单
+  - 新增 vm_fast_fallback_total 指标记录回退次数
+- **Grafana 监控集成**:
+  - 创建 prometheus-ringct.yml 配置文件(抓取:9090/metrics)
+  - grafana-ringct-dashboard.json 仪表板模板(7个面板)
+  - GRAFANA-RINGCT-PANELS.md 详细面板配置文档
+  - GRAFANA-QUICK-DEPLOY.md 快速部署指南(Windows)
+  - prometheus-zk-alerts.yml 3条告警规则(失败率/TPS/延迟)
+
+**Performance Baseline** (Release mode, Windows, BLS12-381):
+- **RingCT Proving**: 50.8 proofs/sec (批次32, 平均19.7ms/proof, 100%成功率)
+- **Batch Verification**: 104.6 verifications/sec (8x faster than individual)
+- **峰值TPS**: 53.01 proofs/sec, 最佳延迟: 18.86ms/proof
+
+**Verification Results:**
+- ✅ **所有测试通过**: parallel_prover (3/3), batch_verifier (3/3), fallback (2/2)
+- ✅ **代码质量**: cargo fix清理所有unused imports/variables,零警告
+- ✅ **HTTP基准**: 832+ proofs generated, 26+ batches, 0 failures
+- ✅ **Prometheus集成**: /metrics端点输出23个指标(MVCC/RingCT/路由)
+
+**Files Changed:**
+- `src/vm-runtime/src/privacy/parallel_prover.rs`: 全局ProvingKey缓存, RingCtParallelProver
+- `src/vm-runtime/src/privacy/batch_verifier.rs`: 新增批量验证模块
+- `src/vm-runtime/src/metrics.rs`: record_parallel_batch(), inc_fast_fallback()
+- `src/vm-runtime/src/supervm.rs`: with_fallback(), from_env(), 回退逻辑
+- `src/vm-runtime/examples/zk_parallel_http_bench.rs`: 新增HTTP基准测试
+- `src/vm-runtime/tests/fallback_tests.rs`: 新增2个回退行为测试
+- `docs/GRAFANA-RINGCT-PANELS.md`: 新增Grafana面板配置
+- `docs/GRAFANA-QUICK-DEPLOY.md`: 新增快速部署指南
+- `docs/RINGCT-PERFORMANCE-BASELINE.md`: 新增性能基准报告
+- `prometheus-ringct.yml`: Prometheus抓取配置
+- `grafana-ringct-dashboard.json`: Grafana仪表板JSON
+
+**Dependencies:**
+- 添加 `once_cell = "1.20"` 用于全局ProvingKey缓存
+
+**Risk Assessment:** LOW
+- 所有更改都是功能扩展,无breaking changes
+- 现有API保持向后兼容(parallel_prover保留with_default_setup,标记deprecated)
+- 性能优化不影响正确性(全局PK初始化只发生一次)
+
+**Recommendations:**
+1. 长期压测: 24小时稳定性测试观察内存/CPU趋势
+2. 批次大小调优: A/B测试32/64/128对TPS影响
+3. Grafana生产部署: 配置Alertmanager邮件/Slack通知
+4. 批量验证集成: 将batch_verifier集成到隐私路由验证流程
+
+---
+
 ### [L0-CRITICAL] Kernel core MVCC and privacy verifier updates - VERIFIED (2025-11-07)
 
 **Summary:**

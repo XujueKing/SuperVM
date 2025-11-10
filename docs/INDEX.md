@@ -26,6 +26,7 @@ SuperVM/
 │
 ├── 📋 核心文档（根目录）
 │   ├── README.md                          - 项目总览与快速入门
+│   ├── WHITEPAPER.md                      - 白皮书 (对外发布版本) 📄 **NEW**
 │   ├── ROADMAP.md                         - 开发路线图（8个阶段）
 │   ├── ROADMAP-ZK-Privacy.md              - ZK 隐私专项计划
 │   ├── CHANGELOG.md                       - 版本更新日志
@@ -49,10 +50,21 @@ SuperVM/
 │   ├── PHASE-4.3-ROCKSDB-INTEGRATION.md   - RocksDB 持久化存储集成 🔥
 │   ├── ROCKSDB-ADAPTIVE-QUICK-START.md    - 自适应批量写入快速开始 🚀
 │   ├── METRICS-COLLECTOR.md               - 性能指标收集 (Prometheus) 📊
+│   ├── CROSS-SHARD-DESIGN.md              - 跨分片事务与 2PC 协议设计 🚦
+│   ├── ZK-BATCH-VERIFY.md                 - ZK 批量验证用户指南 🔐
+│   ├── NATIVE-MONITOR-DESIGN.md           - 原生监控客户端设计 (egui) 🎨
 │   ├── PHASE-4.3-WEEK3-4-SUMMARY.md       - Phase 4.3 Week 3-4 总结 📝
+│   ├── PHASE-C-PERFORMANCE-PLAN.md        - Phase C: FastPath 1M TPS 优化计划 ⚡ **NEW**
+│   ├── PHASE-D-EVM-ADAPTER-PLAN.md        - Phase D: EVM 适配器研究计划 🔌 **NEW**
 │   ├── stress-testing-guide.md            - 压力测试指南
 │   ├── gc-observability.md                - GC 可观测性
 │   ├── evm-adapter-design.md              - EVM 适配器插件化设计
+│   ├── MULTICHAIN-ARCHITECTURE-VISION.md  - 多链架构愿景 🌐
+│   │
+│   ├── 🔌 plugins/ - 插件系统规范 (v0)
+│   │   ├── README.md                      - 插件架构总览与快速开始
+│   │   ├── PLUGIN-SPEC.md                 - 插件规范草案 (ABI/gRPC/安全策略)
+│   │   └── example-plugin.yaml            - 插件清单示例
 │   │
 │   ├── 🔍 design/ - 电路与协议设计
 │   │   └── ringct-circuit-design.md       - RingCT 电路设计
@@ -110,6 +122,14 @@ SuperVM/
 - [ROADMAP.md](../ROADMAP.md) - 完整开发路线图（8 个阶段，44% 完成）
 - [ROADMAP-ZK-Privacy.md](../ROADMAP-ZK-Privacy.md) - ZK 隐私专项计划（4 个阶段）
 
+### 白皮书与宣传材料 📄 **NEW**
+- [白皮书 (中文)](../WHITEPAPER.md) - 公开发布版本，包含神经网络架构
+- [白皮书 (English)](../WHITEPAPER_EN.md) - 英文版本，面向国际受众
+- [社交媒体发布模板](./SOCIAL-MEDIA-TEMPLATES.md) - Twitter/Medium/Reddit/Discord 素材
+- [投资者 Pitch Deck](./INVESTOR-PITCH-DECK.md) - 18 页投资者演示文稿
+- [PDF 生成指南](./PDF-GENERATION-GUIDE.md) - Pandoc 转换专业 PDF
+- [视觉资产指南](./VISUAL-ASSETS-GUIDE.md) - 图表、信息图、架构图生成
+
 ### 开发者指南
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - 贡献指南、代码规范、PR 流程
 - [DEVELOPER.md](../DEVELOPER.md) - 开发者文档、环境搭建、调试技巧
@@ -146,6 +166,17 @@ SuperVM/
 - [Curve25519-dalek 库笔记](./research/curve25519-dalek-notes.md)
 - [CryptoNote 白皮书笔记](./research/cryptonote-whitepaper-notes.md)
 - [64-bit Range Proof 总结](./research/64bit-range-proof-summary.md)
+
+### Solidity 验证器部署 🔐 **NEW**
+- [双曲线 Solidity 验证器指南](./DUAL-CURVE-VERIFIER-GUIDE.md) - BLS12-381 + BN254 双后端实现
+  - BN254 (当前 EVM 链,原生预编译 0x08,~150K-200K gas)
+  - BLS12-381 (未来 EVM 2.0,128-bit 安全)
+  - API 参考、部署流程、Gas 成本对比、选择建议
+  - 示例: `generate_bn254_multiply_sol_verifier.rs`, `generate_ringct_bn254_verifier.rs`
+- [部署指南](./DEPLOYMENT-GUIDE.md) - Remix/Hardhat/Foundry 三种方案完整教程 🚀 **NEW**
+  - 测试网部署步骤 (Sepolia/Goerli/Mumbai)
+  - Gas 成本测量方法
+  - 合约验证与调用示例
 
 ### 项目与实现
 
@@ -702,7 +733,31 @@ cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --featur
 
 ---
 
-### 17. PHASE-4.3-WEEK3-4-SUMMARY.md 📝
+### 17. ZK-BATCH-VERIFY.md 🔐
+
+**大小**: 6KB  
+**阅读时间**: 10 分钟  
+**适合人群**: ZK 应用开发者、性能调优工程师  
+**内容**:
+- ZK 批量验证用户指南
+- 环境变量配置 (ZK_BATCH_ENABLE/SIZE/FLUSH_INTERVAL_MS)
+- 三重触发策略（大小/间隔/手动）
+- Prometheus 批量验证指标 (吞吐量/延迟/失败率)
+- Grafana Dashboard 面板导入
+- 后台定时刷新线程配置
+- 故障排查与调优建议
+
+**关键特性**:
+- SuperVM 批量缓冲器（Mutex<Vec<(proof, input)>>）
+- 批量验证 TPS 监控
+- 平均延迟 vs 批次延迟对比
+- 并发安全测试覆盖
+
+**何时阅读**: 集成 ZK 批量验证或优化 ZK 性能时
+
+---
+
+### 18. PHASE-4.3-WEEK3-4-SUMMARY.md 📝
 
 **大小**: 12KB  
 **阅读时间**: 25 分钟  

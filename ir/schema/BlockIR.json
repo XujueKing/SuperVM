@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BlockIR (v0 for BTC+ETH)",
+  "type": "object",
+  "properties": {
+    "chainId": {"type": "string"},
+    "height": {"type": "integer"},
+    "blockHash": {"type": "string"},
+    "parentHash": {"type": "string"},
+    "timestamp": {"type": "integer"},
+    "txCount": {"type": "integer"}
+  },
+  "required": ["chainId", "height", "blockHash", "parentHash", "timestamp"]
+}

@@ -23,6 +23,8 @@ pub mod parallel_mvcc; // v0.9.0: 新的基于 MVCC 的并行调度器
 pub mod privacy; // Phase 2.0: Privacy Layer (Ring Signatures, Stealth Addresses, etc.)
 pub mod shard_coordinator; // Phase 6: 分片协调器 (2PC)
 pub mod shard_types; // Phase 6: 跨分片事务类型定义
+#[cfg(feature = "cross-shard")]
+pub mod shard; // Phase B: gRPC ShardService (proto + server skeleton)
 mod storage;
 pub mod supervm; // v2.0: 统一入口与模式路由 // Phase 4.3: 性能指标收集器 (Prometheus 格式)
 #[cfg(feature = "groth16-verifier")]
@@ -61,6 +63,8 @@ pub use shard_types::{
     PrepareRequest, PrepareResponse, ShardConfig, ShardId, TxnId, TxnState, VersionRequest,
     VersionResponse, shard_for_object,
 };
+#[cfg(feature = "cross-shard")]
+pub use shard::proto as cross_shard_proto;
 #[cfg(feature = "rocksdb-storage")]
 pub use storage::{AdaptiveBatchConfig, AdaptiveBatchResult, RocksDBConfig, RocksDBStorage};
 pub use storage::{MemoryStorage, Storage};
@@ -340,7 +344,7 @@ impl<S: Storage + 'static> Runtime<S> {
     pub fn execute_batch_with_routing(
         &self,
         txs: Vec<RuntimeTxnTuple>,
-    ) -> Result<(BatchTxnResult, BatchTxnResult, u64)> {
+    ) -> Result<(BatchTxnResult, BatchTxnResult, u64, Vec<u64>)> {
         let ownership = self
             .ownership_manager
             .as_ref()

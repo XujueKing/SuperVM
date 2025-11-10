@@ -4,8 +4,8 @@
 #[cfg(test)]
 mod metrics_tests {
     use crate::metrics::{LatencyHistogram, MetricsCollector};
-    use crate::mvcc::{MvccStore, Txn};
-    use std::sync::Arc;
+    
+    
     use std::time::Duration;
 
     #[test]

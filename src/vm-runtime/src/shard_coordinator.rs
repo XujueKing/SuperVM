@@ -10,6 +10,12 @@ use crate::shard_types::*;
 use crate::ownership::ObjectId;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+#[cfg(feature = "cross-shard")]
+use crate::shard::proto::shard_service_client::ShardServiceClient;
+#[cfg(feature = "cross-shard")]
+use crate::shard::proto::*;
+#[cfg(feature = "cross-shard")]
+use tonic::transport::Channel;
 use std::sync::Arc;
 
 /// 分片协调器（运行在事务发起节点）
@@ -24,10 +30,14 @@ pub struct ShardCoordinator {
     next_txn_id: Arc<parking_lot::Mutex<TxnId>>,
     
     /// MVCC 扩展（处理本地 prepare/commit）
+    #[allow(dead_code)]
     mvcc_ext: Arc<CrossShardMvccExt>,
     
-    /// RPC 客户端（预留，稍后集成 gRPC）
-    _rpc_clients: HashMap<ShardId, ()>, // TODO: 替换为 ShardServiceClient
+    /// RPC 客户端
+    #[cfg(feature = "cross-shard")]
+    rpc_clients: HashMap<ShardId, ShardServiceClient<Channel>>,
+    #[cfg(not(feature = "cross-shard"))]
+    _rpc_clients: HashMap<ShardId, ()>,
 }
 
 impl ShardCoordinator {
@@ -40,8 +50,84 @@ impl ShardCoordinator {
             active_txns: Arc::new(RwLock::new(HashMap::new())),
             next_txn_id: Arc::new(parking_lot::Mutex::new(1)),
             mvcc_ext,
+            #[cfg(feature = "cross-shard")]
+            rpc_clients: HashMap::new(),
+            #[cfg(not(feature = "cross-shard"))]
             _rpc_clients: HashMap::new(),
         }
+    }
+
+    /// 建立到所有分片节点的 gRPC 连接（在 cross-shard 启用时可用）
+    #[cfg(feature = "cross-shard")]
+    pub async fn connect_all(&mut self) -> anyhow::Result<()> {
+        for (sid, endpoint) in &self.config.shard_endpoints {
+            let client = ShardServiceClient::connect(format!("http://{}", endpoint)).await?;
+            self.rpc_clients.insert(*sid, client);
+        }
+        Ok(())
+    }
+
+    /// 并行 prepare 所有参与分片（在 cross-shard 启用时可用）
+    #[cfg(feature = "cross-shard")]
+    pub async fn prepare_all(&mut self, reqs: Vec<(ShardId, PrepareRequest)>) -> anyhow::Result<Vec<(ShardId, PrepareResponse)>> {
+        use futures::future::join_all;
+        let mut futs = Vec::with_capacity(reqs.len());
+        for (sid, req) in reqs.into_iter() {
+            let client = self.rpc_clients.get_mut(&sid).expect("client connected");
+            futs.push(async move {
+                let resp = client.prepare_txn(req).await;
+                (sid, resp)
+            });
+        }
+        let results = join_all(futs).await;
+        let mut out = Vec::with_capacity(results.len());
+        for (sid, r) in results {
+            let resp = r?.into_inner();
+            out.push((sid, resp));
+        }
+        Ok(out)
+    }
+
+    /// 远程批量查询对象版本（按分片聚合后并行请求）
+    #[cfg(feature = "cross-shard")]
+    pub async fn get_remote_versions(&mut self, shard_to_objects: HashMap<ShardId, Vec<ObjectId>>) -> anyhow::Result<HashMap<ObjectId, u64>> {
+        use futures::future::join_all;
+        let mut futs = Vec::with_capacity(shard_to_objects.len());
+        for (sid, objs) in shard_to_objects.into_iter() {
+            let mut client = self.rpc_clients.get_mut(&sid).expect("client connected").clone();
+            let req = VersionRequest { object_ids: objs.iter().map(|o| o.to_vec()).collect() };
+            futs.push(async move {
+                let resp = client.get_object_versions(req).await;
+                (sid, resp)
+            });
+        }
+        let results = join_all(futs).await;
+        let mut out: HashMap<ObjectId, u64> = HashMap::new();
+        for (_sid, r) in results {
+            let resp = r?.into_inner();
+            for ov in resp.versions {
+                let mut id = [0u8;32];
+                let len = ov.object_id.len().min(32);
+                id[..len].copy_from_slice(&ov.object_id[..len]);
+                out.insert(id, ov.version);
+            }
+        }
+        Ok(out)
+    }
+
+    /// 并行下发最终决议（在 cross-shard 启用时可用）
+    #[cfg(feature = "cross-shard")]
+    pub async fn commit_all(&mut self, sid_list: Vec<ShardId>, decision: Decision, txn_id: u64, epoch: u64) -> anyhow::Result<()> {
+        use futures::future::join_all;
+        let mut futs = Vec::new();
+        for sid in sid_list {
+            let client = self.rpc_clients.get_mut(&sid).expect("client connected");
+            let req = CommitRequest { txn_id, decision: decision as i32, coordinator_epoch: epoch };
+            futs.push(async move { client.commit_txn(req).await });
+        }
+        let results = join_all(futs).await;
+        for r in results { r?; }
+        Ok(())
     }
     
     /// 生成新的事务 ID

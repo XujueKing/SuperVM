@@ -1,0 +1,68 @@
+syntax = "proto3";
+package supervm.plugin;
+
+option go_package = "supervm/plugin";
+
+import "google/protobuf/timestamp.proto";
+
+message RegisterRequest {
+  string name = 1;          // plugin name
+  string version = 2;
+  string chain = 3;         // bitcoin / ethereum / solana
+  repeated string capabilities = 4; // block_stream, submit_tx, indexer
+  string manifest_json = 5; // optional full manifest
+}
+
+message RegisterResponse {
+  string plugin_id = 1;
+  bool accepted = 2;
+  string message = 3;
+}
+
+message BlockMessage {
+  string chain = 1;
+  uint64 height = 2;
+  bytes block_bytes = 3; // raw serialized block (optional)
+  string block_ir_json = 4; // optional IR JSON
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+message ReorgMessage {
+  string chain = 1;
+  uint64 from_height = 2;
+  uint64 to_height = 3;
+  repeated bytes orphan_block_hashes = 4;
+}
+
+message SubmitTxRequest {
+  string chain = 1;
+  bytes tx = 2;
+}
+
+message SubmitTxResponse {
+  bool accepted = 1;
+  string tx_hash = 2;
+  string error = 3;
+}
+
+message HealthRequest {}
+message HealthResponse {
+  bool ok = 1;
+  string status = 2;
+}
+
+service PluginHost {
+  // 注册插件并协商能力
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // 单向服务端流：Host 向插件推送区块/重组信息
+  rpc StreamBlocks(google.protobuf.Timestamp) returns (stream BlockMessage);
+
+  // 双向流（可选）：用于高吞吐场景，双方可以发送 BlockMessage / ReorgMessage / custom messages
+  rpc BlockExchange(stream BlockMessage) returns (stream BlockMessage);
+
+  // 提交原生链交易到 Host（并由 Host 转发到 P2P 或 relay）
+  rpc SubmitTx(SubmitTxRequest) returns (SubmitTxResponse);
+
+  rpc Health(HealthRequest) returns (HealthResponse);
+}

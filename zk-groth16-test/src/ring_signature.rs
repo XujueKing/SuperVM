@@ -20,7 +20,6 @@ use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::boolean::Boolean;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::fp::FpVar;
-use ark_r1cs_std::fields::FieldVar;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use ark_std::Zero;
 
@@ -29,7 +28,6 @@ use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParameters
 use ark_crypto_primitives::crh::poseidon::CRH;
 use ark_crypto_primitives::crh::{CRHScheme, CRHSchemeGadget};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use ark_crypto_primitives::sponge::Absorb;
 
 // ===== 数据结构定义 =====
 

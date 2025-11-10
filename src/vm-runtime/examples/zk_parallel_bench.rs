@@ -7,7 +7,6 @@
 //!   ZK_PAR_SIZES=8,32,64,128 (批量大小列表)
 //!   ZK_PAR_THREADS=0    (0 表示使用 rayon 默认)
 
-use std::time::Instant;
 use std::sync::Arc;
 use vm_runtime::privacy::parallel_prover::{ParallelProver, ParallelProveConfig, CircuitInput};
 use vm_runtime::metrics::MetricsCollector;

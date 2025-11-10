@@ -127,7 +127,7 @@ fn main() -> Result<()> {
 
     // 执行
     let t0 = Instant::now();
-    let (fast_res, cons_res, fallbacks) = runtime.execute_batch_with_routing(txs)?;
+    let (fast_res, cons_res, fallbacks, _fallback_ids) = runtime.execute_batch_with_routing(txs)?;
     let dt = t0.elapsed();
 
     // 统计

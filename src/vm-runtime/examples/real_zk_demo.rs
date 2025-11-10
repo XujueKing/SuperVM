@@ -9,7 +9,7 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use vm_runtime::{
         zk_verifier::{generate_test_proof, Groth16Verifier, ZkVerifier},
-        OwnershipManager, Privacy, SuperVM, Transaction,
+        OwnershipManager, SuperVM,
     };
 
     println!("=== Real ZK Verifier Demo ===\n");

@@ -48,6 +48,48 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Generate Visuals Assets",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/scripts/generate-visuals.ps1"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Generate PPT Deck",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/scripts/generate-ppt.ps1"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Generate PPT Deck",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}/scripts/generate-ppt.ps1"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

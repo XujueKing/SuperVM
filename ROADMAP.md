@@ -1,20 +1,51 @@
-﻿# SuperVM - Development Roadmap
+﻿# 潘多拉计划 (Pandora Project) - 开发路线图
 
-> **开发者**: king | **架构师**: KING XU (CHINA) | **最后更新**: 2025-11-08
+> **潘多拉星核 (SuperVM Pandora Core)**: Web3 网络基础服务操作系统  
+> **开发者**: king | **架构师**: KING XU (CHINA) | **最后更新**: 2025-11-10
 
 > **ZK 隐私专项计划**: 详见 [ROADMAP-ZK-Privacy.md](./ROADMAP-ZK-Privacy.md)
 
 ---
 
+## 🌌 潘多拉愿景 (Pandora Vision)
+
+**潘多拉计划**旨在打开 Web3 的潘多拉魔盒，释放区块链的无限可能：
+
+```
+传统 Web3:  链 A | 链 B | 链 C  ← 孤岛，靠"桥"勉强互通
+              ↓      ↓      ↓
+           割裂的生态、分散的流动性、重复的轮子
+
+潘多拉星核:  Bitcoin   Ethereum   Solana   TRON
+              ↓          ↓          ↓        ↓
+            ┌────────────────────────────────────┐
+            │   Unified State Mirror (IR)        │
+            │   + 四层网络智能调度                │
+            │   + 跨链原子交易                    │
+            │   + 隐私保护                        │
+            └────────────────────────────────────┘
+                      ↓
+              Web3 Operating System
+       (DeFi | Games | Social | AI | Storage)
+```
+
+### 🎯 核心使命
+1. **多链聚合**: 不是"桥接"，是**原链节点热插拔聚合**
+2. **统一操作系统**: 提供 Web3 基础服务(存储/计算/调度/隐私)
+3. **开放生态**: 插件规范开源，无需许可即可扩展新链
+4. **用户无感**: 跨链交互像切换应用一样简单
+
+---
+
 ## 📖 项目概述
 
-SuperVM 是一个高性能的 WASM-first 区块链虚拟机，采用 Rust 实现，支持并行执行、MVCC 并发控制、可选的隐私保护扩展，并规划 CPU-GPU 异构加速与 EVM 可插拔兼容层。
+SuperVM (潘多拉星核) 是一个高性能的 WASM-first 区块链虚拟机，采用 Rust 实现，支持并行执行、MVCC 并发控制、可选的隐私保护扩展，并规划 CPU-GPU 异构加速与多链协议适配层。
 
 ### 🎯 核心目标（更新）
 - ✅ **高性能执行**: MVCC 并发控制：单线程事务提交 242K TPS（本地 Windows Release），多线程高竞争冲突场景 ~290K TPS（10 线程热键冲突基准）；批量写入微基准（RocksDB 自适应批次）峰值 754K–860K ops/s（注意：ops/s 为存储写操作速率，非直接事务 TPS）
 - ✅ **并行调度**: 工作窃取 + 多版本存储 + 自适应调优 (AutoTuner) + 重试策略（backoff/jitter/分类器）
 - 🚧 **多语言支持**: Solidity (Solang)、AssemblyScript、Rust [设计完成，待实现]
-- 📋 **EVM 兼容层**: 独立插件 `evm-adapter`（Trait 接入 + Feature Flag 控制）
+- � **多链聚合**: 热插拔子模块(Bitcoin/Ethereum/Solana/TRON) + 统一 IR 镜像
 - 🔒 **隐私保护**: Ring Signature、RingCT、Range Proof、Groth16 Verifier（专项推进中）
 - 🌐 **四层网络架构**: L1 超算 → L2 算力矿机 → L3 边缘 → L4 终端 (Phase 6 设计完成，待实现)
 - 🔄 **跨链编译器 (WODA)**: 一次开发，多链部署（SuperVM IR + 多后端）
@@ -23,9 +54,7 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，采用 Rust 实现
 - 🧬 **CPU-GPU 异构加速**: Phase 8 规划中（ZK/哈希/签名验证/Merkle 构建）
 - 🧩 **可插拔执行引擎**: ExecutionEngine trait 支持 WASM / EVM / GPU / Hybrid
 - 🗃️ **持久化与快照**: RocksDB 后端 + Checkpoint + 状态裁剪 + 自动刷新 + 批量优化
-- 📦 **生产环境准备**: 部署/监控/安全审计 (Phase 9)
-
-### 🏗️ 技术架构
+- 📦 **生产环境准备**: 部署/监控/安全审计 (Phase 12)### 🏗️ 技术架构
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -63,22 +92,51 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，采用 Rust 实现
 
 ## 📊 开发进度总览
 
-### 整体进度: 🎯 52% (基础阶段完成 + Phase 5 路由与可观测性 82%) 〈已对齐 Phase 8/9 命名〉
+### 整体进度: 🎯 56% (Phase 1-4 完成 + Phase 2.2/4.3/5 进行中)
+
+> **多链架构集成 (2025-11-09)**: 新增 Phase 10/11，调整 Phase 7/8。详见 [MULTICHAIN-ARCHITECTURE-VISION.md](./docs/MULTICHAIN-ARCHITECTURE-VISION.md) 与 [ARCHITECTURE-INTEGRATION-ANALYSIS.md](./docs/ARCHITECTURE-INTEGRATION-ANALYSIS.md)
 
 | 阶段 | 名称 | 状态 | 完成度 | 周期 |
 |------|------|------|--------|------|
 | Phase 1 | 项目基础设施 | ✅ 已完成 | 100% | 周0 |
 | Phase 2 | WASM 运行时 PoC | ✅ 已完成 | 100% | 周1-3 |
-| Phase 3 | 编译器适配 | 📋 规划中 | 0% | 周4-8 |
+| **Phase 2.2** | **ZK 隐私层 (Groth16 双曲线)** | 🚧 进行中 | 85% | 详见 ZK Roadmap |
+| Phase 3 | WODA 跨链编译器 | 📋 规划中 | 0% | 周4-8 |
 | Phase 4 | 并行执行引擎 | ✅ 已完成 | 100% | 周9-14 |
 | **Phase 4.1** | **MVCC 高竞争优化** | ✅ 已完成 | 100% | 2024-11-07 |
 | **Phase 4.2** | **自适应性能调优 (AutoTuner)** | ✅ 已完成 | 100% | 2024-11-07 |
 | **Phase 4.3** | **持久化存储集成** | 🚧 验证中 | 91% | Week 3-4/4 |
 | Phase 5 | 对象所有权与三通道路由 | 🚧 进行中 | 82% | 周15-22 |
-| **Phase 6** | **四层神经网络** | 📋 规划中 | 0% | 16周 (6.1-6.5) |
-| Phase 7 | EVM 兼容层 | 📋 规划中 | 0% | 周15-22 |
-| Phase 8 | CPU-GPU 双内核异构计算 | 📋 规划中 | 0% | 17周 |
-| Phase 9 | 生产环境准备 | 📋 规划中 | 0% | 周40-53 |
+| **Phase 6** | **四层神经网络** | 📋 规划中 | 0% | 19周 (6.1-6.7) |
+| Phase 7 | ~~EVM 兼容层~~ → **多链协议适配框架** | 📋 规划中 | 0% | 周15-22 |
+| Phase 8 | ~~CPU-GPU 双内核~~ → **多链证明聚合加速** | 📋 规划中 | 0% | 17周 |
+| **Phase 10** | **多链协议适配层 (M1-M5)** | 📋 规划中 | 0% | 12周 (新增) |
+| **Phase 11** | **Web3 存储与寻址 (M10-M16)** | 📋 规划中 | 0% | 14周 (新增) |
+| **Phase 9.5** | **原生监控客户端 (Native Monitor)** | 📋 规划中 | 0% | 7周 (新增) |
+| **Phase 12** | **生产环境准备** | 📋 规划中 | 0% | 周40-53 |
+
+### 📊 阶段进度可视化
+
+```
+Phase 1  基础设施        ████████████████████ 100% ✅
+Phase 2  WASM运行时      ████████████████████ 100% ✅
+Phase 2.2 ZK隐私层       █████████████████░░░  85% 🚧
+Phase 3  跨链编译器      ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 4  并行执行        ████████████████████ 100% ✅
+Phase 4.1 高竞争优化     ████████████████████ 100% ✅
+Phase 4.2 性能调优       ████████████████████ 100% ✅
+Phase 4.3 持久化存储     ██████████████████░░  91% 🚧
+Phase 5  三通道路由      ████████████████░░░░  82% 🚧
+Phase 6  四层网络        ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 7  多链适配框架    ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 8  证明聚合加速    ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 10 多链协议适配    ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 11 Web3存储寻址    ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 9.5 原生监控客户端 ░░░░░░░░░░░░░░░░░░░░   0% 📋
+Phase 12 生产环境准备    ░░░░░░░░░░░░░░░░░░░░   0% 📋
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Overall  整体进度        ███████████░░░░░░░░░  56% 🚧
+```
 
 ---
 
@@ -1794,7 +1852,109 @@ impl LoadAdjuster {
 - [ ] 负载均衡测试 (节点利用率均衡性)
 - [ ] 完整文档与示例
 
-#### Phase 6.4: P2P 网络与通信 (3 周)
+#### Phase 6.4: 自组织混合通信网络 (5 周) ⭐ **核心创新**
+
+> **设计理念**: 真正的去中心化不应依赖单一通信方式。SuperVM 支持通过**互联网、WiFi Mesh、蓝牙、LoRa、星链**等任意通信协议自组织连接，实现无法被摧毁的分布式网络。
+
+**Week 1: 混合协议适配层**
+- [ ] 设计 `TransportAdapter` trait (统一传输接口)
+  ```rust
+  trait TransportAdapter {
+      fn protocol_name(&self) -> &str;  // "internet" | "wifi-mesh" | "bluetooth" | "lora" | "starlink"
+      fn send(&self, peer: PeerId, data: &[u8]) -> Result<()>;
+      fn receive(&self) -> Result<(PeerId, Vec<u8>)>;
+      fn broadcast(&self, data: &[u8]) -> Result<()>;
+      fn available_peers(&self) -> Vec<PeerId>;
+      fn max_payload_size(&self) -> usize;
+      fn latency_estimate(&self) -> Duration;
+  }
+  ```
+- [ ] 实现适配器:
+  - [ ] `InternetTransport` (TCP/UDP via libp2p)
+  - [ ] `WiFiMeshTransport` (WiFi Direct + B.A.T.M.A.N. 协议)
+  - [ ] `BluetoothTransport` (Bluetooth Low Energy Mesh)
+  - [ ] `LoRaTransport` (LoRaWAN 长距离低速)
+  - [ ] `StarlinkTransport` (卫星接口，规划中)
+- [ ] 单元测试 (模拟各协议发送/接收)
+
+**Week 2: 多路径路由协议** ⭐ **核心算法**
+- [ ] 实现 `HybridRouter` (混合路由引擎)
+  - [ ] 协议优先级表 (Internet > Starlink > WiFi > Bluetooth > LoRa)
+  - [ ] 自动降级策略 (检测互联网断开 → 切换 Mesh)
+  - [ ] 多路径并发传输 (同一消息通过 2-3 条路径冗余发送)
+  - [ ] 延迟容忍网络 (DTN) 模式 (支持"存储-转发")
+- [ ] 实现路由表融合
+  - [ ] `MeshTopology` (WiFi/蓝牙 Mesh 拓扑)
+  - [ ] `InternetTopology` (传统 IP 网络拓扑)
+  - [ ] 跨协议桥接 (L3 节点充当协议网关)
+- [ ] 路由算法:
+  - [ ] 最短路径 (Dijkstra 基于延迟)
+  - [ ] 负载均衡 (ECMP 多路径)
+  - [ ] 故障转移 (主路径失败自动切换备用)
+- [ ] 集成测试 (模拟网络分区 + 自愈)
+
+**Week 3: Mesh 网络实现 (WiFi + 蓝牙)**
+- [ ] WiFi Direct Mesh 实现
+  - [ ] P2P 组建 (自动发现邻居节点)
+  - [ ] B.A.T.M.A.N. 协议集成 (自组织路由)
+  - [ ] 中继节点选举 (信号强度 + 电量优先)
+- [ ] 蓝牙 Mesh 实现
+  - [ ] BLE Mesh 协议栈集成
+  - [ ] 跳数限制 (最多 5 跳避免延迟过高)
+  - [ ] 消息碎片化 (蓝牙 MTU 限制 20-512 字节)
+- [ ] Mesh 性能测试
+  - [ ] 覆盖范围测试 (WiFi: 100m, 蓝牙: 30m)
+  - [ ] 延迟测试 (单跳 < 50ms, 多跳累加)
+  - [ ] 吞吐量测试 (WiFi: 10-100 Mbps, 蓝牙: 100-2000 Kbps)
+
+**Week 4: 应急模式与离线优先** ⭐ **灾难韧性**
+- [ ] 实现 `EmergencyMode` (网络分区检测)
+  - [ ] 互联网断开检测 (3 次 ping 失败触发)
+  - [ ] 自动切换本地 Mesh (WiFi/蓝牙)
+  - [ ] 本地共识模式 (仅处理本地节点交易)
+- [ ] 离线交易队列
+  - [ ] `OfflineQueue` (SQLite 持久化)
+  - [ ] 延迟容忍标记 (支持 1-72 小时延迟)
+  - [ ] 重连后自动同步 (批量上传离线交易)
+- [ ] 灾难场景测试
+  - [ ] 场景 1: 互联网断开 → Mesh 自组网
+  - [ ] 场景 2: 本地支付 → 离线队列 → 72 小时后同步
+  - [ ] 场景 3: LoRa 跨城市中继 → 最终到达主网
+
+**Week 5: LoRa 长距离 + 激励机制**
+- [ ] LoRa 集成 (长距离低速通信)
+  - [ ] LoRaWAN 网关接口
+  - [ ] 数据压缩 (Protobuf + ZSTD)
+  - [ ] 分片传输 (大消息拆分为多个 LoRa 包)
+  - [ ] 范围测试 (城市: 2-5km, 农村: 10-20km)
+- [ ] 中继节点激励
+  - [ ] `RelayReward` 机制 (中继消息获得 $SUPERVM)
+  - [ ] 证明工作量 (签名验证 + 路径记录)
+  - [ ] 防作弊检测 (虚假中继惩罚)
+- [ ] 完整端到端测试
+  - [ ] 手机 (蓝牙) → L3边缘 (WiFi) → L2矿机 (互联网) → L1超算
+  - [ ] 手机 (蓝牙) → L3边缘 (LoRa) → 城市 L3 (互联网) → L1超算
+  - [ ] 延迟测量 (各段延迟累加)
+  - [ ] 可靠性测试 (丢包率 < 1%)
+
+**交付物**:
+- ✅ 5 种传输协议适配器 (Internet/WiFi/蓝牙/LoRa/星链框架)
+- ✅ 混合路由引擎 (多路径/自动降级/故障转移)
+- ✅ Mesh 网络实现 (WiFi Direct + 蓝牙 Mesh)
+- ✅ 应急模式 (网络分区 → 本地共识 → 离线队列)
+- ✅ 中继激励机制 (去中心化基础设施奖励)
+- ✅ 完整文档与测试报告
+
+**性能目标**:
+- 🎯 互联网断开后 **< 30 秒** 切换到 Mesh 模式
+- 🎯 WiFi Mesh 单跳延迟 **< 50ms**
+- 🎯 蓝牙 Mesh 覆盖半径 **> 30m** (单跳)
+- 🎯 LoRa 城市覆盖 **2-5km**, 农村 **10-20km**
+- 🎯 离线交易队列支持 **72 小时** 延迟容忍
+
+---
+
+#### Phase 6.5: P2P 网络与通信 (3 周)
 
 **Week 1: 神经网络寻址系统 (基础架构)** ⭐ **核心创新**
 - [ ] 实现 `NodeAddress` 和地址系统
@@ -1846,7 +2006,7 @@ impl LoadAdjuster {
   - [ ] 网络分区恢复测试
   - [ ] 带宽优化 (压缩 + 批量传输)
 
-#### Phase 6.5: 生产部署 (2 周)
+#### Phase 6.6: 生产部署 (2 周)
 
 **Week 1: 部署工具**
 - [ ] 一键安装脚本 (`install.sh`)
@@ -1862,9 +2022,9 @@ impl LoadAdjuster {
 - [ ] 用户培训材料 (视频/PPT)
 - [ ] 社区发布
 
-#### Phase 6.x: 合规与抗干扰（并行专项，2 周）
+#### Phase 6.7: 合规与抗干扰（并行专项，2 周）
 
-说明：本专项与 Phase 6.4-6.5 并行推进，聚焦“在合法合规前提下”的可用性、隐私最小化与抗干扰能力建设，不涉及规避或绕开监管的内容。
+说明：本专项与 Phase 6.4-6.6 并行推进，聚焦“在合法合规前提下”的可用性、隐私最小化与抗干扰能力建设，不涉及规避或绕开监管的内容。
 
 **目标**
 - 合规模式开关与策略下发（区域/企业/全球）
@@ -2483,7 +2643,149 @@ gpu-all = ["gpu-cuda", "gpu-opencl"]                 # 全部支持
 
 ---
 
-## 🏭 Phase 9: 生产环境准备 (📋 规划中)
+## � Phase 9.5: 原生监控客户端 (7周) 🆕
+
+**目标**: 开发零依赖的跨平台原生监控GUI应用，替代 Grafana + Prometheus 方案
+
+**时间**: 2025 Q2 | **完成度**: 0%
+
+**核心价值**:
+- ✅ **零依赖部署**: 单一可执行文件，无需 Docker/浏览器/Node.js
+- ✅ **跨平台**: Windows/Linux/macOS 原生支持
+- ✅ **高性能**: < 50MB 内存占用，< 5% CPU 使用率
+- ✅ **实时监控**: 毫秒级数据更新，支持历史查询
+- ✅ **现代 UI**: 类 VS Code 的专业界面体验
+
+### M1: MVP 基础 (2周)
+
+**目标**: 搭建 egui 项目并实现基础监控功能
+
+- [ ] 创建 `native-monitor/` crate (egui + eframe)
+- [ ] 实现 HTTP 客户端拉取 `/metrics` 端点
+- [ ] 解析 Prometheus 格式数据
+- [ ] 实现基础 Dashboard UI
+  - [ ] TPS 实时显示
+  - [ ] 延迟监控
+  - [ ] 成功率统计
+- [ ] 1秒间隔自动刷新
+- [ ] Windows 可执行文件打包
+
+**交付物**:
+- `native-monitor/Cargo.toml`
+- `native-monitor/src/main.rs` (egui 入口)
+- `native-monitor/src/metrics_client.rs` (HTTP 客户端)
+- `native-monitor/src/dashboard.rs` (Dashboard UI)
+- Windows .exe 文件
+
+### M2: 实时图表与本地存储 (2周)
+
+**目标**: 图表可视化 + 时序数据库
+
+- [ ] 集成 egui_plot 绘制实时折线图
+  - [ ] TPS 时序曲线
+  - [ ] 延迟分布图
+  - [ ] 成功率趋势
+- [ ] RocksDB 时序存储 (ring buffer 模式)
+  - [ ] 数据压缩存储
+  - [ ] 保留策略 (默认 7 天)
+  - [ ] 查询 API
+- [ ] 时间范围选择器 (1min / 5min / 1hour / 1day / custom)
+- [ ] 数据导出功能 (CSV/JSON)
+- [ ] 图表缩放/平移/十字光标
+
+**交付物**:
+- `native-monitor/src/charts.rs` (egui_plot 封装)
+- `native-monitor/src/storage.rs` (RocksDB 时序存储)
+- `native-monitor/src/export.rs` (数据导出)
+
+### M3: 节点管理与多连接 (1周)
+
+**目标**: 支持多节点连接与管理
+
+- [ ] 节点管理 UI
+  - [ ] 添加/删除/编辑节点配置
+  - [ ] 节点状态显示 (在线/离线/延迟)
+  - [ ] 快速切换当前节点
+- [ ] 连接参数配置
+  - [ ] HTTP endpoint
+  - [ ] gRPC endpoint (可选)
+  - [ ] Auth token
+  - [ ] 超时设置
+- [ ] 自动重连机制
+- [ ] 节点配置持久化 (TOML)
+
+**交付物**:
+- `native-monitor/src/node_manager.rs`
+- `native-monitor/config.toml` 配置示例
+
+### M4: 告警引擎与通知 (1周)
+
+**目标**: 规则引擎 + 系统通知
+
+- [ ] 告警规则配置 UI
+  - [ ] 规则编辑器 (条件/阈值/持续时间)
+  - [ ] 规则优先级 (Info/Warning/Critical)
+  - [ ] 启用/禁用规则
+- [ ] 规则引擎实现
+  - [ ] TPS < threshold 持续 Ns → 触发
+  - [ ] Success Rate < threshold → 触发
+  - [ ] Latency > threshold → 触发
+- [ ] 系统通知集成
+  - [ ] Windows: Toast Notification
+  - [ ] macOS: Notification Center
+  - [ ] Linux: libnotify
+- [ ] 告警历史记录
+
+**交付物**:
+- `native-monitor/src/alert_engine.rs`
+- `native-monitor/src/notifications.rs`
+- 3 条预设告警规则
+
+### M5: 跨平台打包与优化 (1周)
+
+**目标**: Linux/macOS 支持 + 性能优化
+
+- [ ] Linux 打包
+  - [ ] AppImage
+  - [ ] DEB 包
+  - [ ] RPM 包 (可选)
+- [ ] macOS 打包
+  - [ ] .app bundle
+  - [ ] DMG 安装包
+  - [ ] 代码签名 (可选)
+- [ ] 性能优化
+  - [ ] 内存占用 < 50MB
+  - [ ] 启动时间 < 500ms
+  - [ ] CPU 使用率 < 5%
+- [ ] 主题支持 (Dark/Light)
+- [ ] 快捷键系统
+
+**交付物**:
+- Windows: `.exe` + MSI 安装包
+- Linux: AppImage + DEB
+- macOS: DMG
+- 性能测试报告
+
+**技术栈**:
+```toml
+[dependencies]
+egui = "0.28"           # 即时模式 GUI 框架
+eframe = "0.28"         # egui 桌面应用封装
+egui_plot = "0.28"      # 图表组件
+wgpu = "0.19"           # GPU 渲染后端
+reqwest = "0.12"        # HTTP 客户端
+rocksdb = "0.22"        # 时序数据库
+serde_json = "1"        # JSON 解析
+toml = "0.8"            # 配置文件
+notify-rust = "4"       # 系统通知
+directories = "5"       # 跨平台目录
+```
+
+**参考设计**: 详见 [NATIVE-MONITOR-DESIGN.md](./docs/NATIVE-MONITOR-DESIGN.md)
+
+---
+
+## �🏭 Phase 12: 生产环境准备 (📋 规划中)
 
 **目标**: 完善功能，达到生产可用标准
 
@@ -2555,29 +2857,6 @@ gpu-all = ["gpu-cuda", "gpu-opencl"]                 # 全部支持
 
 ---
 
-## 📊 开发状态对照表
-
-| 功能模块 | 设计文档 | 实现状态 | 阶段 | 优先级 |
-|---------|---------|---------|------|--------|
-| 项目基础设施 | ✅ | ✅ 100% | Phase 1 | - |
-| WASM运行时 | ✅ | ✅ 100% | Phase 2 | - |
-| **跨链编译器(WODA)** | ✅ 1561行 | ❌ 0% | Phase 3 | 🟡 中 |
-| MVCC并行执行 | ✅ | ✅ 100% | Phase 4 | - |
-| **MVCC高竞争优化** |  完整 |  0% | Phase 4.1 |  高 |
-| **三通道路由** | ✅ | 🚧 41% | Phase 5 | � 低 |
-| **四层网络(L1-L4)** | ✅ 983行 | ❌ 0% | Phase 6 | � 高 |
-| EVM兼容层 | ✅ | ❌ 0% | Phase 7 | � 中 |
-| **CPU-GPU双内核** | ✅ 完整 | ❌ 0% | Phase 8 | 🟡 中 |
-| 生产环境准备 | 📋 | ❌ 0% | Phase 9 | � 低 |
-| ZK隐私层 | ✅ | 🚧 进行中 | 专项 | 🟢 低 |
-
-### 说明
-- **Phase 6 (四层网络)**: 完整设计见 `docs/architecture-2.0.md`，但网络层代码完全未实现
-- **Phase 3 (跨链编译器)**: 完整设计见 `docs/compiler-and-gas-innovation.md`，需先实现基础编译器集成
-- **Phase 5 (三通道路由)**: 对象所有权已完成，路由集成进行中
-
----
-
 ## 📊 风险评估与缓解
 
 ### 技术风险
@@ -2630,81 +2909,48 @@ gpu-all = ["gpu-cuda", "gpu-opencl"]                 # 全部支持
 
 ---
 
-## 📈 当前状态总结
-
-**更新时间**: 2025-11-05
-
-### ✅ 已完成的里程碑
-1. **Phase 1**: 项目基础设施 (100%)
-   - Cargo workspace、CI/CD、代码规范
-
-2. **Phase 2**: WASM 运行时 PoC (100%)
-   - wasmtime 集成、Storage 抽象层、Host Functions
-
-3. **Phase 4**: 并行执行引擎 (100%)
-   - ParallelScheduler + WorkStealingScheduler
-   - MVCC 存储引擎 (v0.5.0 → v0.9.0)
-   - 自动垃圾回收 (GC + Auto GC)
-   - MvccScheduler 并行调度器
-   - 50+ 测试通过，完整文档
-
-4. **Phase 7**: 三通道路由 (30%)
-   - 对象所有权模型 (Sui-Inspired)
-   - 统一路由入口
-   - 快速/共识/隐私三通道
-
-### 🚧 进行中的工作
-- **Phase 7**: 三通道路由集成 (30%)
-  - 对象所有权模型已完成
-  - 快速/共识/隐私路径打通进行中
-- **ZK隐私层**: 环签名、RingCT、零知识证明
-
-### 📋 待启动的阶段
-- **Phase 3**: 编译器适配 (设计完成52KB，需实现)
-- **Phase 5**: EVM 兼容层
-- **Phase 6**: 生产环境准备
-- **Phase 8**: 四层神经网络 (设计完成983行，需实现)
-
-### 📊 总体进度
-```
-Phase 1 基础设施        ████████████████████ 100% ✅
-Phase 2 WASM运行时      ████████████████████ 100% ✅
-Phase 3 编译器适配      ░░░░░░░░░░░░░░░░░░░░   0% 📋
-Phase 4 并行执行        ████████████████████ 100% ✅
-Phase 4.1 高竞争优化    ░░░░░░░░░░░░░░░░░░░░   0% 📋 (新增)
-Phase 4.2 持久化存储    ░░░░░░░░░░░░░░░░░░░░   0% 📋 (新增)
-Phase 5 三通道路由      ████████░░░░░░░░░░░░  41% 🚧
-Phase 6 四层网络        ░░░░░░░░░░░░░░░░░░░░   0% 📋
-Phase 7 EVM兼容         ░░░░░░░░░░░░░░░░░░░░   0% 📋
-Phase 8 CPU-GPU双内核   ░░░░░░░░░░░░░░░░░░░░   0% 📋
-Phase 9 生产环境        ░░░░░░░░░░░░░░░░░░░░   0% 📋
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Overall 整体进度        ██████░░░░░░░░░░░░░░  34% 
-```
-
----
-
 ## 🎯 下一步行动计划
+
+**更新时间**: 2025-11-09
 
 ### 本周 (Week 1)
 - [x] ✅ 重构 ROADMAP 结构，移除"2.0架构升级"概念
 - [x] ✅ 新增 Phase 8: CPU-GPU 双内核异构计算架构专项
 - [x] ✅ 新增 Phase 4.1: MVCC 高竞争性能优化专项
 - [x] ✅ 新增 Phase 4.2: 持久化存储集成专项 (RocksDB)
-- [ ] **Phase 5**: 完成三通道路由集成
-- [ ] 在并行执行器中集成 OwnershipManager
-- [ ] 增加 E2E 校验样例
+- [x] ✅ 完成多链架构愿景文档 (MULTICHAIN-ARCHITECTURE-VISION.md)
+- [x] ✅ 完成架构集成分析报告 (ARCHITECTURE-INTEGRATION-ANALYSIS.md)
+- [x] ✅ 更新 ROADMAP: 新增 Phase 10/11，调整 Phase 7/8
+- [ ] **Phase 4.3**: 完成持久化存储验证 (91% → 100%)
+- [ ] **Phase 5**: 完成三通道路由集成 (82% → 100%)
 
 ### 本月 (November 2025)
-- [ ] **Phase 4.2**: 启动 RocksDB 持久化存储集成 (优先)
-  - [ ] 实现 RocksDBStorage
-  - [ ] 集成测试与性能基准
-- [ ] **Phase 4.1**: 启动 MVCC 高竞争性能优化 (目标 120K+ TPS)
-  - [ ] 细粒度锁优化
-  - [ ] Bloom Filter 冲突检测
+- [ ] **Phase 4.3**: 持久化存储收尾与生产环境验证
+  - [ ] RocksDB 性能基准测试与调优
+  - [ ] 完整的容错与恢复机制测试
 - [ ] **Phase 5**: 完成快速/共识/隐私三通道打通
-- [ ] **Phase 3**: 调研 Solang 编译器集成方案
-- [ ] **Phase 3**: 设计 compiler-adapter 架构
+  - [ ] 在并行执行器中集成 OwnershipManager
+  - [ ] 增加 E2E 校验样例
+- [ ] **Phase 2.2**: ZK 隐私层收尾 (85% → 100%)
+  - [ ] BN254/BLS12-381 双曲线验证器部署
+  - [ ] RingCT 隐私交易集成测试
+- [ ] **文档更新**:
+  - [ ] 更新 evm-adapter-design.md (ChainAdapter 接口说明)
+  - [ ] 更新 compiler-and-gas-innovation.md (双向翻译章节)
+  - [ ] 更新 INDEX.md (多链架构概览)
+
+### 下季度 (Q1 2026)
+- [ ] **Phase 10**: 启动多链协议适配层 (M1-M5)
+  - [ ] M1: chain-adapter crate 框架 + ChainAdapter trait
+  - [ ] M2: EVM Adapter 实现 (复用 Phase 7 设计)
+  - [ ] M3: BTC SPV + UTXO 映射
+  - [ ] M4: TxIR/BlockIR/StateIR 规范初稿
+  - [ ] M5: RingCT 集成到跨链隐私管道
+- [ ] **Phase 3**: 启动 WODA 跨链编译器实现
+  - [ ] 调研 Solang 编译器集成方案
+  - [ ] 设计 compiler-adapter 架构
+- [ ] **Phase 6**: 启动四层神经网络实现
+  - [ ] L1-L2 层基础架构搭建
 - [ ] **Phase 6**: 评估四层网络实现优先级
 - [ ] **Phase 8**: 评估 GPU 加速专项优先级和硬件需求
 - [ ] 开始 JS SDK 原型开发
@@ -2795,6 +3041,8 @@ Overall 整体进度        ██████░░░░░░░░░░░�
 - [docs/parallel-execution.md](./docs/parallel-execution.md) - 并行执行引擎设计
 - [docs/compiler-and-gas-innovation.md](./docs/compiler-and-gas-innovation.md) - 跨链编译器 & 多币种 Gas
 - [docs/evm-adapter-design.md](./docs/evm-adapter-design.md) - EVM 适配器插件化设计
+- [docs/MULTICHAIN-ARCHITECTURE-VISION.md](./docs/MULTICHAIN-ARCHITECTURE-VISION.md) - **多链统一架构愿景** 🆕 重要
+- [docs/ARCHITECTURE-INTEGRATION-ANALYSIS.md](./docs/ARCHITECTURE-INTEGRATION-ANALYSIS.md) - **架构集成冲突分析** 🆕 参考
 - [docs/KERNEL-DEFINITION.md](./docs/KERNEL-DEFINITION.md) - **内核定义与保护机制** ⚠️ 重要
 - [docs/KERNEL-MODULES-VERSIONS.md](./docs/KERNEL-MODULES-VERSIONS.md) - **模块分级与版本索引** 🧭
 - [docs/sui-smart-contract-analysis.md](./docs/sui-smart-contract-analysis.md) - Sui 智能合约分析
@@ -2804,7 +3052,162 @@ Overall 整体进度        ██████░░░░░░░░░░░�
 - [docs/Q&A/SuperVM与数据库的关系](./docs/Q&A/SuperVM与数据库的关系) - **存储架构设计** 🆕 重要
 - [docs/four-layer-network-deployment-and-compute-scheduling.md](./docs/four-layer-network-deployment-and-compute-scheduling.md) - **四层网络部署策略** ✨ 最新 重要
 
-### 经济模型与激励
+---
+
+## 🌐 Phase 10: 多链协议适配层 (12周)
+
+**目标**: 通过“热插拔子模块”直接运行原链节点（Bitcoin Core / Geth），并将其区块/交易/事件实时转换为统一 IR 镜像，形成 BTC+ETH 融合执行基础。桥接能力仅作为子模块不可用时的可选兜底模式。
+
+**时间**: 2025 Q1-Q2 | **完成度**: 0%
+
+### M1 (BTC+Geth MVP 核心, 3周)
+- [ ] **插件规范 v0 发布** 🆕
+  - [x] `docs/plugins/PLUGIN-SPEC.md` - 插件规范草案
+  - [x] `proto/plugin_host.proto` - gRPC 数据平面定义
+  - [x] `docs/plugins/example-plugin.yaml` - 插件清单示例
+  - [x] `docs/plugins/README.md` - 插件架构入口文档
+  - [ ] `docs/plugins/plugin-manifest.schema.json` - JSON Schema 校验
+  - [ ] `docs/plugins/submodule-adapter.md` - SubmoduleAdapter trait 详细说明
+- [ ] 定义 `SubmoduleAdapter` 契约（替代旧 `ChainAdapter` 基础）
+- [ ] 创建 `src/submodule/` 基础 crate（生命周期管理 + 统一错误）
+- [ ] Geth 子模块最小骨架：Engine API 同步 + Tx → Receipt 捕获
+- [ ] Bitcoin 子模块最小骨架：RPC/headers-first 同步 + UTXO 抽取
+- [ ] 统一 IR 初稿（TxIR / BlockIR / StateIR）仅覆盖 BTC UTXO 与 ETH 账户 + ERC20 Transfer
+- [ ] ERC20 Indexer v0：监听 Transfer(topic0) → 写入 StateIR
+- [ ] 镜像层写入路径（sync_to_unified_mirror）
+- [ ] 与本地 go-ethereum 节点互联演示
+- [ ] 跨模块查询回退逻辑（镜像 miss → 子模块原生查询）
+
+**交付物**:
+- ✅ `docs/plugins/` 插件规范目录（PLUGIN-SPEC.md / README.md / example-plugin.yaml）
+- ✅ `proto/plugin_host.proto` gRPC 接口定义
+- [ ] `src/submodule/` crate（trait + 基础管理）
+- [ ] `src/geth-submodule/` crate（最小实现）
+- [ ] `src/bitcoin-submodule/` crate（最小实现）
+- [ ] `ir/schema/txir.json` / `blockir.json` / `stateir.json`
+- [ ] `docs/ir-mapping-btc-eth.md` （字段对照）
+- [ ] 演示脚本：提交 ETH 交易 → 镜像查询余额一致
+
+### M2: BTC 强化 & Autoscale 基础 (3周)
+- [ ] BTC SPV headers-first 同步
+- [ ] Compact block (BIP152) 支持
+- [ ] UTXO→StateIR 映射
+- [ ] Merkle proof 验证
+// 新增
+- [ ] 双链资产路由 v1（BTC(supervm) / ETH(supervm) 查询）
+- [ ] Autoscale Orchestrator 指标采集框架 (滞后/CPU/存储压力)
+
+**交付物**:
+- `src/bitcoin-submodule/` 扩展版本
+- `autoscale/metrics.rs` 初稿
+- `docs/autoscale-design.md` 指标与切换条件
+- UTXO 资产映射规范
+
+### M3: 隐私流水线集成 (2周)
+- [ ] RingCT 电路集成（复用 Phase 2.2）
+- [ ] Commitment/Nullifier 生成器
+- [ ] 批量验证池接口
+- [ ] TxIR→Privacy扩展字段
+
+**交付物**:
+- 统一隐私流水线 API
+- 跨链隐私交易示例
+
+### M4: 批量验证 + Gas 优化 (2周)
+- [ ] Batch verifier stub
+- [ ] Gas 计量映射（BTC fees ↔ EVM gas ↔ SuperVM units）
+- [ ] 性能基准测试
+
+**交付物**:
+- 批量验证性能报告
+- Gas 映射表
+
+### M5: 延期项（标记规划，不在 MVP 主线） (2周)
+- [ ] Solana Adapter 预研（QUIC gossip 接入策略）
+- [ ] TRON Adapter 预研（资源模型 / gRPC API）
+- [ ] SPL / TRC20 Token Indexer 范围界定
+- [ ] 混合模式策略 v1（仅文档，不做实现）
+
+**交付物**:
+- `docs/solana-adapter-research.md`
+- `docs/tron-adapter-research.md`
+- Token Indexer 资产分类表
+- 混合模式策略文档 v1
+
+---
+
+## 🌐 Phase 11: Web3 存储与寻址 (14周)
+
+**目标**: 提供去中心化 Web 存储与寻址层，让传统网站通过热插拔硬盘接入 SuperVM，用户通过 SuperVM Web3 浏览器访问。
+
+**时间**: 2025 Q2-Q3 | **完成度**: 0%
+
+### M10: SNS 智能合约 + 域名注册 (2周)
+- [ ] SNS 合约设计（Solidity/WASM）
+- [ ] 域名注册/解析接口（.svm / .web3）
+- [ ] 链上记录（content_hash, storage_nodes, routing_policy）
+- [ ] 版本控制与历史回溯
+
+**交付物**:
+- `contracts/SNS.sol` 或 `src/sns-contract/`
+- 域名注册 CLI
+
+### M11: 存储层 MVP（单节点热插拔） (3周)
+- [ ] 热插拔硬盘/NAS 接入协议
+- [ ] 内容分片（按哈希）
+- [ ] Merkle DAG 索引
+- [ ] Proof of Storage 原型
+
+**交付物**:
+- `src/web3-storage/` crate
+- 单节点存储测试
+
+### M12: SuperVM Web3 Browser Alpha (3周)
+- [ ] `svm://` 或 `web3://` 协议解析
+- [ ] 内置 SNS 客户端
+- [ ] 内容哈希验证
+- [ ] 基本渲染（Electron/Tauri）
+
+**交付物**:
+- 跨平台浏览器原型
+- 示例网站托管
+
+### M13: 分布式存储网络（多节点） (3周)
+- [ ] DHT 实现（libp2p Kad）
+- [ ] 副本策略（erasure coding）
+- [ ] 节点发现与路由
+- [ ] 激励与惩罚机制
+
+**交付物**:
+- 多节点存储网络测试
+- 存储经济模型文档
+
+### M14: 开发者工具链 (CLI/SDK) (2周)
+- [ ] `svm-cli build` 打包工具
+- [ ] `svm-cli deploy` 一键上传
+- [ ] SDK (JS/Rust/Python)
+- [ ] 本地测试环境
+
+**交付物**:
+- 开发者文档与教程
+- npm/crates.io 发布
+
+### M15: CDN 模式 + 就近路由 (1周)
+- [ ] 边缘节点 CDN 配置
+- [ ] 地理路由算法
+- [ ] 智能缓存策略
+
+**交付物**:
+- CDN 性能基准
+
+### M16: 内容市场与激励完善 (待规划)
+- [ ] 流量分成机制
+- [ ] 存储奖励池
+- [ ] DAO 治理集成
+
+---
+
+###  经济模型与激励
 - [docs/gas-incentive-mechanism.md](./docs/gas-incentive-mechanism.md) - Gas 激励机制设计
 
 ### 测试与运维

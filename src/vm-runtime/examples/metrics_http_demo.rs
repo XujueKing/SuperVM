@@ -5,7 +5,6 @@
 //! 通过 tiny_http 暴露 Prometheus 格式指标
 
 use std::sync::Arc;
-use std::thread;
 use tiny_http::{Header, Response, Server};
 use vm_runtime::{
     MvccStore, ObjectId, ObjectMetadata, OwnershipManager, OwnershipType, Privacy, SuperVM,
@@ -15,7 +14,6 @@ use vm_runtime::{
 fn main() {
     println!("=== MVCC Store Metrics HTTP Demo ===\n");
     let store = Arc::new(MvccStore::new());
-    let store_clone = store.clone();
 
     // ==== 路由指标：构造 SuperVM + 预热统计 ====
     let ownership = Arc::new(OwnershipManager::new());
@@ -82,7 +80,6 @@ fn main() {
             let _ = supervm.route(&tx);
         }
     }
-    let supervm_clone = supervm.clone();
 
     // 启动 HTTP 服务器（前台）
     let server = Server::http("0.0.0.0:8080").unwrap();

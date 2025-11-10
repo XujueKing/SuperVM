@@ -9,15 +9,13 @@ use vm_runtime::{
 #[cfg(feature = "groth16-verifier")]
 use ark_bls12_381::{Bls12_381, Fr};
 #[cfg(feature = "groth16-verifier")]
-use ark_groth16::{prepare_verifying_key, Groth16};
-#[cfg(feature = "groth16-verifier")]
-use ark_serialize::CanonicalSerialize;
+use ark_groth16::Groth16;
 #[cfg(feature = "groth16-verifier")]
 use ark_snark::SNARK;
 #[cfg(feature = "groth16-verifier")]
 use rand::rngs::OsRng;
 #[cfg(feature = "groth16-verifier")]
-use vm_runtime::privacy::{Groth16Verifier, ZkCircuitId, ZkVerifier};
+use vm_runtime::Groth16Verifier;
 #[cfg(feature = "groth16-verifier")]
 use zk_groth16_test::MultiplyCircuit;
 
@@ -98,7 +96,6 @@ fn main() {
             rng,
         )
         .expect("setup");
-        let pvk = prepare_verifying_key(&params.vk);
 
         let a = Fr::from(2u64);
         let b = Fr::from(9u64);
@@ -113,20 +110,19 @@ fn main() {
         )
         .expect("prove");
 
-        // Serialize inputs per register_multiply_v1_with_pvk contract
+        // Serialize proof and public input (compressed format expected by verifier)
         let mut proof_bytes = Vec::new();
-        proof.serialize_uncompressed(&mut proof_bytes).unwrap();
+        use ark_serialize::CanonicalSerialize;
+        proof.serialize_compressed(&mut proof_bytes).unwrap();
         let mut c_bytes = Vec::new();
-        c.serialize_uncompressed(&mut c_bytes).unwrap();
+        vec![c].serialize_compressed(&mut c_bytes).unwrap();
 
-        // Wire verifier into SuperVM and verify
-        let verifier = Groth16Verifier::new();
-        verifier.register_multiply_v1_with_pvk(pvk);
+        // Wire verifier into SuperVM and verify using real Groth16 verifier
+        let verifier = Groth16Verifier::from_proving_key(&params);
         let supervm2 = supervm.with_verifier(&verifier);
-        let circuit = ZkCircuitId::from("multiply_v1");
-        match supervm2.verify_with(&circuit, &proof_bytes, &c_bytes) {
-            Ok(ok) => println!("verify_with(multiply_v1) => {}", ok),
-            Err(e) => println!("verify_with error: {}", e),
+        match supervm2.verify_with_error(&proof_bytes, &c_bytes) {
+            Ok(ok) => println!("verify_with_error(multiply) => {}", ok),
+            Err(e) => println!("verify_with_error failed: {}", e),
         }
     }
 }

@@ -417,4 +417,113 @@ pub struct ConflictReason {
 
 ---
 
+## 11. 隐私跨分片 (ZK) 设计
+
+### 11.1 目标与约束
+- 目标：在 2PC 语义下实现跨分片的隐私交易（不泄漏明文数据），保持原子性与一致性。
+- 约束：
+    - 分片节点不可见敏感明文；
+    - 参与分片能够独立验证证明正确性；
+    - 协调器只做决议，不做明文计算；
+    - 与现有 SuperVM ZK 批量验证机制无缝集成（ZK_BATCH_* 配置与指标）。
+
+### 11.2 数据模型与消息扩展
+在 PrepareRequest 增加隐私证明载荷：
+
+```rust
+// 仅展示新增/相关字段
+struct PrivacyProof {
+        system: ZkSystem,              // Groth16_BLS12_381 | Groth16_BN254
+        proof_bytes: Vec<u8>,          // 证明本体（压缩）
+        public_inputs: Vec<Vec<u8>>,   // 公开输入序列化（字段元素）
+        commitments: Vec<Vec<u8>>,     // 承诺/承诺打开 (可选)
+}
+
+struct PrepareRequest {
+        // ... 原字段
+        trace_id: u128,                // 分布式追踪
+        coordinator_epoch: u64,        // 协调器任期
+        retry_count: u32,              // 重试次数
+        privacy: Option<PrivacyProof>, // 隐私交易附加字段
+}
+```
+
+对应 Proto（摘要，详见 proto/cross_shard.proto）：
+
+```protobuf
+message PrivacyProof {
+    enum ZkSystem { ZK_GROTH16_BLS12_381 = 0; ZK_GROTH16_BN254 = 1; }
+    ZkSystem system = 1;
+    bytes proof_bytes = 2;
+    repeated bytes public_inputs = 3;
+    repeated bytes commitments = 4; // optional
+}
+
+message PrepareRequest {
+    // ...
+    uint128 trace_id = 100;         // 若不支持，拆为两段 uint64 高低位
+    uint64 coordinator_epoch = 101;
+    uint32 retry_count = 102;
+    optional PrivacyProof privacy = 200;
+}
+```
+
+### 11.3 验证策略
+- 方案 A：协调器统一验证（一次验证）
+    - 优点：开销最小；
+    - 缺点：参与分片无法独立信任验证结果。
+- 方案 B：各参与分片独立验证（推荐）
+    - 优点：每个分片对本地写入安全性有独立背书；
+    - 缺点：多次验证，需优化（使用 SuperVM 批量缓冲）。
+
+采用方案 B，并引入 SuperVM 批量验证：
+```rust
+// 伪代码：在 ShardService.prepare_txn 中
+if let Some(p) = req.privacy.as_ref() {
+        // 将 proof/public_inputs 交给 SuperVM 批量缓冲
+        if !supervm.verify_zk_proof(Some(&p.proof_bytes), Some(&concat_inputs(&p.public_inputs))) {
+                return VoteNo(Reason::InvalidProof);
+        }
+}
+```
+
+### 11.4 执行流程（隐私场景）
+```
+Client → Coordinator: Submit Txn(read_set, write_set, privacy_proof)
+                 │
+                 ├─ Phase 1: PREPARE
+                 │   ├─> Shard A: verify_zk_proof() + lock → YES/NO
+                 │   └─> Shard B: verify_zk_proof() + lock → YES/NO
+                 │
+                 ├─ Collect Votes (all YES ? COMMIT : ABORT)
+                 │
+                 └─ Phase 2: COMMIT/ABORT (两边一致)
+```
+
+### 11.5 失败与恢复
+- 证明失败：参与分片直接投 NO，协调器决议 ABORT。
+- 超时：协调器记录 `cross_shard_prepare_timeout_total`，并发起 ABORT。
+- 协调器故障恢复：新主节点根据 WAL/状态机重放决议（见第 3.3 状态机的 RECOVERING）。
+
+### 11.6 监控与指标映射
+- 新增：
+    - `cross_shard_privacy_txn_total`（隐私跨分片事务数）
+    - `cross_shard_privacy_abort_total{reason="invalid_proof|timeout|conflict"}`
+- 复用：
+    - `vm_privacy_zk_batch_verify_*`（批量验证吞吐/延迟/失败率）
+
+### 11.7 与 SuperVM 集成
+- 配置：遵循 `ZK_BATCH_ENABLE|SIZE|FLUSH_INTERVAL_MS`；协调器与参与分片均可独立配置。
+- 推荐：在参与分片启用批量模式，减少多事务并发下的平均验证开销。
+- 安全：各分片必须独立完成验证成功后才可进行本地锁与 prepare。
+
+---
+
+## 12. Proto 说明
+已新增 `proto/cross_shard.proto` 草案，覆盖 Prepare/Commit/Abort 及隐私字段（PrivacyProof）。
+后续将配合 tonic 代码生成与服务骨架实现。
+
+
+---
+
 **下一步**: 创建 `src/vm-runtime/src/shard_coordinator.rs` 实现 2PC 协调器。

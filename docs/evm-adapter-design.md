@@ -406,7 +406,41 @@ ls -lh target/release/node-core  # 对比大小
 # 预期: EVM 版本仅增加 ~2-3MB (revm 库大小)
 ```
 
-## 🚀 实施路线图
+## � 子模块化升级：EVM Adapter → Geth 子模块（MVP 定稿）
+
+为对齐“热插拔子模块 = 原链节点”的总体路线，本文件在保持现有适配器设计不变的前提下，新增首选实现路径：优先以“Geth 子模块”对接真实以太坊节点能力，原基于 revm 的适配器作为纯兼容/测试路径保留。
+
+### 子模块接口（SubmoduleAdapter）最小契约
+```rust
+pub trait SubmoduleAdapter {
+    fn start(&self) -> anyhow::Result<()>;                 // 启动/连接原链
+    fn stop(&self) -> anyhow::Result<()>;                  // 平滑停止
+    fn process_native_transaction(&self, tx: NativeTx) -> anyhow::Result<TxHash>; // 提交原生交易
+    fn execute_smart_contract(&self, tx: NativeTx) -> anyhow::Result<Receipt>;     // 合约执行（账户链）
+    fn query_native_state(&self, q: StateQuery) -> anyhow::Result<StateResult>;    // 原生状态查询
+    fn sync_to_unified_mirror(&self, mirror: &mut UnifiedStateMirror) -> anyhow::Result<()>; // 写入统一镜像
+}
+```
+
+### Geth 子模块（优先）
+- 集成方式：Engine API（首选）或 FFI 桥接
+- 能力范围：区块/交易同步、EVM 执行、账户与 ERC20 事件监听
+- 与统一层衔接：将 Receipt/Logs 转为 TxIR/StateIR，写入镜像层
+
+### 与原“EVM 适配器（revm）”的关系
+- 保留：作为无外部进程依赖的轻量兼容路径
+- 优先级：Geth 子模块 > revm 适配器
+- 选择逻辑：运行时由配置/探测决定（优先启用子模块）
+
+### MVP 范围（Phase 10 M1）
+- 定义 SubmoduleAdapter 契约
+- 实现 Geth 子模块最小骨架（同步 + 执行 + 事件→IR 写镜像）
+- ERC20 Indexer v0（Transfer 事件 → IR）
+- 与 go-ethereum 节点互联验证
+
+---
+
+## �🚀 实施路线图
 
 ### Phase 1: 接口定义 ✅ **已完成** (2025-11-05)
 - [x] 创建 `execution_trait.rs` ✅

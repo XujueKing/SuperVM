@@ -155,6 +155,37 @@ pub struct MetricsCollector {
     pub parallel_last_batch_avg_latency_ms: AtomicU64,   // ms * 1000
     pub parallel_last_batch_tps: AtomicU64,              // tps * 1000
 
+    // 批量 ZK 验证指标（验证侧，区别于并行证明生成）
+    pub zk_batch_verify_total: AtomicU64,
+    pub zk_batch_verify_failed: AtomicU64,
+    pub zk_batch_verify_batches: AtomicU64,
+    pub zk_batch_last_latency_ms: AtomicU64,            // ms * 1000（整批总耗时）
+    pub zk_batch_last_avg_latency_ms: AtomicU64,        // ms * 1000（单证明均值）
+    pub zk_batch_last_tps: AtomicU64,                   // tps * 1000（验证吞吐，proofs/sec）
+
+    // Fast→Consensus 回退统计
+    pub fast_fallback_total: AtomicU64,
+
+    // ZK 验证指标（单次验证）
+    pub zk_verify_total: AtomicU64,
+    pub zk_verify_failures: AtomicU64,
+    pub zk_verify_latency: LatencyHistogram,
+    
+    // ZK 后端类型分布（groth16/plonk/mock）
+    pub zk_backend_groth16_count: AtomicU64,
+    pub zk_backend_plonk_count: AtomicU64,
+    pub zk_backend_mock_count: AtomicU64,
+
+    // ================= Cross-Shard Prepare Metrics =================
+    // 总的跨分片 prepare 请求次数（收到的请求）
+    pub cross_shard_prepare_total: AtomicU64,
+    // prepare 阶段因版本不匹配/冲突/死锁而拒绝的次数
+    pub cross_shard_prepare_abort_total: AtomicU64,
+    // 因隐私证明验证失败导致的拒绝次数
+    pub cross_shard_privacy_invalid_total: AtomicU64,
+    // 最近一次 prepare 处理耗时（ms*1000）
+    pub cross_shard_prepare_last_latency_ms: AtomicU64,
+
     // 时间窗口统计 (用于计算窗口 TPS 及峰值)
     window_stats: Arc<Mutex<WindowStats>>,
 }
@@ -213,6 +244,27 @@ impl MetricsCollector {
             parallel_last_batch_latency_ms: AtomicU64::new(0),
             parallel_last_batch_avg_latency_ms: AtomicU64::new(0),
             parallel_last_batch_tps: AtomicU64::new(0),
+
+            zk_batch_verify_total: AtomicU64::new(0),
+            zk_batch_verify_failed: AtomicU64::new(0),
+            zk_batch_verify_batches: AtomicU64::new(0),
+            zk_batch_last_latency_ms: AtomicU64::new(0),
+            zk_batch_last_avg_latency_ms: AtomicU64::new(0),
+            zk_batch_last_tps: AtomicU64::new(0),
+
+            fast_fallback_total: AtomicU64::new(0),
+
+            zk_verify_total: AtomicU64::new(0),
+            zk_verify_failures: AtomicU64::new(0),
+            zk_verify_latency: LatencyHistogram::new(),
+            zk_backend_groth16_count: AtomicU64::new(0),
+            zk_backend_plonk_count: AtomicU64::new(0),
+            zk_backend_mock_count: AtomicU64::new(0),
+
+            cross_shard_prepare_total: AtomicU64::new(0),
+            cross_shard_prepare_abort_total: AtomicU64::new(0),
+            cross_shard_privacy_invalid_total: AtomicU64::new(0),
+            cross_shard_prepare_last_latency_ms: AtomicU64::new(0),
 
             window_stats: Arc::new(Mutex::new(WindowStats {
                 start_time: now,
@@ -326,6 +378,29 @@ impl MetricsCollector {
         output.push_str("# HELP mvcc_success_rate Transaction success rate percentage\n");
         output.push_str("# TYPE mvcc_success_rate gauge\n");
         output.push_str(&format!("mvcc_success_rate {:.2}\n", self.success_rate()));
+
+    // Fast Path 回退次数（Fast→Consensus）
+    output.push_str("# HELP vm_fast_fallback_total Total number of fast path fallbacks to consensus\n");
+    output.push_str("# TYPE vm_fast_fallback_total counter\n");
+    output.push_str(&format!("vm_fast_fallback_total {}\n", self.fast_fallback_total.load(Ordering::Relaxed)));
+
+    output.push_str("# HELP vm_fast_fallback_ratio Ratio of fast fallbacks over total committed transactions\n");
+    output.push_str("# TYPE vm_fast_fallback_ratio gauge\n");
+    output.push_str(&format!("vm_fast_fallback_ratio {:.6}\n", self.fast_fallback_ratio()));
+
+    // Cross-shard prepare metrics
+    output.push_str("# HELP cross_shard_prepare_total Total number of cross-shard Prepare requests processed\n");
+    output.push_str("# TYPE cross_shard_prepare_total counter\n");
+    output.push_str(&format!("cross_shard_prepare_total {}\n", self.cross_shard_prepare_total.load(Ordering::Relaxed)));
+    output.push_str("# HELP cross_shard_prepare_abort_total Total number of cross-shard Prepare aborts (conflict/version/privacy)\n");
+    output.push_str("# TYPE cross_shard_prepare_abort_total counter\n");
+    output.push_str(&format!("cross_shard_prepare_abort_total {}\n", self.cross_shard_prepare_abort_total.load(Ordering::Relaxed)));
+    output.push_str("# HELP cross_shard_privacy_invalid_total Total number of privacy proof validation failures in Prepare phase\n");
+    output.push_str("# TYPE cross_shard_privacy_invalid_total counter\n");
+    output.push_str(&format!("cross_shard_privacy_invalid_total {}\n", self.cross_shard_privacy_invalid_total.load(Ordering::Relaxed)));
+    output.push_str("# HELP cross_shard_prepare_last_latency_ms Last cross-shard Prepare handling latency (ms)\n");
+    output.push_str("# TYPE cross_shard_prepare_last_latency_ms gauge\n");
+    output.push_str(&format!("cross_shard_prepare_last_latency_ms {:.3}\n", self.cross_shard_prepare_last_latency_ms.load(Ordering::Relaxed) as f64 / 1000.0));
 
         // 延迟百分位
         let (p50, p90, p99) = self.txn_latency.percentiles();
@@ -450,6 +525,107 @@ impl MetricsCollector {
             self.parallel_last_batch_tps.load(Ordering::Relaxed) as f64 / 1000.0
         ));
 
+        // 批量验证指标（验证侧）
+        output.push_str("# HELP vm_privacy_zk_batch_verify_total Total ZK proofs verified in batches\n");
+        output.push_str("# TYPE vm_privacy_zk_batch_verify_total counter\n");
+        output.push_str(&format!(
+            "vm_privacy_zk_batch_verify_total {}\n",
+            self.zk_batch_verify_total.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP vm_privacy_zk_batch_verify_failed_total Total failed ZK verifications in batches\n");
+        output.push_str("# TYPE vm_privacy_zk_batch_verify_failed_total counter\n");
+        output.push_str(&format!(
+            "vm_privacy_zk_batch_verify_failed_total {}\n",
+            self.zk_batch_verify_failed.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP vm_privacy_zk_batch_verify_batches_total Total number of verification batches processed\n");
+        output.push_str("# TYPE vm_privacy_zk_batch_verify_batches_total counter\n");
+        output.push_str(&format!(
+            "vm_privacy_zk_batch_verify_batches_total {}\n",
+            self.zk_batch_verify_batches.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP vm_privacy_zk_batch_verify_batch_latency_ms Last verification batch total latency (ms)\n");
+        output.push_str("# TYPE vm_privacy_zk_batch_verify_batch_latency_ms gauge\n");
+        output.push_str(&format!(
+            "vm_privacy_zk_batch_verify_batch_latency_ms {:.3}\n",
+            self.zk_batch_last_latency_ms.load(Ordering::Relaxed) as f64 / 1000.0
+        ));
+
+        output.push_str("# HELP vm_privacy_zk_batch_verify_avg_latency_ms Last batch average per-proof verification latency (ms)\n");
+        output.push_str("# TYPE vm_privacy_zk_batch_verify_avg_latency_ms gauge\n");
+        output.push_str(&format!(
+            "vm_privacy_zk_batch_verify_avg_latency_ms {:.3}\n",
+            self.zk_batch_last_avg_latency_ms.load(Ordering::Relaxed) as f64 / 1000.0
+        ));
+
+        output.push_str("# HELP vm_privacy_zk_batch_verify_tps Last batch verification throughput proofs/sec\n");
+        output.push_str("# TYPE vm_privacy_zk_batch_verify_tps gauge\n");
+        output.push_str(&format!(
+            "vm_privacy_zk_batch_verify_tps {:.3}\n",
+            self.zk_batch_last_tps.load(Ordering::Relaxed) as f64 / 1000.0
+        ));
+
+        // ZK 验证指标（单次验证）
+        output.push_str("# HELP vm_zk_verify_total Total ZK verifications attempted\n");
+        output.push_str("# TYPE vm_zk_verify_total counter\n");
+        output.push_str(&format!(
+            "vm_zk_verify_total {}\n",
+            self.zk_verify_total.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP vm_zk_verify_failures_total Total ZK verification failures\n");
+        output.push_str("# TYPE vm_zk_verify_failures_total counter\n");
+        output.push_str(&format!(
+            "vm_zk_verify_failures_total {}\n",
+            self.zk_verify_failures.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP vm_zk_verify_failure_rate ZK verification failure rate (0.0-1.0)\n");
+        output.push_str("# TYPE vm_zk_verify_failure_rate gauge\n");
+        output.push_str(&format!(
+            "vm_zk_verify_failure_rate {:.6}\n",
+            self.zk_verify_failure_rate()
+        ));
+
+        output.push_str("# HELP vm_zk_verify_latency_avg_ms Average ZK verification latency (ms)\n");
+        output.push_str("# TYPE vm_zk_verify_latency_avg_ms gauge\n");
+        output.push_str(&format!(
+            "vm_zk_verify_latency_avg_ms {:.3}\n",
+            self.zk_verify_avg_latency_ms()
+        ));
+
+        let (zk_p50, zk_p90, zk_p99) = self.zk_verify_latency.percentiles();
+        output.push_str("# HELP vm_zk_verify_latency_p50_ms ZK verification latency P50 (ms)\n");
+        output.push_str("# TYPE vm_zk_verify_latency_p50_ms gauge\n");
+        output.push_str(&format!("vm_zk_verify_latency_p50_ms {:.3}\n", zk_p50));
+
+        output.push_str("# HELP vm_zk_verify_latency_p90_ms ZK verification latency P90 (ms)\n");
+        output.push_str("# TYPE vm_zk_verify_latency_p90_ms gauge\n");
+        output.push_str(&format!("vm_zk_verify_latency_p90_ms {:.3}\n", zk_p90));
+
+        output.push_str("# HELP vm_zk_verify_latency_p99_ms ZK verification latency P99 (ms)\n");
+        output.push_str("# TYPE vm_zk_verify_latency_p99_ms gauge\n");
+        output.push_str(&format!("vm_zk_verify_latency_p99_ms {:.3}\n", zk_p99));
+
+        // ZK 后端类型分布
+        output.push_str("# HELP vm_zk_backend_count ZK verifications by backend type\n");
+        output.push_str("# TYPE vm_zk_backend_count counter\n");
+        output.push_str(&format!(
+            "vm_zk_backend_count{{backend=\"groth16-bls12-381\"}} {}\n",
+            self.zk_backend_groth16_count.load(Ordering::Relaxed)
+        ));
+        output.push_str(&format!(
+            "vm_zk_backend_count{{backend=\"plonk\"}} {}\n",
+            self.zk_backend_plonk_count.load(Ordering::Relaxed)
+        ));
+        output.push_str(&format!(
+            "vm_zk_backend_count{{backend=\"mock\"}} {}\n",
+            self.zk_backend_mock_count.load(Ordering::Relaxed)
+        ));
+
         output
     }
 
@@ -521,5 +697,263 @@ impl MetricsCollector {
             .store((avg_latency_ms * 1000.0) as u64, Ordering::Relaxed);
         self.parallel_last_batch_tps
             .store((tps * 1000.0) as u64, Ordering::Relaxed);
+    }
+
+    /// 记录一次批量 ZK 验证（验证侧，不是证明生成）
+    pub fn record_zk_batch_verify(
+        &self,
+        total: u64,
+        failed: u64,
+        batch_latency_ms: f64,
+        avg_latency_ms: f64,
+        tps: f64,
+    ) {
+        self.zk_batch_verify_total.fetch_add(total, Ordering::Relaxed);
+        self.zk_batch_verify_failed.fetch_add(failed, Ordering::Relaxed);
+        self.zk_batch_verify_batches.fetch_add(1, Ordering::Relaxed);
+        self.zk_batch_last_latency_ms
+            .store((batch_latency_ms * 1000.0) as u64, Ordering::Relaxed);
+        self.zk_batch_last_avg_latency_ms
+            .store((avg_latency_ms * 1000.0) as u64, Ordering::Relaxed);
+        self.zk_batch_last_tps
+            .store((tps * 1000.0) as u64, Ordering::Relaxed);
+    }
+
+    /// 记录一次 Fast→Consensus 回退
+    pub fn inc_fast_fallback(&self) {
+        self.fast_fallback_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// 批量增加 Fast→Consensus 回退计数
+    pub fn inc_fast_fallback_by(&self, n: u64) {
+        if n > 0 {
+            self.fast_fallback_total.fetch_add(n, Ordering::Relaxed);
+        }
+    }
+
+    /// 便捷 getter：获取 Fast→Consensus 回退总数
+    pub fn get_fast_fallback_total(&self) -> u64 {
+        self.fast_fallback_total.load(Ordering::Relaxed)
+    }
+
+    /// 便捷 getter：获取 GC 运行次数
+    pub fn get_gc_runs(&self) -> u64 {
+        self.gc_runs.load(Ordering::Relaxed)
+    }
+
+    /// 便捷 getter：获取 flush 运行次数
+    pub fn get_flush_runs(&self) -> u64 {
+        self.flush_runs.load(Ordering::Relaxed)
+    }
+
+    /// 计算 Fast→Consensus 回退率（基于事务总数）
+    /// 返回 0.0 ~ 1.0，如果没有已提交事务则返回 0.0
+    pub fn fast_fallback_ratio(&self) -> f64 {
+        let committed = self.txn_committed.load(Ordering::Relaxed);
+        if committed == 0 { return 0.0; }
+        let fallbacks = self.fast_fallback_total.load(Ordering::Relaxed);
+        fallbacks as f64 / committed as f64
+    }
+
+    // ================= Cross-Shard Prepare Recording APIs =================
+    /// 记录一次 prepare 处理
+    /// latency_ms: 处理耗时（毫秒）
+    /// success: 是否投票 Yes
+    /// privacy_invalid: 是否因隐私验证失败导致拒绝
+    pub fn record_cross_shard_prepare(&self, latency_ms: f64, success: bool, privacy_invalid: bool) {
+        self.cross_shard_prepare_total.fetch_add(1, Ordering::Relaxed);
+        if !success { self.cross_shard_prepare_abort_total.fetch_add(1, Ordering::Relaxed); }
+        if privacy_invalid { self.cross_shard_privacy_invalid_total.fetch_add(1, Ordering::Relaxed); }
+        self.cross_shard_prepare_last_latency_ms.store((latency_ms * 1000.0) as u64, Ordering::Relaxed);
+    }
+
+    /// 记录一次 ZK 验证（成功或失败）
+    /// 
+    /// # Arguments
+    /// * `backend` - ZK 后端类型（Groth16/Plonk/Mock）
+    /// * `success` - 验证是否成功
+    /// * `duration` - 验证耗时
+    #[cfg(feature = "groth16-verifier")]
+    pub fn record_zk_verify(&self, backend: crate::zk_verifier::ZkBackend, success: bool, duration: Duration) {
+        use crate::zk_verifier::ZkBackend;
+        
+        self.zk_verify_total.fetch_add(1, Ordering::Relaxed);
+        if !success {
+            self.zk_verify_failures.fetch_add(1, Ordering::Relaxed);
+        }
+        self.zk_verify_latency.observe(duration);
+        
+        // 更新后端类型分布
+        match backend {
+            ZkBackend::Groth16Bls12_381 => {
+                self.zk_backend_groth16_count.fetch_add(1, Ordering::Relaxed);
+            }
+            ZkBackend::Plonk => {
+                self.zk_backend_plonk_count.fetch_add(1, Ordering::Relaxed);
+            }
+            ZkBackend::Mock => {
+                self.zk_backend_mock_count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// 记录一次 ZK 验证（feature gate 关闭时的占位实现）
+    #[cfg(not(feature = "groth16-verifier"))]
+    pub fn record_zk_verify(&self, _backend_str: &str, success: bool, duration: Duration) {
+        self.zk_verify_total.fetch_add(1, Ordering::Relaxed);
+        if !success {
+            self.zk_verify_failures.fetch_add(1, Ordering::Relaxed);
+        }
+        self.zk_verify_latency.observe(duration);
+        // 不区分后端类型
+    }
+
+    /// 获取 ZK 验证失败率（0.0 ~ 1.0）
+    pub fn zk_verify_failure_rate(&self) -> f64 {
+        let total = self.zk_verify_total.load(Ordering::Relaxed);
+        if total == 0 { return 0.0; }
+        let failures = self.zk_verify_failures.load(Ordering::Relaxed);
+        failures as f64 / total as f64
+    }
+
+    /// 获取 ZK 验证平均延迟（ms）
+    pub fn zk_verify_avg_latency_ms(&self) -> f64 {
+        self.zk_verify_latency.avg()
+    }
+
+    /// 获取路由统计快照（如果 SuperVM 使用此 MetricsCollector 收集）
+    /// 注：当前 SuperVM 路由计数在自身 AtomicU64 中维护，此方法预留扩展
+    /// 若需整合，可在 SuperVM 调用 collector.record_routing() 时更新此处字段
+    pub fn routing_snapshot(&self) -> RoutingSnapshot {
+        RoutingSnapshot {
+            fast_fallback_total: self.fast_fallback_total.load(Ordering::Relaxed),
+            // 占位：实际路由计数在 SuperVM，若需集中可新增 routing_fast_total 等字段
+            fast_path_count: 0,
+            consensus_path_count: 0,
+            privacy_path_count: 0,
+        }
+    }
+}
+
+/// 路由统计快照（预留，当前主要由 SuperVM::routing_stats 提供）
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RoutingSnapshot {
+    pub fast_fallback_total: u64,
+    pub fast_path_count: u64,
+    pub consensus_path_count: u64,
+    pub privacy_path_count: u64,
+}
+
+#[cfg(test)]
+mod metrics_enhanced_tests {
+    use super::*;
+
+    #[test]
+    fn test_fast_fallback_getters() {
+        let mc = MetricsCollector::new();
+        assert_eq!(mc.get_fast_fallback_total(), 0);
+        mc.inc_fast_fallback();
+        mc.inc_fast_fallback();
+        assert_eq!(mc.get_fast_fallback_total(), 2);
+    }
+
+    #[test]
+    fn test_fast_fallback_ratio() {
+        let mc = MetricsCollector::new();
+        // No commits yet
+        assert_eq!(mc.fast_fallback_ratio(), 0.0);
+        // Simulate 10 commits
+        for _ in 0..10 { mc.txn_committed.fetch_add(1, Ordering::Relaxed); }
+        mc.inc_fast_fallback();
+        mc.inc_fast_fallback();
+        let ratio = mc.fast_fallback_ratio();
+        assert!((ratio - 0.2).abs() < 1e-9, "Expected 2/10 = 0.2, got {}", ratio);
+    }
+
+    #[test]
+    fn test_prometheus_export_includes_fallback_ratio() {
+        let mc = MetricsCollector::new();
+        mc.txn_committed.fetch_add(5, Ordering::Relaxed);
+        mc.inc_fast_fallback();
+        let prom = mc.export_prometheus();
+        assert!(prom.contains("vm_fast_fallback_total 1"));
+        assert!(prom.contains("vm_fast_fallback_ratio"));
+    }
+
+    #[test]
+    fn test_routing_snapshot_structure() {
+        let mc = MetricsCollector::new();
+        mc.inc_fast_fallback();
+        let snap = mc.routing_snapshot();
+        assert_eq!(snap.fast_fallback_total, 1);
+        // Placeholder fields (实际路由计数在 SuperVM)
+        assert_eq!(snap.fast_path_count, 0);
+    }
+
+    #[test]
+    #[cfg(feature = "groth16-verifier")]
+    fn test_zk_verify_metrics_with_backend() {
+        use crate::zk_verifier::ZkBackend;
+        use std::time::Duration;
+
+        let mc = MetricsCollector::new();
+        
+        // 模拟一些 ZK 验证
+        mc.record_zk_verify(ZkBackend::Groth16Bls12_381, true, Duration::from_millis(10));
+        mc.record_zk_verify(ZkBackend::Groth16Bls12_381, false, Duration::from_millis(15));
+        mc.record_zk_verify(ZkBackend::Plonk, true, Duration::from_millis(8));
+
+        // 验证总数
+        assert_eq!(mc.zk_verify_total.load(Ordering::Relaxed), 3);
+        assert_eq!(mc.zk_verify_failures.load(Ordering::Relaxed), 1);
+
+        // 验证失败率
+        let failure_rate = mc.zk_verify_failure_rate();
+        assert!((failure_rate - 0.333333).abs() < 0.01, "Expected ~0.33, got {}", failure_rate);
+
+        // 验证后端分布
+        assert_eq!(mc.zk_backend_groth16_count.load(Ordering::Relaxed), 2);
+        assert_eq!(mc.zk_backend_plonk_count.load(Ordering::Relaxed), 1);
+        assert_eq!(mc.zk_backend_mock_count.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    #[cfg(not(feature = "groth16-verifier"))]
+    fn test_zk_verify_metrics_without_feature() {
+        use std::time::Duration;
+
+        let mc = MetricsCollector::new();
+        
+        // 使用字符串签名（feature 关闭时）
+        mc.record_zk_verify("groth16", true, Duration::from_millis(10));
+        mc.record_zk_verify("plonk", false, Duration::from_millis(15));
+
+        assert_eq!(mc.zk_verify_total.load(Ordering::Relaxed), 2);
+        assert_eq!(mc.zk_verify_failures.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_prometheus_export_includes_zk_metrics() {
+        let mc = MetricsCollector::new();
+        
+        #[cfg(feature = "groth16-verifier")]
+        {
+            use crate::zk_verifier::ZkBackend;
+            use std::time::Duration;
+            mc.record_zk_verify(ZkBackend::Groth16Bls12_381, true, Duration::from_millis(12));
+        }
+        
+        #[cfg(not(feature = "groth16-verifier"))]
+        {
+            use std::time::Duration;
+            mc.record_zk_verify("mock", true, Duration::from_millis(12));
+        }
+
+        let prom = mc.export_prometheus();
+        assert!(prom.contains("vm_zk_verify_total"));
+        assert!(prom.contains("vm_zk_verify_failures_total"));
+        assert!(prom.contains("vm_zk_verify_failure_rate"));
+        assert!(prom.contains("vm_zk_verify_latency_avg_ms"));
+        assert!(prom.contains("vm_zk_backend_count"));
     }
 }

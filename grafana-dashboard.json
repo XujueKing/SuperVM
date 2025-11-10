@@ -1002,6 +1002,61 @@
       "title": "ZK Verification Stats",
       "type": "gauge"
     }
+    ,
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "Latency (ms)", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 8, "gradientMode": "none", "hideFrom": {"tooltip": false, "viz": false, "legend": false}, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 4, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null},{"color": "yellow", "value": 10},{"color": "red", "value": 25}]},
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "id": 30,
+      "options": {"legend": {"calcs": ["lastNotNull","max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "expr": "vm_privacy_zk_batch_verify_batch_latency_ms", "legendFormat": "Batch Total", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "expr": "vm_privacy_zk_batch_verify_avg_latency_ms", "legendFormat": "Per-Proof Avg", "refId": "B"}
+      ],
+      "title": "ZK Batch Verification Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "id": 31,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "expr": "vm_privacy_zk_batch_verify_tps", "legendFormat": "Batch Verify TPS", "refId": "A"}
+      ],
+      "title": "ZK Batch Verification Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null},{"color": "yellow", "value": 1},{"color": "green", "value": 5}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 56 },
+      "id": 32,
+      "options": {"orientation": "auto", "reduceOptions": {"values": false, "calcs": ["lastNotNull"], "fields": ""}, "showThresholdLabels": false, "showThresholdMarkers": true},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "expr": "vm_privacy_zk_batch_verify_total", "legendFormat": "Total Proofs", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "expr": "vm_privacy_zk_batch_verify_failed_total", "legendFormat": "Failed Proofs", "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}, "expr": "vm_privacy_zk_batch_verify_batches_total", "legendFormat": "Batches", "refId": "C"}
+      ],
+      "title": "ZK Batch Verification Volume & Failures",
+      "type": "gauge"
+    }
   ],
   "refresh": "5s",
   "schemaVersion": 38,

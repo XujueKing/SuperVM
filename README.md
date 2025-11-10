@@ -1,5 +1,9 @@
 # SuperVM - Next-Generation Decentralized Virtual Machine
 
+> **潘多拉星核 (Pandora Core)**: Web3 基础设施操作系统  
+> 📄 **[白皮书 (中文)](./WHITEPAPER.md)** | 📄 **[Whitepaper (EN)](./WHITEPAPER_EN.md)** | 🗺️ **[路线图](./ROADMAP.md)** | 📚 **[开发文档](./DEVELOPER.md)**  
+> 🎨 **[资产生成指南](./ASSETS-README.md)** | 🚀 **[快速开始](./QUICK-START-ASSETS.md)**
+
 **开发者**: Rainbow Haruko(CHINA) / king(CHINA) / NoahX(CHINA) / Alan Tang(CHINA) / Xuxu(CHINA)
 
 ---
@@ -12,10 +16,27 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 - 🔌 插件化兼容：EVM 通过适配器在插件层实现，零入侵内核
 - 🔒 隐私专项：ZK/环签等在独立模块推进（参见 ROADMAP-ZK-Privacy）
 
+**核心定位**: 不是"跨链桥"，而是**多链聚合器** + **Web3 操作系统**
+
 当前工作区版本：0.5.0（活跃开发）
 
-## 🚩 最新进展亮点（2025-11-08）
+## 🚩 最新进展亮点（2025-11-09）
 
+- 🆕 **双曲线 Solidity 验证器 (Phase 2.2)**：
+  - **BLS12-381** (128-bit 安全,未来 EVM 2.0) + **BN254** (100-bit,当前 EVM 原生支持)
+  - 统一架构 CurveKind 枚举,两条曲线完全并行,互不影响
+  - BN254 合约 3474 字节,使用 EVM 预编译 0x08 (低 Gas ~150K-200K)
+  - BLS12-381 合约 5574 字节,面向 zkEVM 2.0 与长期安全
+  - Gas 优化: external+calldata 签名,gamma_abc 内联展开,移除动态数组
+  - 示例: `generate_bn254_multiply_sol_verifier.rs` (BN254) + 测试 (BLS12-381)
+  - 详见: [DUAL-CURVE-VERIFIER-GUIDE.md](docs/DUAL-CURVE-VERIFIER-GUIDE.md)
+- 🆕 **RingCT 并行证明与批量验证 (Phase 2.3)**：
+  - 全局 ProvingKey 缓存(once_cell),消除重复setup开销(节省1-2秒/实例)
+  - RingCT 并行证明: 50.8 proofs/sec (批次32,延迟19.7ms,100%成功率)
+  - 批量验证: 104.6 verifications/sec (8倍提升vs逐个验证)
+  - HTTP基准测试: :9090/metrics (Prometheus), /summary (人类可读)
+  - Grafana监控: 7个面板,3条告警规则,完整部署指南
+  - Fast→Consensus回退: 环境变量配置,自动路由降级
 - 🆕 **快照管理/恢复/自动清理**：支持 create_checkpoint、restore_from_checkpoint、maybe_create_snapshot、cleanup_old_snapshots，3 个测试用例全部通过
 - 🆕 **MVCC 自动刷新机制**：flush_to_storage、load_from_storage，支持双触发器（时间+区块数），demo 稳定运行
 - 🆕 **Prometheus 指标集成**：metrics.rs 模块（MetricsCollector + LatencyHistogram），集成到 MVCC commit/commit_parallel，export_prometheus 导出，metrics_demo 运行成功（TPS≈669, 成功率≈98.61%，该 demo 仅用于健康检查，不代表性能上限）
@@ -36,6 +57,19 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 ## 🚀 快速演示命令
 
 ```powershell
+# 双曲线 Solidity 验证器生成 (Phase 2.2)
+# BN254 (当前 EVM 链,使用预编译 0x08,低 Gas ~150K-200K)
+cargo run -p vm-runtime --features groth16-verifier --example generate_bn254_multiply_sol_verifier --release
+# 输出: contracts/BN254MultiplyVerifier.sol (3474 bytes)
+
+# BLS12-381 测试 (未来 EVM 2.0,高安全 128-bit)
+cargo test -p vm-runtime --features groth16-verifier privacy::solidity_verifier --lib -- --nocapture
+# 输出: target/contracts/MultiplyVerifier.sol (5574 bytes)
+
+# RingCT 并行证明 HTTP 基准测试 (Phase 2.3)
+cargo run -p vm-runtime --features groth16-verifier --example zk_parallel_http_bench --release
+# 访问: http://localhost:9090/metrics (Prometheus) 和 /summary (摘要)
+
 # Phase 5：Fast Path 基准（可设置 FAST_PATH_ITERS/FAST_PATH_OBJECTS）
 cargo run -p vm-runtime --example fast_path_bench --release
 
@@ -68,7 +102,12 @@ cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --featur
 
 ## 📚 关键文档入口
 
+- [DUAL-CURVE-VERIFIER-GUIDE.md](docs/DUAL-CURVE-VERIFIER-GUIDE.md) - 双曲线 Solidity 验证器指南 (BLS12-381 + BN254) 🔐 **NEW**
 - [METRICS-COLLECTOR.md](docs/METRICS-COLLECTOR.md) - Prometheus 指标收集器文档
+- [PARALLEL-PROVER-GUIDE.md](docs/PARALLEL-PROVER-GUIDE.md) - RingCT 并行证明快速参考 🔐
+- [RINGCT-PERFORMANCE-BASELINE.md](docs/RINGCT-PERFORMANCE-BASELINE.md) - RingCT 性能基准数据 📊
+- [GRAFANA-RINGCT-PANELS.md](docs/GRAFANA-RINGCT-PANELS.md) - Grafana RingCT 面板配置 📈
+- [GRAFANA-QUICK-DEPLOY.md](docs/GRAFANA-QUICK-DEPLOY.md) - 监控系统快速部署 🚀
 - [PHASE-4.3-WEEK3-4-SUMMARY.md](docs/PHASE-4.3-WEEK3-4-SUMMARY.md) - Week 3-4 阶段总结
 - [ROCKSDB-ADAPTIVE-QUICK-START.md](docs/ROCKSDB-ADAPTIVE-QUICK-START.md) - RocksDB 批量写入快速指南
 - [sui-smart-contract-analysis.md](docs/sui-smart-contract-analysis.md) - Sui 对象模型与 SuperVM 三通道路由（Phase 5）
@@ -77,12 +116,14 @@ cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --featur
 
 ---
 
-## 📝 阶段性总结（2025-11-08）
+## 📝 阶段性总结（2025-11-09）
 
-1. 快照、自动刷新、Prometheus 指标、HTTP /metrics 端点、状态裁剪五大功能全部落地，demo 与测试用例均通过。
-2. 性能数据对齐：单线程事务提交 242K TPS；多线程高竞争 ~290K TPS；RocksDB 批量写入 754K–860K ops/s；metrics_demo 指标（TPS≈669）仅作健康检查参考；状态裁剪清理 150 版本。
-3. 文档与编码规范同步升级，90+ 文档批量转换为 UTF-8，开发体验与可维护性提升。
-4. 剩余任务已明确，下一步聚焦 Grafana Dashboard、长期稳定性测试、单元/集成测试补充。
+1. **双曲线 Solidity 验证器完成 (Phase 2.2 Task 1)**：BLS12-381 (未来 EVM 2.0, 128-bit 安全) + BN254 (当前 EVM 原生,低 Gas) 双后端实现,合约生成测试通过,文档完整。
+2. **RingCT 并行证明与批量验证 (Phase 2.3)**：50.8 proofs/sec (并行),104.6 verifications/sec (批量),Grafana 监控完整部署,HTTP 基准测试稳定。
+3. 快照、自动刷新、Prometheus 指标、HTTP /metrics 端点、状态裁剪五大功能全部落地,demo 与测试用例均通过。
+4. 性能数据对齐：单线程事务提交 242K TPS；多线程高竞争 ~290K TPS；RocksDB 批量写入 754K–860K ops/s。
+5. 文档与编码规范同步升级，90+ 文档批量转换为 UTF-8，开发体验与可维护性提升。
+6. 剩余任务：Gas 成本测量 (BN254 testnet 部署)、批量验证集成 SuperVM、24h 稳定性测试、Grafana 生产配置。
 5. 详细进展、数据与代码示例见 `docs/PHASE-4.3-WEEK3-4-SUMMARY.md`、`docs/METRICS-COLLECTOR.md`。
 
 ### 快速入口

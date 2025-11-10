@@ -18,9 +18,14 @@ pub mod commitment;
 pub mod groth16_verifier;
 pub mod range_proof;
 pub mod ring_signature;
+#[cfg(feature = "groth16-verifier")]
+pub mod batch_verifier;
+#[cfg(feature = "groth16-verifier")]
+pub mod solidity_verifier;
 pub mod stealth_address;
 pub mod types;
 pub mod zksnark; // Phase 2.2.4 // Optional: Groth16 backend adapter
+#[cfg(feature = "groth16-verifier")]
 pub mod parallel_prover; // Phase 2.2.X: 并行证明生成 (rayon 批量 prove)
                                 // pub mod ringct;   // Phase 2.2.5
                                 // pub mod mixing;   // Phase 2.2.6
@@ -29,7 +34,14 @@ pub mod parallel_prover; // Phase 2.2.X: 并行证明生成 (rayon 批量 prove)
 pub use groth16_verifier::Groth16Verifier;
 pub use types::*;
 pub use zksnark::{NoopVerifier, ZkCircuitId, ZkError, ZkVerifier};
-pub use parallel_prover::{ParallelProveConfig, ParallelProofStats, ParallelProver};
+#[cfg(feature = "groth16-verifier")]
+pub use parallel_prover::{
+    ParallelProveConfig,
+    ParallelProofStats,
+    ParallelProver,
+    RingCtWitness,
+    RingCtParallelProver,
+};
 // pub use ring_signature::*;
 // pub use stealth_address::*;
 // pub use commitment::*;

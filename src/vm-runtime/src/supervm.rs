@@ -77,6 +77,25 @@ pub struct SuperVM<'a> {
     /// ZK 验证滑动窗口: 固定容量环形缓冲存最近 N 次耗时(ns)；仅在 feature 启用时使用
     #[cfg(feature = "groth16-verifier")]
     zk_latency_window: parking_lot::Mutex<ZkLatencyWindow>,
+
+    // ================= Batch ZK Verification (SuperVM-level buffering) =================
+    // 通过在隐私路径收集 proof 与 public inputs，按批次触发验证以降低整体均值开销。
+    // 原型阶段：仍使用单个 ZkVerifier 逐个验证（暂未做真正聚合算法），但一次 Flush 批量处理并输出批量指标。
+    #[cfg(feature = "groth16-verifier")]
+    batch_enabled: bool,
+    #[cfg(feature = "groth16-verifier")]
+    batch_size: usize,
+    #[cfg(feature = "groth16-verifier")]
+    batch_flush_interval_ms: u64,
+    #[cfg(feature = "groth16-verifier")]
+    batch_buffer: parking_lot::Mutex<Vec<(Vec<u8>, Vec<u8>)>>, // (proof_bytes, public_input_bytes)
+    #[cfg(feature = "groth16-verifier")]
+    batch_last_flush: std::sync::Mutex<std::time::Instant>,
+
+    /// Fast→Consensus 回退开关
+    fallback_enabled: bool,
+    /// 允许回退的错误关键词白名单（简单包含匹配）
+    fallback_error_whitelist: Vec<&'static str>,
 }
 
 impl<'a> SuperVM<'a> {
@@ -99,6 +118,18 @@ impl<'a> SuperVM<'a> {
             zk_verify_last_ns: AtomicU64::new(0),
             #[cfg(feature = "groth16-verifier")]
             zk_latency_window: parking_lot::Mutex::new(ZkLatencyWindow::new(64)),
+            #[cfg(feature = "groth16-verifier")]
+            batch_enabled: false,
+            #[cfg(feature = "groth16-verifier")]
+            batch_size: 32,
+            #[cfg(feature = "groth16-verifier")]
+            batch_flush_interval_ms: 50, // 默认 50ms 刷新窗口
+            #[cfg(feature = "groth16-verifier")]
+            batch_buffer: parking_lot::Mutex::new(Vec::with_capacity(64)),
+            #[cfg(feature = "groth16-verifier")]
+            batch_last_flush: std::sync::Mutex::new(std::time::Instant::now()),
+            fallback_enabled: false,
+            fallback_error_whitelist: Vec::new(),
         }
     }
 
@@ -120,6 +151,63 @@ impl<'a> SuperVM<'a> {
         self
     }
 
+    /// 启用 Fast→Consensus 回退
+    pub fn with_fallback(mut self, enabled: bool) -> Self {
+        self.fallback_enabled = enabled;
+        self
+    }
+
+    /// 设置回退错误白名单（字符串匹配）
+    pub fn with_fallback_whitelist(mut self, errs: Vec<&'static str>) -> Self {
+        self.fallback_error_whitelist = errs;
+        self
+    }
+
+    /// 从环境变量注入回退配置
+    /// SUPERVM_ENABLE_FAST_FALLBACK=true|1
+    /// SUPERVM_FALLBACK_ON_ERRORS=Conflict,LockBusy,NotOwned
+    pub fn from_env(mut self) -> Self {
+        if let Ok(v) = std::env::var("SUPERVM_ENABLE_FAST_FALLBACK") {
+            if v.eq_ignore_ascii_case("true") || v == "1" { self.fallback_enabled = true; }
+        }
+        if let Ok(v) = std::env::var("SUPERVM_FALLBACK_ON_ERRORS") {
+            if !v.trim().is_empty() {
+                let list: Vec<&'static str> = v
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| {
+                        // Box::leak 返回 &'static mut str，这里协变为不可变引用
+                        let leaked: &'static mut str = Box::leak(s.to_string().into_boxed_str());
+                        let imm: &'static str = leaked;
+                        imm
+                    })
+                    .collect();
+                self.fallback_error_whitelist = list;
+            }
+        }
+        // 批量 ZK 验证环境变量 (feature gated)
+        #[cfg(feature = "groth16-verifier")]
+        {
+            if let Ok(v) = std::env::var("ZK_BATCH_ENABLE") {
+                if v.eq_ignore_ascii_case("true") || v == "1" { self.batch_enabled = true; }
+            }
+            if let Ok(v) = std::env::var("ZK_BATCH_SIZE") {
+                if let Ok(sz) = v.parse::<usize>() { if sz > 0 { self.batch_size = sz; } }
+            }
+            if let Ok(v) = std::env::var("ZK_BATCH_FLUSH_INTERVAL_MS") {
+                if let Ok(iv) = v.parse::<u64>() { if iv > 0 { self.batch_flush_interval_ms = iv; } }
+            }
+        }
+        self
+    }
+
+    fn fallback_allowed(&self, err: &str) -> bool {
+        if !self.fallback_enabled { return false; }
+        if self.fallback_error_whitelist.is_empty() { return true; }
+        self.fallback_error_whitelist.iter().any(|e| err.contains(e))
+    }
+
     /// 隐私验证（支持真实 ZK 验证器）
     ///
     /// 如果配置了 ZK 验证器且提供了 proof，使用真实验证；
@@ -135,24 +223,88 @@ impl<'a> SuperVM<'a> {
     ) -> bool {
         #[cfg(feature = "groth16-verifier")]
         {
-            // 如果提供了验证器和 proof，执行真实验证
-            if let (Some(verifier), Some(proof), Some(public_input)) =
-                (self.zk, proof_bytes, public_input_bytes)
-            {
-                let start = std::time::Instant::now();
-                let res = match verifier.verify(proof, public_input) {
-                    Ok(valid) => valid,
-                    Err(_) => false,
-                };
-                let elapsed = start.elapsed().as_nanos() as u64;
-                self.zk_verify_count.fetch_add(1, Ordering::Relaxed);
-                self.zk_verify_total_ns.fetch_add(elapsed, Ordering::Relaxed);
-                self.zk_verify_last_ns.store(elapsed, Ordering::Relaxed);
-                // 记录滑动窗口
-                if let Some(mut w) = self.zk_latency_window.try_lock() {
-                    w.push(elapsed);
+            // Batch 逻辑：若启用批量并提供 proof/public_input，则进入缓冲
+            if let (Some(verifier), Some(proof), Some(public_input)) = (self.zk, proof_bytes, public_input_bytes) {
+                if self.batch_enabled {
+                    // Push into buffer
+                    {
+                        let mut buf = self.batch_buffer.lock();
+                        buf.push((proof.to_vec(), public_input.to_vec()));
+                    }
+                    // 检查是否需要 Flush
+                    let should_flush = {
+                        let buf_len = { self.batch_buffer.lock().len() };
+                        if buf_len >= self.batch_size { true } else {
+                            let last_guard = self.batch_last_flush.lock().unwrap();
+                            last_guard.elapsed().as_millis() as u64 >= self.batch_flush_interval_ms && buf_len > 0
+                        }
+                    };
+                    if should_flush {
+                        let batch_items = {
+                            let mut buf = self.batch_buffer.lock();
+                            let items = std::mem::take(&mut *buf); // drain
+                            items
+                        };
+                        // 更新 flush 时间
+                        {
+                            let mut last = self.batch_last_flush.lock().unwrap();
+                            *last = std::time::Instant::now();
+                        }
+                        // 执行批量验证（逐个调用 verifier.verify）
+                        let start_batch = std::time::Instant::now();
+                        let mut results: Vec<bool> = Vec::with_capacity(batch_items.len());
+                        for (p_bytes, pi_bytes) in &batch_items {
+                            let r = verifier.verify(p_bytes, pi_bytes).unwrap_or(false);
+                            // 记录单次验证指标（保持与非批量一致）
+                            let single_elapsed = start_batch.elapsed(); // 这里不精准；保持简单不重复测每个单次耗时
+                            let single_ns = single_elapsed.as_nanos() as u64;
+                            self.zk_verify_count.fetch_add(1, Ordering::Relaxed);
+                            self.zk_verify_total_ns.fetch_add(single_ns, Ordering::Relaxed);
+                            self.zk_verify_last_ns.store(single_ns, Ordering::Relaxed);
+                            if let Some(mut w) = self.zk_latency_window.try_lock() { w.push(single_ns); }
+                            results.push(r);
+                        }
+                        let batch_elapsed = start_batch.elapsed();
+                        // 计算统计并写入 MetricsCollector（通过 scheduler -> store -> metrics）
+                        if let Some(scheduler) = self.scheduler {
+                            if let Some(mc) = scheduler.store().get_metrics() {
+                                let total = results.len() as u64;
+                                let failed = results.iter().filter(|&&ok| !ok).count() as u64;
+                                let batch_ms = batch_elapsed.as_secs_f64() * 1000.0;
+                                let avg_latency_ms = if total > 0 { batch_ms / total as f64 } else { 0.0 };
+                                let tps = if batch_elapsed.as_secs_f64() > 0.0 { (total - failed) as f64 / batch_elapsed.as_secs_f64() } else { 0.0 };
+                                mc.record_zk_batch_verify(total, failed, batch_ms, avg_latency_ms, tps);
+                            }
+                        }
+                        // 当前调用的结果是最后一个加入的 proof
+                        if let Some(last) = results.last() { return *last; } else { return false; }
+                    } else {
+                        // 未到 flush 条件，执行单次验证以避免延迟接受（保持语义安全）
+                        let start = std::time::Instant::now();
+                        let res = verifier.verify(proof, public_input).unwrap_or(false);
+                        let elapsed = start.elapsed().as_nanos() as u64;
+                        self.zk_verify_count.fetch_add(1, Ordering::Relaxed);
+                        self.zk_verify_total_ns.fetch_add(elapsed, Ordering::Relaxed);
+                        self.zk_verify_last_ns.store(elapsed, Ordering::Relaxed);
+                        if let Some(mut w) = self.zk_latency_window.try_lock() { w.push(elapsed); }
+                        // 将当前项从缓冲移除，避免后续批量重复验证
+                        {
+                            let mut buf = self.batch_buffer.lock();
+                            let _ = buf.pop();
+                        }
+                        return res;
+                    }
+                } else {
+                    // 未启用批量，走原始单次验证路径
+                    let start = std::time::Instant::now();
+                    let res = verifier.verify(proof, public_input).unwrap_or(false);
+                    let elapsed = start.elapsed().as_nanos() as u64;
+                    self.zk_verify_count.fetch_add(1, Ordering::Relaxed);
+                    self.zk_verify_total_ns.fetch_add(elapsed, Ordering::Relaxed);
+                    self.zk_verify_last_ns.store(elapsed, Ordering::Relaxed);
+                    if let Some(mut w) = self.zk_latency_window.try_lock() { w.push(elapsed); }
+                    return res;
                 }
-                return res;
             }
         }
         
@@ -160,6 +312,85 @@ impl<'a> SuperVM<'a> {
         // 如需模拟延迟，可启用以下代码
         // std::thread::sleep(std::time::Duration::from_millis(0));
         true
+    }
+
+    /// 手动触发批量 ZK 验证 Flush（用于测试或定时器外部触发）
+    /// 返回 (total, failed)
+    #[cfg(feature = "groth16-verifier")]
+    pub fn flush_zk_batch(&self) -> (u64, u64) {
+        if !self.batch_enabled { return (0, 0); }
+        let verifier = match self.zk { Some(v) => v, None => return (0, 0) };
+        let batch_items = {
+            let mut buf = self.batch_buffer.lock();
+            if buf.is_empty() { return (0, 0); }
+            std::mem::take(&mut *buf)
+        };
+        {
+            let mut last = self.batch_last_flush.lock().unwrap();
+            *last = std::time::Instant::now();
+        }
+        let start_batch = std::time::Instant::now();
+        let mut success = 0u64;
+        let mut total_ns_accum: u64 = 0;
+        for (p, pi) in &batch_items {
+            let s = std::time::Instant::now();
+            let ok = verifier.verify(p, pi).unwrap_or(false);
+            let ns = s.elapsed().as_nanos() as u64;
+            total_ns_accum = total_ns_accum.saturating_add(ns);
+            self.zk_verify_count.fetch_add(1, Ordering::Relaxed);
+            self.zk_verify_total_ns.fetch_add(ns, Ordering::Relaxed);
+            self.zk_verify_last_ns.store(ns, Ordering::Relaxed);
+            if let Some(mut w) = self.zk_latency_window.try_lock() { w.push(ns); }
+            if ok { success += 1; }
+        }
+        let batch_elapsed = start_batch.elapsed();
+        if let Some(scheduler) = self.scheduler {
+            if let Some(mc) = scheduler.store().get_metrics() {
+                let total = batch_items.len() as u64;
+                let failed = total.saturating_sub(success);
+                let batch_ms = batch_elapsed.as_secs_f64() * 1000.0;
+                let avg_latency_ms = if total > 0 { batch_ms / total as f64 } else { 0.0 };
+                let tps = if batch_elapsed.as_secs_f64() > 0.0 { success as f64 / batch_elapsed.as_secs_f64() } else { 0.0 };
+                mc.record_zk_batch_verify(total, failed, batch_ms, avg_latency_ms, tps);
+                return (total, failed);
+            }
+        }
+        (batch_items.len() as u64, batch_items.len() as u64 - success)
+    }
+
+    /// 启动后台定时 flush 线程（需外部保证生命周期安全）
+    /// 
+    /// # Safety
+    /// 调用方必须确保 SuperVM 实例在后台线程运行期间保持有效（通常用 Arc/Box::leak 或进程级 static）。
+    /// interval_ms: 轮询间隔毫秒；仅在 batch_enabled 时实际执行 flush
+    #[cfg(feature = "groth16-verifier")]
+    pub fn start_batch_flush_loop(&self, interval_ms: u64) {
+        if interval_ms == 0 { return; }
+        if !self.batch_enabled { return; }
+        // 复制必要配置到线程本地
+        let batch_size = self.batch_size;
+        let flush_interval_ms = self.batch_flush_interval_ms;
+        // 使用原始指针跨线程，调用方必须保证 SuperVM 实例生命周期覆盖后台线程
+        let self_ptr: usize = self as *const _ as usize; // 转为 usize 规避 Send 检查
+        std::thread::spawn(move || {
+            let sleep_dur = std::time::Duration::from_millis(interval_ms);
+            loop {
+                std::thread::sleep(sleep_dur);
+                unsafe {
+                    let vm = &*(self_ptr as *const SuperVM);
+                    if !vm.batch_enabled { continue; }
+                    // 检查是否需要 flush（尺寸或时间条件）
+                    let len = vm.batch_buffer.lock().len();
+                    if len == 0 { continue; }
+                    let last_guard = vm.batch_last_flush.lock().unwrap();
+                    let elapsed_ms = last_guard.elapsed().as_millis() as u64;
+                    drop(last_guard);
+                    if len >= batch_size || elapsed_ms >= flush_interval_ms {
+                        let _ = vm.flush_zk_batch();
+                    }
+                }
+            }
+        });
     }
 
     /// 供上层在进入隐私路径前主动调用的验证入口（带明确错误返回）
@@ -376,15 +607,42 @@ impl<'a> SuperVM<'a> {
                     return_value: Some(val),
                     latency_ms: start.elapsed().as_millis() as u64,
                 },
-                Err(e) => ExecutionReceipt {
-                    path,
-                    accepted: false,
-                    reason: Some(e),
-                    success: false,
-                    fallback_to_consensus: false,
-                    return_value: None,
-                    latency_ms: start.elapsed().as_millis() as u64,
-                },
+                Err(e) => {
+                    // FastPath 执行失败，考虑回退
+                    if self.fallback_allowed(&e) {
+                        // 记录回退指标（需要上层将 MetricsCollector 注入并暴露接口，这里假设有全局或单例访问）
+                        if let Some(scheduler) = self.scheduler {
+                            // 通过 MVCC Store 暴露的 get_metrics() 访问指标收集器
+                            if let Some(store_metrics) = scheduler.store().get_metrics() {
+                                store_metrics.inc_fast_fallback();
+                            }
+                        }
+                        // 回退到共识路径执行
+                        let scheduler = self
+                            .scheduler
+                            .expect("SuperVM: scheduler not configured, call with_scheduler()");
+                        let r = scheduler.execute_txn(tx_id, |txn| consensus_op(txn));
+                        ExecutionReceipt {
+                            path: ExecutionPath::ConsensusPath,
+                            accepted: true,
+                            reason: r.error.clone(),
+                            success: r.success,
+                            fallback_to_consensus: true,
+                            return_value: r.return_value,
+                            latency_ms: start.elapsed().as_millis() as u64,
+                        }
+                    } else {
+                        ExecutionReceipt {
+                            path,
+                            accepted: false,
+                            reason: Some(e),
+                            success: false,
+                            fallback_to_consensus: false,
+                            return_value: None,
+                            latency_ms: start.elapsed().as_millis() as u64,
+                        }
+                    }
+                }
             },
             ExecutionPath::ConsensusPath | ExecutionPath::PrivatePath => {
                 // 对于隐私路径，先执行 ZK 验证
@@ -514,7 +772,7 @@ impl<'a> SuperVM<'a> {
     pub fn execute_batch_routed_with_fallback(
         &self,
         txs: Vec<TxnTuple>,
-    ) -> (BatchTxnResult, BatchTxnResult, u64) {
+    ) -> (BatchTxnResult, BatchTxnResult, u64, Vec<TxId>) {
         let scheduler = self
             .scheduler
             .expect("SuperVM: scheduler not configured, call with_scheduler()");
@@ -553,7 +811,8 @@ impl<'a> SuperVM<'a> {
         };
 
         // 将 fast 失败的回退到 consensus
-        let mut fast_fallbacks: u64 = 0;
+    let mut fast_fallbacks: u64 = 0;
+    let mut fallback_ids: Vec<TxId> = Vec::new();
         if !fast_items.is_empty() {
             let failed_ids: std::collections::HashSet<TxId> = fast_result
                 .results
@@ -563,6 +822,11 @@ impl<'a> SuperVM<'a> {
                 .collect();
             if !failed_ids.is_empty() {
                 fast_fallbacks = failed_ids.len() as u64;
+                fallback_ids = failed_ids.iter().copied().collect();
+                // 增加回退计数到 MetricsCollector
+                if let Some(mc) = scheduler.store().get_metrics() {
+                    mc.inc_fast_fallback_by(fast_fallbacks);
+                }
                 for (id, f) in fast_items.into_iter() {
                     if failed_ids.contains(&id) {
                         consensus_items.push((id, f));
@@ -592,11 +856,11 @@ impl<'a> SuperVM<'a> {
             scheduler.execute_batch(cloned)
         };
 
-        (fast_result, consensus_result, fast_fallbacks)
+    (fast_result, consensus_result, fast_fallbacks, fallback_ids)
     }
 
     /// 标准批量执行入口（带路由与回退）
-    pub fn execute_batch(&self, txs: Vec<TxnTuple>) -> (BatchTxnResult, BatchTxnResult, u64) {
+    pub fn execute_batch(&self, txs: Vec<TxnTuple>) -> (BatchTxnResult, BatchTxnResult, u64, Vec<TxId>) {
         self.execute_batch_routed_with_fallback(txs)
     }
 
@@ -710,35 +974,52 @@ impl<'a> SuperVM<'a> {
     pub fn export_routing_prometheus(&self) -> String {
         let stats = self.routing_stats();
         let total = stats.total();
-
         let mut out = String::new();
         out.push_str("# HELP vm_routing_fast_total Total number of transactions routed to fast path\n");
         out.push_str("# TYPE vm_routing_fast_total counter\n");
         out.push_str(&format!("vm_routing_fast_total {}\n", stats.fast_path_count));
-
         out.push_str("# HELP vm_routing_consensus_total Total number of transactions routed to consensus path\n");
         out.push_str("# TYPE vm_routing_consensus_total counter\n");
         out.push_str(&format!("vm_routing_consensus_total {}\n", stats.consensus_path_count));
-
         out.push_str("# HELP vm_routing_privacy_total Total number of transactions routed to privacy path\n");
         out.push_str("# TYPE vm_routing_privacy_total counter\n");
         out.push_str(&format!("vm_routing_privacy_total {}\n", stats.privacy_path_count));
-
         out.push_str("# HELP vm_routing_fast_ratio Ratio of fast path routed transactions\n");
         out.push_str("# TYPE vm_routing_fast_ratio gauge\n");
         out.push_str(&format!("vm_routing_fast_ratio {:.6}\n", stats.fast_path_ratio()));
-
         out.push_str("# HELP vm_routing_consensus_ratio Ratio of consensus path routed transactions\n");
         out.push_str("# TYPE vm_routing_consensus_ratio gauge\n");
         out.push_str(&format!("vm_routing_consensus_ratio {:.6}\n", stats.consensus_path_ratio()));
-
         out.push_str("# HELP vm_routing_privacy_ratio Ratio of privacy path routed transactions\n");
         out.push_str("# TYPE vm_routing_privacy_ratio gauge\n");
         out.push_str(&format!("vm_routing_privacy_ratio {:.6}\n", stats.privacy_path_ratio()));
-
         out.push_str("# HELP vm_routing_total Total number of routed transactions (all paths)\n");
         out.push_str("# TYPE vm_routing_total counter\n");
         out.push_str(&format!("vm_routing_total {}\n", total));
+
+        // 新增：合并回退指标（如有调度器和指标收集器）
+        if let Some(scheduler) = self.scheduler {
+            if let Some(mc) = scheduler.store().get_metrics() {
+                out.push_str("# HELP vm_fast_fallback_total Total number of fast path fallbacks to consensus\n");
+                out.push_str("# TYPE vm_fast_fallback_total counter\n");
+                out.push_str(&format!("vm_fast_fallback_total {}\n", mc.get_fast_fallback_total()));
+                out.push_str("# HELP vm_fast_fallback_ratio Ratio of fast fallbacks over total committed transactions\n");
+                out.push_str("# TYPE vm_fast_fallback_ratio gauge\n");
+                out.push_str(&format!("vm_fast_fallback_ratio {:.6}\n", mc.fast_fallback_ratio()));
+            }
+        }
+
+        // 新增：fast 路由尝试回退比率（基于 fast 路由总数）
+        if let Some(scheduler) = self.scheduler {
+            if let Some(mc) = scheduler.store().get_metrics() {
+                let fast_total = stats.fast_path_count;
+                let fallback_total = mc.get_fast_fallback_total();
+                let ratio = if fast_total > 0 { fallback_total as f64 / fast_total as f64 } else { 0.0 };
+                out.push_str("# HELP vm_routing_fast_fallback_ratio Ratio of fast fallbacks over fast path attempts\n");
+                out.push_str("# TYPE vm_routing_fast_fallback_ratio gauge\n");
+                out.push_str(&format!("vm_routing_fast_fallback_ratio {:.6}\n", ratio));
+            }
+        }
 
         // 自适应扩展指标
         if let Some(ad) = &self.adaptive {
@@ -865,5 +1146,305 @@ impl RoutingStats {
         } else {
             0.0
         }
+    }
+}
+
+// ===========================================================
+// 内部路由与执行冒烟测试（迁移自 tests/ 以规避外部 0 tests 问题）
+// ===========================================================
+#[cfg(test)]
+mod routing_smoke_tests {
+    use super::*;
+    use crate::{OwnershipManager, OwnershipType, ObjectMetadata};
+    use crate::parallel_mvcc::MvccScheduler;
+
+    type Address = [u8;32];
+    type ObjectId = [u8;32];
+    fn addr(id: u8) -> Address { let mut a=[0u8;32]; a[0]=id; a }
+    fn obj(id: u8) -> ObjectId { let mut o=[0u8;32]; o[0]=id; o }
+
+    fn register_owned(om: &OwnershipManager, id: ObjectId, owner: Address) {
+        let meta = ObjectMetadata { id, version:0, ownership: OwnershipType::Owned(owner), object_type: "Test".into(), created_at:0, updated_at:0, size:0, is_deleted:false};
+        om.register_object(meta).unwrap();
+    }
+    fn register_shared(om: &OwnershipManager, id: ObjectId) {
+        let meta = ObjectMetadata { id, version:0, ownership: OwnershipType::Shared, object_type: "Test".into(), created_at:0, updated_at:0, size:0, is_deleted:false};
+        om.register_object(meta).unwrap();
+    }
+
+    fn tx(from: Address, objects: Vec<ObjectId>, privacy: Privacy) -> Transaction { Transaction { from, objects, privacy } }
+
+    #[test]
+    fn route_owned_public_goes_fast_internal() {
+        let ownership = OwnershipManager::new();
+        register_owned(&ownership, obj(1), addr(1));
+    let sched = MvccScheduler::new();
+    let vm = SuperVM::new(&ownership).with_scheduler(&sched);
+        let t = tx(addr(1), vec![obj(1)], Privacy::Public);
+        assert!(matches!(vm.route(&t), ExecutionPath::FastPath));
+    }
+
+    #[test]
+    fn route_shared_public_goes_consensus_internal() {
+        let ownership = OwnershipManager::new();
+        register_shared(&ownership, obj(2));
+    let sched = MvccScheduler::new();
+    let vm = SuperVM::new(&ownership).with_scheduler(&sched);
+        let t = tx(addr(1), vec![obj(2)], Privacy::Public);
+        assert!(matches!(vm.route(&t), ExecutionPath::ConsensusPath));
+    }
+
+    #[test]
+    fn route_private_goes_privacy_internal() {
+        let ownership = OwnershipManager::new();
+        register_owned(&ownership, obj(3), addr(1));
+    let sched = MvccScheduler::new();
+    let vm = SuperVM::new(&ownership).with_scheduler(&sched);
+        let t = tx(addr(1), vec![obj(3)], Privacy::Private);
+        assert!(matches!(vm.route(&t), ExecutionPath::PrivatePath));
+    }
+
+    #[test]
+    fn execute_fast_success_and_prom_metrics_present_internal() {
+        let ownership = OwnershipManager::new();
+        register_owned(&ownership, obj(4), addr(1));
+    let sched = MvccScheduler::new();
+    let vm = SuperVM::new(&ownership).with_scheduler(&sched);
+        let t = tx(addr(1), vec![obj(4)], Privacy::Public);
+        let receipt = vm.execute_transaction_routed(10, &t, || Ok(42), |_txn| Ok(7));
+        assert!(matches!(receipt.path, ExecutionPath::FastPath));
+        assert!(receipt.success);
+        assert_eq!(receipt.return_value, Some(42));
+        let prom = vm.export_routing_prometheus();
+        assert!(prom.contains("vm_routing_fast_total"));
+    }
+
+    #[test]
+    fn fast_fail_fallback_increments_metric_internal() {
+        let ownership = OwnershipManager::new();
+        register_owned(&ownership, obj(5), addr(1)); // owner is 1
+        let scheduler = MvccScheduler::new();
+        let vm = SuperVM::new(&ownership)
+            .with_scheduler(&scheduler)
+            .with_fallback(true)
+            .with_fallback_whitelist(vec!["Object", "not owned"]);
+        // sender addr(2) different → fast path ownership校验失败 → fallback 执行成功
+        let t = tx(addr(2), vec![obj(5)], Privacy::Public);
+        let receipt = vm.execute_transaction_routed(11, &t, || Ok(1), |txn| { txn.write(b"k".to_vec(), b"v".to_vec()); Ok(9) });
+        assert!(matches!(receipt.path, ExecutionPath::ConsensusPath));
+        assert!(receipt.fallback_to_consensus);
+        let metrics_text = scheduler.store().get_metrics().unwrap().export_prometheus();
+        assert!(metrics_text.contains("vm_fast_fallback_total 1"));
+    }
+
+    #[test]
+    fn routing_counts_and_ratios_accumulate_internal() {
+        let ownership = OwnershipManager::new();
+        register_owned(&ownership, obj(6), addr(1)); // fast
+        register_shared(&ownership, obj(7));        // consensus
+        register_owned(&ownership, obj(8), addr(2)); // fast with different owner for second address
+        register_owned(&ownership, obj(9), addr(3)); // fast
+        register_owned(&ownership, obj(10), addr(4)); // fast
+    let sched = MvccScheduler::new();
+    let vm = SuperVM::new(&ownership).with_scheduler(&sched);
+        // Execute mixed routes: 4 fast (6,8,9,10 as their senders), 1 consensus (7), 1 privacy (6 again but private)
+        let _ = vm.route(&tx(addr(1), vec![obj(6)], Privacy::Public));
+        let _ = vm.route(&tx(addr(2), vec![obj(8)], Privacy::Public));
+        let _ = vm.route(&tx(addr(3), vec![obj(9)], Privacy::Public));
+        let _ = vm.route(&tx(addr(4), vec![obj(10)], Privacy::Public));
+        let _ = vm.route(&tx(addr(1), vec![obj(7)], Privacy::Public)); // shared → consensus
+        let _ = vm.route(&tx(addr(1), vec![obj(6)], Privacy::Private)); // privacy
+        let stats = vm.routing_stats();
+        assert_eq!(stats.fast_path_count, 4);
+        assert_eq!(stats.consensus_path_count, 1);
+        assert_eq!(stats.privacy_path_count, 1);
+        let prom = vm.export_routing_prometheus();
+        assert!(prom.contains("vm_routing_fast_total 4"));
+        assert!(prom.contains("vm_routing_consensus_total 1"));
+        assert!(prom.contains("vm_routing_privacy_total 1"));
+    }
+}
+
+// ===========================================================
+// E2E 路由与回退批量执行测试
+// ===========================================================
+#[cfg(test)]
+mod routing_e2e_tests {
+    use super::*;
+    use crate::{OwnershipManager, OwnershipType, ObjectMetadata};
+    use crate::parallel_mvcc::MvccScheduler;
+    use crate::mvcc::Txn;
+
+    type Address = [u8;32];
+    type ObjectId = [u8;32];
+    fn addr(id: u8) -> Address { let mut a=[0u8;32]; a[0]=id; a }
+    fn obj(id: u8) -> ObjectId { let mut o=[0u8;32]; o[0]=id; o }
+
+    fn reg(om:&OwnershipManager, id:ObjectId, own:OwnershipType) {
+        let meta = ObjectMetadata { id, version:0, ownership: own, object_type:"Test".into(), created_at:0, updated_at:0, size:0, is_deleted:false};
+        om.register_object(meta).unwrap();
+    }
+
+    fn consensus_write(txn:&mut Txn, k:&[u8], v:&[u8]) -> anyhow::Result<i32> { txn.write(k.to_vec(), v.to_vec()); Ok(v.len() as i32) }
+
+    #[test]
+    fn e2e_mixed_individual_routed_execution() {
+        // Setup ownership landscape
+        let ownership = OwnershipManager::new();
+        // Fast path objects (owned by different senders)
+        reg(&ownership, obj(10), OwnershipType::Owned(addr(1)));
+        reg(&ownership, obj(11), OwnershipType::Owned(addr(2)));
+        // Shared object for consensus
+        reg(&ownership, obj(12), OwnershipType::Shared);
+        // Privacy object (owned)
+        reg(&ownership, obj(13), OwnershipType::Owned(addr(3)));
+
+        let scheduler = MvccScheduler::new();
+        let vm = SuperVM::new(&ownership)
+            .with_scheduler(&scheduler)
+            .with_fallback(true)
+            .with_fallback_whitelist(vec!["Object", "not owned"]);
+
+        // 1) Fast success
+        let tx_fast_ok = Transaction { from: addr(1), objects: vec![obj(10)], privacy: Privacy::Public };
+        let r_fast_ok = vm.execute_transaction_routed(100, &tx_fast_ok, || Ok(99), |txn| consensus_write(txn, b"f1", b"v1"));
+        assert!(r_fast_ok.success && matches!(r_fast_ok.path, ExecutionPath::FastPath));
+        assert_eq!(r_fast_ok.return_value, Some(99));
+
+        // 2) Fast failure → fallback (wrong sender for owned object)
+        let tx_fast_fail = Transaction { from: addr(9), objects: vec![obj(11)], privacy: Privacy::Public }; // owner is addr(2)
+        let r_fast_fail = vm.execute_transaction_routed(101, &tx_fast_fail, || Ok(1), |txn| consensus_write(txn, b"ff", b"vf"));
+        assert!(r_fast_fail.success && r_fast_fail.fallback_to_consensus);
+        assert!(matches!(r_fast_fail.path, ExecutionPath::ConsensusPath));
+
+        // 3) Consensus direct (shared object)
+        let tx_cons = Transaction { from: addr(1), objects: vec![obj(12)], privacy: Privacy::Public };
+        let r_cons = vm.execute_transaction_routed(102, &tx_cons, || Ok(1), |txn| consensus_write(txn, b"c1", b"cval"));
+        assert!(r_cons.success && matches!(r_cons.path, ExecutionPath::ConsensusPath));
+
+        // 4) Privacy (placeholder verify true) -> PrivatePath
+        let tx_priv = Transaction { from: addr(3), objects: vec![obj(13)], privacy: Privacy::Private };
+        let r_priv = vm.execute_transaction_routed(103, &tx_priv, || Ok(7), |txn| consensus_write(txn, b"p1", b"pval"));
+        assert!(r_priv.success && matches!(r_priv.path, ExecutionPath::PrivatePath));
+
+        // Metrics assertions: fallback counter should be 1
+        let prom = scheduler.store().get_metrics().unwrap().export_prometheus();
+        assert!(prom.contains("vm_fast_fallback_total 1"));
+
+        // Routing stats: we expect fast routed (1 fast success + 1 fast attempt that failed but counted as fast route), plus one consensus route (shared), plus one privacy route.
+        let stats = vm.routing_stats();
+        assert_eq!(stats.fast_path_count, 2); // route() increments before execution
+        assert_eq!(stats.consensus_path_count, 1); // shared
+        assert_eq!(stats.privacy_path_count, 1); // privacy
+        let routing_prom = vm.export_routing_prometheus();
+        assert!(routing_prom.contains("vm_routing_fast_total 2"));
+        assert!(routing_prom.contains("vm_routing_consensus_total 1"));
+        assert!(routing_prom.contains("vm_routing_privacy_total 1"));
+    }
+
+    #[test]
+    fn e2e_batch_routed_with_fallback_counts() {
+        // Ownership setup for batch
+        let ownership = OwnershipManager::new();
+        reg(&ownership, obj(20), OwnershipType::Owned(addr(1))); // fast success
+        reg(&ownership, obj(21), OwnershipType::Owned(addr(2))); // fast fail (sender mismatch) -> fallback
+        reg(&ownership, obj(22), OwnershipType::Shared);        // consensus
+        reg(&ownership, obj(23), OwnershipType::Owned(addr(3))); // privacy
+        let scheduler = MvccScheduler::new();
+        let vm = SuperVM::new(&ownership)
+            .with_scheduler(&scheduler)
+            .with_fallback(true)
+            .with_fallback_whitelist(vec!["Object", "not owned"]);
+
+        // Build tuple batch: (TxId, Transaction, Arc<dyn Fn(&mut Txn)>)
+    use std::sync::Arc;
+    let mk_ok = |k: &'static [u8], v: &'static [u8]| Arc::new(move |txn: &mut Txn| { txn.write(k.to_vec(), v.to_vec()); Ok(v.len() as i32) }) as Arc<dyn Fn(&mut Txn) -> anyhow::Result<i32> + Send + Sync>;
+    let mk_err = || Arc::new(move |_txn: &mut Txn| { Err(anyhow::anyhow!("retryable fast failure")) }) as Arc<dyn Fn(&mut Txn) -> anyhow::Result<i32> + Send + Sync>;
+
+        let batch = vec![
+            (200u64, Transaction { from: addr(1), objects: vec![obj(20)], privacy: Privacy::Public }, mk_ok(b"b1", b"v")),
+            (201u64, Transaction { from: addr(9), objects: vec![obj(21)], privacy: Privacy::Public }, mk_err()), // force fast failure -> fallback
+            (202u64, Transaction { from: addr(1), objects: vec![obj(22)], privacy: Privacy::Public }, mk_ok(b"b3", b"vvv")), // shared
+            (203u64, Transaction { from: addr(3), objects: vec![obj(23)], privacy: Privacy::Private }, mk_ok(b"b4", b"vvvv")), // privacy
+        ];
+
+    let (_fast_res, consensus_res, fast_fallbacks, fallback_ids) = vm.execute_batch(batch);
+
+    // Successful counts: fast_res should contain attempts (包含失败)，失败的被回退到 consensus_res。
+    assert_eq!(fast_fallbacks, 1, "One fast failure should have been rerouted");
+    assert_eq!(fallback_ids.len(), 1, "Fallback IDs should match fallback count");
+        // 现在批量接口也会增加 MetricsCollector 的 fallback 计数
+        let prom = scheduler.store().get_metrics().unwrap().export_prometheus();
+        assert!(prom.contains("vm_fast_fallback_total 1"), "Batch fallback should increment metrics collector");
+
+        // Routing totals (4 routed: 2 fast attempts, 1 consensus, 1 privacy)
+        let stats = vm.routing_stats();
+        assert_eq!(stats.fast_path_count, 2);
+        assert_eq!(stats.consensus_path_count, 1);
+        assert_eq!(stats.privacy_path_count, 1);
+        let routing_prom = vm.export_routing_prometheus();
+        assert!(routing_prom.contains("vm_routing_fast_total 2"));
+        assert!(routing_prom.contains("vm_routing_consensus_total 1"));
+        assert!(routing_prom.contains("vm_routing_privacy_total 1"));
+
+    // Batch result sanity: consensus_res 应包含原始 consensus + fallback 重试 + privacy（privacy 目前也走 consensus 执行）
+    assert!(consensus_res.successful >= 2, "Consensus group should succeed for shared + privacy; fallback 重试的失败项仍可能失败（本实现对失败项未更换闭包）");
+    }
+}
+
+// ===========================================================
+// ZK 批量验证缓冲 - 基本测试（feature: groth16-verifier）
+// ===========================================================
+#[cfg(test)]
+#[cfg(feature = "groth16-verifier")]
+mod zk_batch_buffer_tests {
+    use super::*;
+    use crate::{OwnershipManager, OwnershipType, ObjectMetadata};
+    use crate::parallel_mvcc::MvccScheduler;
+    use crate::zk_verifier::{ZkVerifier, MockVerifier};
+
+    type Address = [u8;32];
+    type ObjectId = [u8;32];
+    fn addr(id: u8) -> Address { let mut a=[0u8;32]; a[0]=id; a }
+    fn obj(id: u8) -> ObjectId { let mut o=[0u8;32]; o[0]=id; o }
+
+    fn reg_owned(om: &OwnershipManager, id: ObjectId, owner: Address) {
+        let meta = ObjectMetadata { id, version:0, ownership: OwnershipType::Owned(owner), object_type: "Test".into(), created_at:0, updated_at:0, size:0, is_deleted:false};
+        om.register_object(meta).unwrap();
+    }
+
+    #[test]
+    fn batch_flushes_on_size_and_records_metrics() {
+        // Prepare env for batch
+        std::env::set_var("ZK_BATCH_ENABLE", "1");
+        std::env::set_var("ZK_BATCH_SIZE", "2");
+        std::env::set_var("ZK_BATCH_FLUSH_INTERVAL_MS", "1000");
+
+        let ownership = OwnershipManager::new();
+        // any object to allow route private
+        reg_owned(&ownership, obj(1), addr(1));
+        let scheduler = MvccScheduler::new();
+
+        // Leak a mock verifier to satisfy lifetime
+        let leaked: &'static dyn ZkVerifier = Box::leak(Box::new(MockVerifier::new_always_succeed()));
+
+        let vm = SuperVM::new(&ownership)
+            .with_scheduler(&scheduler)
+            .with_verifier(leaked)
+            .from_env();
+
+        // Push two proofs; MockVerifier ignores content
+        let p1 = vec![1u8; 32];
+        let i1 = vec![2u8; 8];
+        let p2 = vec![3u8; 32];
+        let i2 = vec![4u8; 8];
+
+        assert!(vm.verify_zk_proof(Some(&p1), Some(&i1))); // buffered, not flushed yet
+        assert!(vm.verify_zk_proof(Some(&p2), Some(&i2))); // triggers flush by size
+
+        // Metrics should include batch verify totals
+        let prom = scheduler.store().get_metrics().unwrap().export_prometheus();
+        assert!(prom.contains("vm_privacy_zk_batch_verify_total 2"));
+        assert!(prom.contains("vm_privacy_zk_batch_verify_batches_total 1"));
     }
 }

@@ -8,11 +8,8 @@ use std::sync::Arc;
 
 // Arkworks imports are only used when feature is enabled (this file is behind the feature)
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-use ark_groth16::{prepare_verifying_key, PreparedVerifyingKey, Proof};
+use ark_groth16::{PreparedVerifyingKey, Proof};
 use ark_serialize::CanonicalDeserialize;
-use ark_snark::SNARK;
-use zk_groth16_test::MultiplyCircuit;
 
 /// Incremental Groth16 verifier adapter
 /// Note: Real verification wiring can be added later without breaking callers.

@@ -349,7 +349,7 @@ mod groth16_feature_tests {
         assert!(ok, "ringct_v1 should verify with correct public inputs");
 
         // Wrong public inputs (flip merkle_root)
-        let mut wrong_inputs = vec![
+        let wrong_inputs = vec![
             circuit.input.commitment_x,
             circuit.input.commitment_y,
             circuit.output.commitment_x,
