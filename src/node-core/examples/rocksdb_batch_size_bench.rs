@@ -24,7 +24,6 @@ fn stats(vals: &[f64]) -> (f64, f64, f64, f64) {
     let rsd = if avg > 0.0 { stddev / avg * 100.0 } else { 0.0 };
     (avg, best, stddev, rsd)
 }
-use std::fs;
 
 fn run_case_mono(path: &str, batch_size: usize, disable_wal: bool) -> Result<f64> {
     // 清理旧目录，确保每次运行环境一致

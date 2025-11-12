@@ -17,7 +17,7 @@ use anyhow::Result;
 pub mod rocksdb_storage;
 
 #[cfg(feature = "rocksdb-storage")]
-pub use rocksdb_storage::{RocksDBStorage, RocksDBConfig, AdaptiveBatchConfig, AdaptiveBatchResult};
+pub use rocksdb_storage::{RocksDBStorage, RocksDBConfig, AdaptiveBatchConfig, AdaptiveBatchResult, RocksDBMetrics};
 
 /// 存储接口，定义了虚拟机可以使用的存储操作
 pub trait Storage {

@@ -18,5 +18,91 @@
   },
   "[powershell]": {
     "files.encoding": "utf8"
-  }
+  },
+
+  // ========================================
+  // 性能优化配置 (减少卡顿)
+  // ========================================
+  
+  // 1. 文件监控排除 - 避免监控大型目录
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/target/**": true,
+    "**/data/**": true,
+    "**/dist/**": true,
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/*.pyc": true,
+    "**/adaptive_*.csv": true,
+    "**/bench_*.txt": true
+  },
+
+  // 2. 搜索排除 - 加快搜索速度
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/target": true,
+    "**/data": true,
+    "**/dist": true,
+    "**/.venv": true,
+    "**/__pycache__": true,
+    "**/*.csv": true,
+    "**/assets/ppt/**": true,
+    "**/assets/visuals/**": true
+  },
+
+  // 3. 文件浏览器排除 - 减少显示文件数量
+  "files.exclude": {
+    "**/.git": false,
+    "**/node_modules": false,
+    "**/target/debug": true,
+    "**/target/release": false,
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/data/demo_*": true,
+    "**/data/batch_bench_*": true,
+    "**/data/stability_test_*": true
+  },
+
+  // 4. Rust 特定优化
+  "rust-analyzer.checkOnSave.enable": true,
+  "rust-analyzer.checkOnSave.command": "clippy",
+  "rust-analyzer.cargo.loadOutDirsFromCheck": true,
+  "rust-analyzer.procMacro.enable": true,
+  "rust-analyzer.files.excludeDirs": [
+    "target/debug",
+    "data"
+  ],
+
+  // 5. 限制最大文件大小 - 避免打开超大文件
+  "files.maxMemoryForLargeFilesMB": 4096,
+
+  // 6. Git 优化 - 减少 Git 操作开销
+  "git.enabled": true,
+  "git.autofetch": false,
+  "git.autorefresh": false,
+  "git.ignoreLimitWarning": true,
+
+  // 7. Copilot 优化 - 减少上下文加载
+  "github.copilot.enable": {
+    "*": true,
+    "yaml": false,
+    "plaintext": false,
+    "markdown": true
+  },
+
+  // 8. 编辑器性能优化
+  "editor.largeFileOptimizations": true,
+  "editor.suggest.maxVisibleSuggestions": 8,
+  "editor.wordBasedSuggestions": "off",
+  "editor.semanticHighlighting.enabled": false,
+
+  // 9. 终端优化 - 限制输出缓冲
+  "terminal.integrated.scrollback": 5000,
+  "terminal.integrated.enablePersistentSessions": false,
+
+  // 10. 扩展宿主优化
+  "extensions.autoUpdate": false,
+  "extensions.autoCheckUpdates": false
 }

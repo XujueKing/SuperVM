@@ -64,7 +64,7 @@ impl HotKeyTracker {
         }
 
         // 周期性衰减
-        if self.total_batches % self.decay_period == 0 {
+        if self.total_batches.is_multiple_of(self.decay_period) {
             self.decay();
         }
     }
@@ -252,6 +252,12 @@ pub struct OptimizedMvccScheduler {
 
 struct AdaptiveState {
     window: VecDeque<(f64, f64)>, // (conflict_rate, density)
+}
+
+impl Default for OptimizedMvccScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OptimizedMvccScheduler {
@@ -734,7 +740,7 @@ impl OptimizedMvccScheduler {
 
         // 阶段 2：对剩余跨分片事务，按需进行 Bloom 分组；否则直接并行提交
         let remaining: Vec<(TxId, Txn, Result<i32>)> =
-            txn_contexts.into_iter().filter_map(|o| o).collect();
+            txn_contexts.into_iter().flatten().collect();
 
         if remaining.is_empty() {
             let successful = results.iter().filter(|r| r.success).count() as u64;
@@ -837,8 +843,8 @@ impl OptimizedMvccScheduler {
                     }
 
                     // 2) 中热 + 批次局部热：分桶并发
-                    let mut merged_bucket_idx = medium_idx;
-                    merged_bucket_idx.extend(batch_idx.into_iter());
+                let mut merged_bucket_idx = medium_idx;
+                merged_bucket_idx.extend(batch_idx);
                     if !merged_bucket_idx.is_empty() {
                         let buckets = self.partition_hot_by_buckets(
                             &ctx_opts_mutex.lock().unwrap(),
@@ -1307,7 +1313,8 @@ impl OptimizedMvccScheduler {
             let mut results: Vec<TxnResult> = Vec::new();
 
             // 收集并消费单分片上下文
-            let mut single_shard_ctx: Vec<(usize, Vec<(TxId, Txn, Result<i32>)>)> = Vec::new();
+            type ShardContextGroup = Vec<(usize, Vec<(TxId, Txn, Result<i32>)>)>;
+            let mut single_shard_ctx: ShardContextGroup = Vec::new();
             for (shard, indices) in single_shard_groups.into_iter() {
                 let mut ctxs = Vec::with_capacity(indices.len());
                 for idx in indices {

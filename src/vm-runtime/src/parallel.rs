@@ -502,7 +502,7 @@ impl ParallelScheduler {
             }
         }
 
-        Err(format!("Failed after {} attempts: {}", attempts, last_error))
+        Err(format!("Failed after {} attempts: {}", attempts + 1, last_error))
     }
     /// 获取当前存储状态
     pub fn get_storage(&self) -> Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>> {
@@ -1035,7 +1035,7 @@ mod tests {
                 attempt_count += 1;
 
                 if attempt_count < 3 {
-                    Err(format!("Attempt {} failed", attempt_count))
+                    Err(format!("Attempt {} failed (retryable)", attempt_count))
                 } else {
                     let storage_arc = manager.get_storage();
                     let mut storage = storage_arc.lock().unwrap();
@@ -1061,7 +1061,7 @@ mod tests {
 
         // 模拟总是失败
         let result: Result<i32, String> = scheduler.execute_with_retry(
-            |_manager| Err("Always fails".to_string()),
+            |_manager| Err("Always fails (retryable)".to_string()),
             3, // max_retries
         );
 
@@ -1817,6 +1817,8 @@ mod snapshot_tests {
 // FastPathExecutor - Phase 5: 快速通道执行器
 // ============================================================================
 
+use crate::metrics::LatencyHistogram;
+
 /// 快速通道执行器（用于独占对象，零冲突）
 ///
 /// 特性：
@@ -1824,6 +1826,8 @@ mod snapshot_tests {
 /// - 无锁直接执行
 /// - 目标 TPS: 500K+
 /// - 延迟: P50 < 1μs, P99 < 5μs
+/// - 增强可观测性: p50/p90/p95/p99 延迟分位、队列长度、重试统计
+/// - 拥塞控制: 动态退避策略,防止重试风暴
 pub struct FastPathExecutor {
     /// 执行统计
     executed_count: AtomicU64,
@@ -1831,6 +1835,16 @@ pub struct FastPathExecutor {
     failed_count: AtomicU64,
     /// 总延迟（纳秒）
     total_latency_ns: AtomicU64,
+    /// 延迟直方图（用于分位统计）
+    latency_histogram: Arc<LatencyHistogram>,
+    /// 重试计数
+    retry_count: AtomicU64,
+    /// 当前队列长度（模拟值，实际使用时连接真实队列）
+    queue_length: AtomicU64,
+    /// 热键追踪（key -> 访问计数）
+    hot_keys: Arc<Mutex<HashMap<u64, u64>>>,
+    /// 拥塞控制阈值
+    congestion_threshold: AtomicU64,
 }
 
 impl FastPathExecutor {
@@ -1839,6 +1853,25 @@ impl FastPathExecutor {
             executed_count: AtomicU64::new(0),
             failed_count: AtomicU64::new(0),
             total_latency_ns: AtomicU64::new(0),
+            latency_histogram: Arc::new(LatencyHistogram::new()),
+            retry_count: AtomicU64::new(0),
+            queue_length: AtomicU64::new(0),
+            hot_keys: Arc::new(Mutex::new(HashMap::new())),
+            congestion_threshold: AtomicU64::new(1000), // 默认阈值: 队列长度 1000
+        }
+    }
+
+    /// 使用自定义延迟直方图创建（用于外部指标集成）
+    pub fn with_histogram(histogram: Arc<LatencyHistogram>) -> Self {
+        Self {
+            executed_count: AtomicU64::new(0),
+            failed_count: AtomicU64::new(0),
+            total_latency_ns: AtomicU64::new(0),
+            latency_histogram: histogram,
+            retry_count: AtomicU64::new(0),
+            queue_length: AtomicU64::new(0),
+            hot_keys: Arc::new(Mutex::new(HashMap::new())),
+            congestion_threshold: AtomicU64::new(1000),
         }
     }
 
@@ -1859,7 +1892,12 @@ impl FastPathExecutor {
 
         let result = operation();
 
-        let latency_ns = start.elapsed().as_nanos() as u64;
+        let elapsed = start.elapsed();
+        let latency_ns = elapsed.as_nanos() as u64;
+        
+        // 记录到直方图（用于分位统计）
+        self.latency_histogram.observe(elapsed);
+        
         self.total_latency_ns.fetch_add(latency_ns, Ordering::Relaxed);
 
         match result {
@@ -1870,6 +1908,152 @@ impl FastPathExecutor {
             Err(e) => {
                 self.failed_count.fetch_add(1, Ordering::Relaxed);
                 Err(e)
+            }
+        }
+    }
+
+    /// 带重试的执行（指数退避）
+    pub fn execute_with_retry<F>(&self, tx_id: TxId, operation: F, max_retries: u32) -> Result<i32, String>
+    where
+        F: Fn() -> Result<i32, String>,
+    {
+        let mut attempts = 0;
+        let mut delay_ms = 1u64;
+
+        loop {
+            match self.execute(tx_id, &operation) {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if attempts >= max_retries {
+                        return Err(format!("Failed after {} retries: {}", attempts, e));
+                    }
+                    
+                    self.retry_count.fetch_add(1, Ordering::Relaxed);
+                    
+                    // 指数退避（带抖动）
+                    let jitter = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .subsec_nanos() % 100) as u64;
+                    let actual_delay = delay_ms + jitter / 1_000_000;
+                    
+                    std::thread::sleep(Duration::from_millis(actual_delay));
+                    
+                    delay_ms = (delay_ms * 2).min(1000); // 上限1秒
+                    attempts += 1;
+                }
+            }
+        }
+    }
+
+    /// 更新队列长度（由调度器调用）
+    pub fn set_queue_length(&self, length: u64) {
+        self.queue_length.store(length, Ordering::Relaxed);
+    }
+
+    /// 获取当前队列长度
+    pub fn get_queue_length(&self) -> u64 {
+        self.queue_length.load(Ordering::Relaxed)
+    }
+
+    /// 设置拥塞控制阈值（队列长度超过此值触发退避）
+    pub fn set_congestion_threshold(&self, threshold: u64) {
+        self.congestion_threshold.store(threshold, Ordering::Relaxed);
+    }
+
+    /// 检查是否拥塞
+    pub fn is_congested(&self) -> bool {
+        let queue_len = self.get_queue_length();
+        let threshold = self.congestion_threshold.load(Ordering::Relaxed);
+        queue_len > threshold
+    }
+
+    /// 记录 key 访问（用于热键检测）
+    pub fn track_key_access(&self, key: u64) {
+        if let Ok(mut hot_keys) = self.hot_keys.lock() {
+            *hot_keys.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    /// 获取 Top-K 热键
+    pub fn get_hot_keys(&self, top_k: usize) -> Vec<(u64, u64)> {
+        if let Ok(hot_keys) = self.hot_keys.lock() {
+            let mut entries: Vec<_> = hot_keys.iter()
+                .map(|(k, v)| (*k, *v))
+                .collect();
+            entries.sort_by(|a, b| b.1.cmp(&a.1)); // 降序排列
+            entries.truncate(top_k);
+            entries
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 清空热键统计（用于周期性重置）
+    pub fn reset_hot_keys(&self) {
+        if let Ok(mut hot_keys) = self.hot_keys.lock() {
+            hot_keys.clear();
+        }
+    }
+
+    /// 获取拥塞阈值
+    pub fn get_congestion_threshold(&self) -> u64 {
+        self.congestion_threshold.load(Ordering::Relaxed)
+    }
+
+    /// 获取重试计数
+    pub fn get_retry_count(&self) -> u64 {
+        self.retry_count.load(Ordering::Relaxed)
+    }
+
+    /// 带拥塞感知的智能重试
+    pub fn execute_with_congestion_control<F>(
+        &self,
+        tx_id: TxId,
+        operation: F,
+        max_retries: u32,
+    ) -> Result<i32, String>
+    where
+        F: Fn() -> Result<i32, String>,
+    {
+        let mut attempts = 0;
+        let mut delay_ms = 1u64;
+
+        loop {
+            // 拥塞检测: 如果队列拥塞,增加额外退避
+            let congestion_multiplier = if self.is_congested() {
+                let queue_len = self.get_queue_length();
+                let threshold = self.congestion_threshold.load(Ordering::Relaxed);
+                // 根据拥塞程度线性增加退避时间(最多 10x)
+                ((queue_len as f64 / threshold as f64).min(10.0)) as u64
+            } else {
+                1
+            };
+
+            match self.execute(tx_id, &operation) {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if attempts >= max_retries {
+                        return Err(format!("Failed after {} retries (congestion: {}x): {}",
+                            attempts, congestion_multiplier, e));
+                    }
+
+                    self.retry_count.fetch_add(1, Ordering::Relaxed);
+
+                    // 指数退避 + 拥塞感知 + 抖动
+                    let jitter = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .subsec_nanos() % 100) as u64;
+                    
+                    let base_delay = delay_ms * congestion_multiplier;
+                    let actual_delay = base_delay + jitter / 1_000_000;
+
+                    std::thread::sleep(Duration::from_millis(actual_delay));
+
+                    delay_ms = (delay_ms * 2).min(1000); // 上限 1 秒
+                    attempts += 1;
+                }
             }
         }
     }
@@ -1890,6 +2074,12 @@ impl FastPathExecutor {
         let executed = self.executed_count.load(Ordering::Relaxed);
         let failed = self.failed_count.load(Ordering::Relaxed);
         let total_latency = self.total_latency_ns.load(Ordering::Relaxed);
+        let retries = self.retry_count.load(Ordering::Relaxed);
+        let queue_len = self.queue_length.load(Ordering::Relaxed);
+
+        // 获取延迟分位
+        let (p50, p90, p99) = self.latency_histogram.percentiles();
+        let p95 = self.latency_histogram.percentile(0.95);
 
         FastPathStats {
             executed_count: executed,
@@ -1899,6 +2089,12 @@ impl FastPathExecutor {
             } else {
                 0
             },
+            retry_count: retries,
+            queue_length: queue_len,
+            p50_latency_ms: p50,
+            p90_latency_ms: p90,
+            p95_latency_ms: p95,
+            p99_latency_ms: p99,
         }
     }
 
@@ -1907,6 +2103,54 @@ impl FastPathExecutor {
         self.executed_count.store(0, Ordering::Relaxed);
         self.failed_count.store(0, Ordering::Relaxed);
         self.total_latency_ns.store(0, Ordering::Relaxed);
+        self.retry_count.store(0, Ordering::Relaxed);
+        // 注意: latency_histogram 需要单独清空（如果需要）
+    }
+
+    /// 导出 Prometheus 格式指标
+    pub fn export_prometheus(&self, prefix: &str) -> String {
+        let stats = self.stats();
+        
+        format!(
+            "# HELP {}_txns_total Total number of FastPath transactions\n\
+             # TYPE {}_txns_total counter\n\
+             {}_txns_total{{status=\"success\"}} {}\n\
+             {}_txns_total{{status=\"failed\"}} {}\n\
+             \n\
+             # HELP {}_latency_ms FastPath transaction latency in milliseconds\n\
+             # TYPE {}_latency_ms summary\n\
+             {}_latency_ms{{quantile=\"0.5\"}} {}\n\
+             {}_latency_ms{{quantile=\"0.9\"}} {}\n\
+             {}_latency_ms{{quantile=\"0.95\"}} {}\n\
+             {}_latency_ms{{quantile=\"0.99\"}} {}\n\
+             {}_latency_ms_sum {}\n\
+             {}_latency_ms_count {}\n\
+             \n\
+             # HELP {}_retries_total Total number of retries\n\
+             # TYPE {}_retries_total counter\n\
+             {}_retries_total {}\n\
+             \n\
+             # HELP {}_queue_length Current queue length\n\
+             # TYPE {}_queue_length gauge\n\
+             {}_queue_length {}\n",
+            prefix, prefix,
+            prefix, stats.executed_count,
+            prefix, stats.failed_count,
+            
+            prefix, prefix,
+            prefix, stats.p50_latency_ms,
+            prefix, stats.p90_latency_ms,
+            prefix, stats.p95_latency_ms,
+            prefix, stats.p99_latency_ms,
+            prefix, (stats.avg_latency_ns as f64 / 1_000_000.0) * stats.executed_count as f64,
+            prefix, stats.executed_count,
+            
+            prefix, prefix,
+            prefix, stats.retry_count,
+            
+            prefix, prefix,
+            prefix, stats.queue_length,
+        )
     }
 }
 
@@ -1925,6 +2169,18 @@ pub struct FastPathStats {
     pub failed_count: u64,
     /// 平均延迟（纳秒）
     pub avg_latency_ns: u64,
+    /// 重试次数
+    pub retry_count: u64,
+    /// 当前队列长度
+    pub queue_length: u64,
+    /// P50 延迟（毫秒）
+    pub p50_latency_ms: f64,
+    /// P90 延迟（毫秒）
+    pub p90_latency_ms: f64,
+    /// P95 延迟（毫秒）
+    pub p95_latency_ms: f64,
+    /// P99 延迟（毫秒）
+    pub p99_latency_ms: f64,
 }
 
 impl FastPathStats {
@@ -1945,5 +2201,44 @@ impl FastPathStats {
         } else {
             0.0
         }
+    }
+
+    /// 重试率
+    pub fn retry_rate(&self) -> f64 {
+        let total = self.executed_count + self.failed_count;
+        if total > 0 {
+            self.retry_count as f64 / total as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// 格式化为人类可读的摘要
+    pub fn summary(&self) -> String {
+        format!(
+            "FastPath Stats:\n\
+             - Executed: {} (success rate: {:.2}%)\n\
+             - Failed: {}\n\
+             - Retries: {} (retry rate: {:.2}%)\n\
+             - Queue Length: {}\n\
+             - Estimated TPS: {:.0}\n\
+             - Latency (avg): {:.3}ms\n\
+             - Latency (p50): {:.3}ms\n\
+             - Latency (p90): {:.3}ms\n\
+             - Latency (p95): {:.3}ms\n\
+             - Latency (p99): {:.3}ms",
+            self.executed_count,
+            self.success_rate() * 100.0,
+            self.failed_count,
+            self.retry_count,
+            self.retry_rate() * 100.0,
+            self.queue_length,
+            self.estimated_tps(),
+            self.avg_latency_ns as f64 / 1_000_000.0,
+            self.p50_latency_ms,
+            self.p90_latency_ms,
+            self.p95_latency_ms,
+            self.p99_latency_ms,
+        )
     }
 }

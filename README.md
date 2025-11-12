@@ -54,6 +54,34 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 
 ---
 
+## ⚡ Quick Start（跨平台一键引导）
+
+最快方式，一行命令完成构建与初始化：
+
+Windows（PowerShell）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
+```
+
+Linux / macOS（Bash）
+
+```bash
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh
+```
+
+可选参数/环境变量：
+- Windows: `-DbPath` 指定数据目录，`-Features`（默认 `rocksdb-storage`）
+- Linux/macOS: `DB_PATH=... FEATURES=rocksdb-storage YES=1 ./scripts/bootstrap.sh`
+
+部署与平台细节：
+- Windows: `docs/ROCKSDB-WINDOWS-DEPLOYMENT.md`
+- Linux: `docs/ROCKSDB-LINUX-DEPLOYMENT.md`
+- macOS: `docs/ROCKSDB-MACOS-DEPLOYMENT.md`
+
+---
+
 ## 🚀 快速演示命令
 
 ```powershell
@@ -140,6 +168,12 @@ cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --featur
 - **自适应批量写入快速开始**: `docs/ROCKSDB-ADAPTIVE-QUICK-START.md` 🚀 **NEW**
 - **性能指标收集 (Prometheus)**: `docs/METRICS-COLLECTOR.md` 📊 **NEW**
 - **Phase 4.3 Week 3-4 总结**: `docs/PHASE-4.3-WEEK3-4-SUMMARY.md` 📝 **NEW**
+- **后续性能优化清单**: `docs/PERF-OPTIMIZATION-NEXT.md` 🎯 **NEW**
+- **L0 性能优化总结**: `docs/L0-PERF-OPTIMIZATION-SUMMARY.md` ✅ **LATEST**
+  - FastPath 延迟分位强化 (P50/P99 指标)
+  - Parallel Prover 线程池复用 (100% 效率)
+  - ProvingKey 全局缓存 (144x/1312x 加速)
+  - 拥塞控制与热键检测 (15-20% TPS 提升) 🆕
 
 ### 🔬 性能调优与基准测试
 

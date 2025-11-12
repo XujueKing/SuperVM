@@ -23,6 +23,12 @@ pub mod parallel_mvcc; // v0.9.0: 新的基于 MVCC 的并行调度器
 pub mod privacy; // Phase 2.0: Privacy Layer (Ring Signatures, Stealth Addresses, etc.)
 pub mod shard_coordinator; // Phase 6: 分片协调器 (2PC)
 pub mod shard_types; // Phase 6: 跨分片事务类型定义
+#[cfg(feature = "partitioned-fastpath")]
+pub mod partitioned_fastpath; // Expose partitioned_fastpath module when feature is enabled
+#[cfg(feature = "partitioned-fastpath")]
+pub mod multi_core_consensus; // 多核共识调度器（初始原型）
+#[cfg(feature = "partitioned-fastpath")]
+pub mod two_phase_consensus; // 2PC 原型（多分区提交）
 #[cfg(feature = "cross-shard")]
 pub mod shard; // Phase B: gRPC ShardService (proto + server skeleton)
 mod storage;
@@ -66,7 +72,7 @@ pub use shard_types::{
 #[cfg(feature = "cross-shard")]
 pub use shard::proto as cross_shard_proto;
 #[cfg(feature = "rocksdb-storage")]
-pub use storage::{AdaptiveBatchConfig, AdaptiveBatchResult, RocksDBConfig, RocksDBStorage};
+pub use storage::{AdaptiveBatchConfig, AdaptiveBatchResult, RocksDBConfig, RocksDBStorage, RocksDBMetrics};
 pub use storage::{MemoryStorage, Storage};
 pub use supervm::{
     ExecutionPath, ExecutionReceipt, Privacy, SuperVM, Transaction as VmTransaction,
@@ -97,6 +103,8 @@ pub struct Runtime<S: Storage = MemoryStorage> {
     ownership_manager: Option<std::sync::Arc<OwnershipManager>>,
     /// Phase 1.3: 集成 MVCC 调度器
     scheduler: Option<std::sync::Arc<MvccScheduler>>,
+    #[cfg(feature = "hybrid-exec")]
+    hybrid: Option<HybridComponents>,
 }
 
 impl<S: Storage + 'static> Runtime<S> {
@@ -107,6 +115,8 @@ impl<S: Storage + 'static> Runtime<S> {
             storage: Rc::new(RefCell::new(storage)),
             ownership_manager: None,
             scheduler: None,
+            #[cfg(feature = "hybrid-exec")]
+            hybrid: None, // 由调用方显式启用 hybrid 初始化（避免 Debug derive 复杂度）
         }
     }
 
@@ -117,6 +127,8 @@ impl<S: Storage + 'static> Runtime<S> {
             storage: Rc::new(RefCell::new(storage)),
             ownership_manager: Some(std::sync::Arc::new(OwnershipManager::new())),
             scheduler: Some(std::sync::Arc::new(MvccScheduler::new())),
+            #[cfg(feature = "hybrid-exec")]
+            hybrid: Some(HybridComponents::new_default()),
         }
     }
 
@@ -124,6 +136,17 @@ impl<S: Storage + 'static> Runtime<S> {
     pub fn storage(&self) -> Rc<RefCell<S>> {
         self.storage.clone()
     }
+        /// 初始化 Hybrid 组件（延迟初始化以避免默认构造开销）
+        pub fn init_hybrid(&mut self) {
+            if self.hybrid.is_none() {
+                self.hybrid = Some(HybridComponents::new_default());
+            }
+        }
+
+        #[cfg(feature = "hybrid-exec")]
+        pub fn init_hybrid_low_overhead(&mut self) {
+            self.hybrid = Some(HybridComponents::new_low_overhead());
+        }
 
     /// Phase 1.3: 获取所有权管理器
     pub fn ownership_manager(&self) -> Option<&std::sync::Arc<OwnershipManager>> {
@@ -134,6 +157,9 @@ impl<S: Storage + 'static> Runtime<S> {
     pub fn scheduler(&self) -> Option<&std::sync::Arc<MvccScheduler>> {
         self.scheduler.as_ref()
     }
+
+    #[cfg(feature = "hybrid-exec")]
+    pub fn hybrid(&self) -> Option<&HybridComponents> { self.hybrid.as_ref() }
 
     /// 注册 host functions 到 linker
     fn register_host_functions(&self, linker: &mut Linker<HostState<S>>) -> Result<()> {
@@ -361,6 +387,261 @@ impl<S: Storage + 'static> Runtime<S> {
     /// Phase 1.3: 获取路由统计
     pub fn get_routing_stats(&self) -> Option<OwnershipStats> {
         self.ownership_manager.as_ref().map(|m| m.get_stats())
+    }
+
+    // init_hybrid 已在后续 hybrid-exec impl 模块提供，避免重复定义
+}
+
+// ================= Phase 13: Hybrid Executor Integration =================
+#[cfg(feature = "hybrid-exec")]
+mod hybrid_integration {
+    use super::*;
+    use gpu_executor::{Batch as HybridBatch, Task as HybridTask, ParallelCpuExecutor, HybridScheduler, HybridStrategy, UnavailableGpu, SchedulerStats};
+    use std::sync::Mutex;
+
+    pub struct HybridComponents {
+        pub scheduler: Mutex<HybridScheduler<ParallelCpuExecutor<fn(&HybridWork) -> i32>, UnavailableGpu, HybridWork, i32>>,
+    }
+
+    #[derive(Clone)]
+    pub enum HybridOp {
+        Dyn(std::sync::Arc<dyn Fn() -> i32 + Send + Sync>),
+           Fn { f: fn(u64) -> i32, arg: u64 },
+           Fn2 { f: fn(u64, u64) -> i32, a: u64, b: u64 },
+    }
+
+    #[derive(Clone)]
+    pub struct HybridWork {
+        pub tx_id: TxId,
+        pub cost: u64,
+        pub op: HybridOp,
+    }
+
+    impl HybridComponents {
+        pub fn new_default() -> Self {
+            fn exec_fn(w: &HybridWork) -> i32 {
+                match &w.op {
+                    HybridOp::Dyn(f) => (f)(),
+                    HybridOp::Fn { f, arg } => (f)(*arg),
+                    HybridOp::Fn2 { f, a, b } => (f)(*a, *b),
+                }
+            }
+            let parallel = ParallelCpuExecutor::new(exec_fn as fn(&HybridWork) -> i32).with_adaptive(4);
+            let gpu = UnavailableGpu;
+            let strategy = HybridStrategy::default();
+            let sched = HybridScheduler::new(parallel, Some(gpu), strategy);
+            Self { scheduler: Mutex::new(sched) }
+        }
+
+        /// 低开销版本：关闭自适应 / GPU 逻辑，只使用并行 CPU。
+        pub fn new_low_overhead() -> Self {
+            fn exec_fn(w: &HybridWork) -> i32 {
+                match &w.op {
+                    HybridOp::Dyn(f) => (f)(),
+                    HybridOp::Fn { f, arg } => (f)(*arg),
+                    HybridOp::Fn2 { f, a, b } => (f)(*a, *b),
+                }
+            }
+            let parallel = ParallelCpuExecutor::new(exec_fn as fn(&HybridWork) -> i32).with_adaptive(4);
+            let gpu = UnavailableGpu;
+            let mut strategy = HybridStrategy::default();
+            strategy.adaptive_enabled = false;
+            strategy.gpu_threshold = usize::MAX / 2; // 实际不触发 GPU
+            let sched = HybridScheduler::new(parallel, Some(gpu), strategy);
+            Self { scheduler: Mutex::new(sched) }
+        }
+
+        pub fn execute_batch(&self, works: Vec<HybridWork>) -> Vec<(TxId, i32)> {
+            let batch = HybridBatch { tasks: works.into_iter().enumerate().map(|(i, w)| HybridTask { id: i as u64, payload: w.clone(), est_cost: w.cost }).collect() };
+            let mut sched = self.scheduler.lock().unwrap();
+            let (results, _stats) = sched.schedule(&batch).expect("hybrid schedule ok");
+            results.into_iter().map(|tr| {
+                let hw = &batch.tasks[tr.id as usize].payload; // id 对应索引
+                (hw.tx_id, tr.output)
+            }).collect()
+        }
+
+        pub fn execute_batch_fn(&self, items: Vec<(TxId, u64, fn(u64)->i32)>) -> Vec<(TxId,i32)> {
+            let works: Vec<HybridWork> = items.into_iter().map(|(tx_id, arg, f)| HybridWork { tx_id, cost: 10, op: HybridOp::Fn { f, arg } }).collect();
+            self.execute_batch(works)
+        }
+
+        pub fn execute_batch_fn2(&self, items: Vec<(TxId, u64, u64, fn(u64,u64)->i32)>) -> Vec<(TxId,i32)> {
+            let works: Vec<HybridWork> = items.into_iter().map(|(tx_id, a, b, f)| HybridWork { tx_id, cost: 10, op: HybridOp::Fn2 { f, a, b } }).collect();
+            self.execute_batch(works)
+        }
+
+        pub fn stats(&self) -> SchedulerStats {
+            let sched = self.scheduler.lock().unwrap();
+            sched.stats_snapshot()
+        }
+    }
+}
+
+#[cfg(feature = "hybrid-exec")]
+pub use hybrid_integration::{HybridComponents, HybridWork};
+
+#[cfg(feature = "hybrid-exec")]
+impl<S: Storage + 'static> Runtime<S> {
+    /// 批量事务执行（Hybrid）: 将一组 (TxId, Txn闭包) 转换为 HybridWork 并交给并行执行器
+    pub fn execute_with_hybrid<F>(&self, operations: Vec<(TxId, F)>) -> Vec<(TxId, i32)>
+    where
+        F: Fn() -> i32 + Send + Sync + 'static,
+    {
+        if let Some(h) = &self.hybrid {
+            #[cfg(not(feature = "hybrid-lite"))]
+            let start = std::time::Instant::now();
+            use crate::hybrid_integration::HybridOp;
+            let works: Vec<HybridWork> = operations.into_iter().map(|(id, f)| HybridWork { tx_id: id, cost: 10, op: HybridOp::Dyn(std::sync::Arc::new(f)) }).collect();
+            #[cfg(not(feature = "hybrid-lite"))]
+            let batch_size = works.len();
+            let results = h.execute_batch(works);
+            // 记录指标（若 metrics collector 存在），在 lite 模式下跳过
+            #[cfg(not(feature = "hybrid-lite"))]
+            if let Some(sched) = &self.scheduler {
+                if let Some(mc) = sched.store().get_metrics() {
+                    mc.record_hybrid_batch(batch_size, start.elapsed(), rayon::current_num_threads());
+                    mc.inc_hybrid_routing_decision();
+                }
+            }
+            results
+        } else {
+            // fallback: 顺序执行
+            operations.into_iter().map(|(id, f)| (id, f())).collect()
+        }
+    }
+
+    /// 获取混合调度器统计（若未初始化返回 None）
+    pub fn hybrid_stats(&self) -> Option<gpu_executor::SchedulerStats> {
+        self.hybrid.as_ref().map(|h| h.stats())
+    }
+
+    /// 函数指针快速路径：减少 Box/Arc 动态分发开销
+    pub fn execute_with_hybrid_fn(&self, operations: Vec<(TxId, u64, fn(u64)->i32)>) -> Vec<(TxId,i32)> {
+        if let Some(h) = &self.hybrid {
+            #[cfg(not(feature = "hybrid-lite"))]
+            let start = std::time::Instant::now();
+            #[cfg(not(feature = "hybrid-lite"))]
+            let batch_size = operations.len();
+            let results = h.execute_batch_fn(operations);
+            #[cfg(not(feature = "hybrid-lite"))]
+            if let Some(sched) = &self.scheduler {
+                if let Some(mc) = sched.store().get_metrics() {
+                    mc.record_hybrid_batch(batch_size, start.elapsed(), rayon::current_num_threads());
+                    mc.inc_hybrid_routing_decision();
+                }
+            }
+            results
+        } else {
+            // fallback: 顺序
+            operations.into_iter().map(|(id,arg,f)| (id, f(arg))).collect()
+        }
+    }
+
+    /// 自动分块 + 函数指针快速路径：根据任务总数决定是否启用分块（粗化）以降低调度开销。
+    /// 策略：若 tasks > auto_chunk_threshold (默认 2_000) 则按 chunk_size (默认 1_000) 分块。
+    pub fn execute_with_hybrid_auto_chunked(&self, operations: Vec<(TxId, u64, fn(u64)->i32)>) -> Vec<(TxId,i32)> {
+        // 通过环境变量允许覆盖阈值与分块大小：
+        // HYBRID_AUTO_CHUNK_THRESHOLD（默认 2000），HYBRID_CHUNK_SIZE（默认 1000）
+        use once_cell::sync::OnceCell;
+        struct AutoChunkCfg { threshold: usize, chunk: usize }
+        static CFG: OnceCell<AutoChunkCfg> = OnceCell::new();
+        let cfg = CFG.get_or_init(|| {
+            let th = std::env::var("HYBRID_AUTO_CHUNK_THRESHOLD").ok().and_then(|s| s.parse().ok()).unwrap_or(2_000usize);
+            let ch = std::env::var("HYBRID_CHUNK_SIZE").ok().and_then(|s| s.parse().ok()).unwrap_or(1_000usize);
+            AutoChunkCfg { threshold: th.max(1), chunk: ch.max(1) }
+        });
+        let auto_threshold = cfg.threshold;
+        // 自适应 chunk 选择：若未通过环境变量显式指定，按经验公式 chunk ~= round_to_500(total/50)，并限制在 [500,2000]
+        let total = operations.len();
+        let chunk_size = if std::env::var("HYBRID_CHUNK_SIZE").is_ok() {
+            cfg.chunk
+        } else {
+            let approx = (total.max(1) / 50).max(1);
+            let rounded = ((approx + 249) / 500) * 500; // 向最近 500 步进对齐（上取整）
+            rounded.clamp(500, 2000)
+        };
+        if total <= auto_threshold { return self.execute_with_hybrid_fn(operations); }
+        if let Some(h) = &self.hybrid {
+            #[cfg(not(feature = "hybrid-lite"))]
+            let start = std::time::Instant::now();
+            // 将原始操作聚合成块：每块返回其内部所有调用结果的 wrapping sum，保留第一个 tx_id 作为块 ID 引用
+            use crate::hybrid_integration::HybridOp; // 保证可用
+            let mut works: Vec<crate::hybrid_integration::HybridWork> = Vec::new();
+            for chunk_start in (0..total).step_by(chunk_size) {
+                let chunk_end = (chunk_start + chunk_size).min(total);
+                let (first_tx, _, _) = operations[chunk_start];
+                // 直接聚合闭包，显著减少任务数。
+                let mut acc_ops: Vec<(TxId, u64, fn(u64)->i32)> = Vec::with_capacity(chunk_end - chunk_start);
+                for i in chunk_start..chunk_end { acc_ops.push(operations[i]); }
+                // 构造一个动态聚合闭包
+                let dyn_closure = move || {
+                    let mut acc: i32 = 0;
+                    for &(_, arg, f) in &acc_ops { acc = acc.wrapping_add(f(arg)); }
+                    acc
+                };
+                works.push(crate::hybrid_integration::HybridWork { tx_id: first_tx, cost: 10, op: HybridOp::Dyn(std::sync::Arc::new(dyn_closure)) });
+            }
+            #[cfg(not(feature = "hybrid-lite"))]
+            let batch_size = works.len();
+            let results = h.execute_batch(works);
+            #[cfg(not(feature = "hybrid-lite"))]
+            if let Some(sched) = &self.scheduler { if let Some(mc) = sched.store().get_metrics() { mc.record_hybrid_batch(batch_size, start.elapsed(), rayon::current_num_threads()); mc.inc_hybrid_routing_decision(); } }
+            results
+        } else {
+            // fallback 顺序：同样分块计算，以保持语义一致（返回每块聚合值）
+            let mut out = Vec::new();
+            for chunk_start in (0..total).step_by(chunk_size) {
+                let chunk_end = (chunk_start + chunk_size).min(total);
+                let (first_tx, _, _) = operations[chunk_start];
+                let mut acc: i32 = 0;
+                for i in chunk_start..chunk_end { let (_, arg, f) = operations[i]; acc = acc.wrapping_add(f(arg)); }
+                out.push((first_tx, acc));
+            }
+            out
+        }
+    }
+
+    /// 显式分块版本：调用方指定 chunk_size，按块聚合执行。
+    pub fn execute_with_hybrid_chunked_with(&self, operations: Vec<(TxId, u64, fn(u64)->i32)>, chunk_size: usize) -> Vec<(TxId,i32)> {
+        let chunk = chunk_size.max(1);
+        let total = operations.len();
+        if total == 0 { return Vec::new(); }
+        if let Some(h) = &self.hybrid {
+            #[cfg(not(feature = "hybrid-lite"))]
+            let start = std::time::Instant::now();
+            use crate::hybrid_integration::HybridOp;
+            let mut works: Vec<crate::hybrid_integration::HybridWork> = Vec::new();
+            for chunk_start in (0..total).step_by(chunk) {
+                let chunk_end = (chunk_start + chunk).min(total);
+                let (first_tx, _, _) = operations[chunk_start];
+                let mut acc_ops: Vec<(TxId,u64,fn(u64)->i32)> = Vec::with_capacity(chunk_end - chunk_start);
+                for i in chunk_start..chunk_end { acc_ops.push(operations[i]); }
+                let dyn_closure = move || {
+                    let mut acc: i32 = 0;
+                    for &(_, arg, f) in &acc_ops { acc = acc.wrapping_add(f(arg)); }
+                    acc
+                };
+                works.push(crate::hybrid_integration::HybridWork { tx_id: first_tx, cost: 10, op: HybridOp::Dyn(std::sync::Arc::new(dyn_closure)) });
+            }
+            #[cfg(not(feature = "hybrid-lite"))]
+            let batch_size = works.len();
+            let results = h.execute_batch(works);
+            #[cfg(not(feature = "hybrid-lite"))]
+            if let Some(sched) = &self.scheduler { if let Some(mc) = sched.store().get_metrics() { mc.record_hybrid_batch(batch_size, start.elapsed(), rayon::current_num_threads()); mc.inc_hybrid_routing_decision(); } }
+            results
+        } else {
+            // fallback：顺序按块聚合
+            let mut out = Vec::new();
+            for chunk_start in (0..total).step_by(chunk) {
+                let chunk_end = (chunk_start + chunk).min(total);
+                let (first_tx, _, _) = operations[chunk_start];
+                let mut acc: i32 = 0;
+                for i in chunk_start..chunk_end { let (_, arg, f) = operations[i]; acc = acc.wrapping_add(f(arg)); }
+                out.push((first_tx, acc));
+            }
+            out
+        }
     }
 }
 

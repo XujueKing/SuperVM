@@ -8,22 +8,34 @@
 // CSV 输出:
 //   data/batch_param_bench/results.csv
 
-#![cfg(feature = "groth16-verifier")]
+#![cfg_attr(not(feature = "groth16-verifier"), allow(dead_code, unused_imports))]
 
+#[cfg(feature = "groth16-verifier")]
 use std::time::Instant;
+#[cfg(feature = "groth16-verifier")]
 use std::fs;
+#[cfg(feature = "groth16-verifier")]
 use std::io::Write;
+#[cfg(feature = "groth16-verifier")]
 use std::sync::Arc;
 
+#[cfg(feature = "groth16-verifier")]
 use ark_bls12_381::{Bls12_381, Fr};
+#[cfg(feature = "groth16-verifier")]
 use ark_groth16::{Groth16, Proof};
+#[cfg(feature = "groth16-verifier")]
 use ark_snark::SNARK;
+#[cfg(feature = "groth16-verifier")]
 use ark_std::UniformRand;
 
+#[cfg(feature = "groth16-verifier")]
 use vm_runtime::metrics::MetricsCollector;
+#[cfg(feature = "groth16-verifier")]
 use vm_runtime::privacy::batch_verifier::{BatchVerifier, BatchVerifyConfig};
+#[cfg(feature = "groth16-verifier")]
 use zk_groth16_test::MultiplyCircuit;
 
+#[cfg(feature = "groth16-verifier")]
 fn gen_proofs(n: usize, pk: &ark_groth16::ProvingKey<Bls12_381>) -> (Vec<Proof<Bls12_381>>, Vec<Vec<Fr>>) {
     let mut rng = rand::rngs::OsRng;
     let mut proofs = Vec::with_capacity(n);
@@ -41,6 +53,7 @@ fn gen_proofs(n: usize, pk: &ark_groth16::ProvingKey<Bls12_381>) -> (Vec<Proof<B
     (proofs, public_inputs)
 }
 
+#[cfg(feature = "groth16-verifier")]
 fn main() {
     println!("=== ZK Batch Verification Parameterized Benchmark ===\n");
 
@@ -111,4 +124,9 @@ fn main() {
 
     println!("\nResults exported to: {}", csv_path);
     println!("Open CSV file with Excel/Google Sheets for visualization");
+}
+
+#[cfg(not(feature = "groth16-verifier"))]
+fn main() {
+    eprintln!("[zk_batch_param_bench] feature 'groth16-verifier' 未启用，示例被跳过。");
 }

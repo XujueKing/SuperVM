@@ -5,6 +5,8 @@ members = [
     "privacy-test",
     "zk-groth16-test",
     "halo2-eval",
+    "src/gpu-executor",
+    # 注意: Truly-friendly 为本地目录，默认不加入 workspace 以避免被编译/提交
 ]
 resolver = "2"
 

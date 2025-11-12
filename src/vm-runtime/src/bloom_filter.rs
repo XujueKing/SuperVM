@@ -60,7 +60,7 @@ impl BloomFilter {
         let hash_count = Self::optimal_hash_count(size, expected_items);
 
         // 初始化位数组 (使用 u64 存储,每个 u64 有 64 位)
-        let words = (size + 63) / 64;
+    let words = size.div_ceil(64);
 
         Self {
             bits: RwLock::new(vec![0u64; words]),
@@ -76,7 +76,7 @@ impl BloomFilter {
     /// - `size`: 位数组大小 (bits)
     /// - `hash_count`: 哈希函数数量
     pub fn with_size(size: usize, hash_count: usize) -> Self {
-        let words = (size + 63) / 64;
+    let words = size.div_ceil(64);
 
         Self {
             bits: RwLock::new(vec![0u64; words]),

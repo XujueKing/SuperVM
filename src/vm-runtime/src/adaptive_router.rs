@@ -102,6 +102,12 @@ pub struct AdaptiveRouter {
     state: Mutex<AdaptiveState>,
 }
 
+impl Default for AdaptiveRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AdaptiveRouter {
     pub fn new() -> Self {
         Self::new_with_config(AdaptiveRouterConfig::default())
@@ -136,7 +142,7 @@ impl AdaptiveRouter {
     pub fn maybe_update(&self, stats: &MvccSchedulerStats) {
         let mut st = self.state.lock().unwrap();
         st.tick += 1;
-        if st.tick % self.cfg.update_every != 0 {
+        if !st.tick.is_multiple_of(self.cfg.update_every) {
             return;
         }
 

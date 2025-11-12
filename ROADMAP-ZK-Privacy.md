@@ -10,7 +10,7 @@
 
 为 SuperVM 构建高性能、可验证的隐私交易层，支持：
 - **隐私转账**: RingCT 风格的混币交易
-- **跨链隐私**: 跨链桥的零知识证明聚合
+- **证明聚合**: Halo2 递归聚合优化
 - **zkVM 基础**: 为未来 zkVM 开发建立技术基础
 
 ---
@@ -53,7 +53,7 @@
   - 递归能力：Halo2 原生支持
 - [x] **技术选型结论**
   - 链上隐私交易 → Groth16（证明小、验证快）
-  - 跨链桥聚合 → Halo2（递归支持）
+  - 证明聚合 → Halo2（递归支持）
   - zkVM 开发 → Halo2（开发迭代快）
   - 推荐：混合策略，发挥各自优势
 - [x] 文档：`docs/research/halo2-eval-summary.md`
@@ -101,8 +101,7 @@
   - [x] 集成到 SuperVM PrivacyPath 路由逻辑
   - [x] 测试用证明生成工具（`generate_test_proof()`）
   - [x] 批量验证器（BatchVerifier）与并行验证优化
-  - [ ] Solidity 验证器生成（链上部署用，待 Phase 2.2 实现）
-  - [ ] Gas 成本优化（目标 <200k Gas，仅适用于 Solidity 版本）
+  - [x] ~~Solidity 验证器生成~~（**已移除**：由 L3.2 EVM Adapter 负责，保持 L0 核心纯净）
 - [x] **SuperVM 集成**
   - [x] 定义隐私交易 API（PrivacyPath 路由）
   - [x] 实现 UTXO 状态管理
@@ -122,33 +121,69 @@
   - [x] 本地 Rust 环境验证测试
   - [x] 发送隐私交易并验证（`privacy_demo`）
   - [x] 性能压测（TPS 测试通过 `zk_latency_bench` QPS 参数可调）
-  - [ ] 链上部署测试（需先实现 Solidity 验证器）
 
-**交付物**: Rust Groth16 验证器 + SuperVM 集成 + 性能基准报告 + Grafana + 告警规则
-**备注**: 当前为原生 Rust 实现（链下/L2 验证场景）；Solidity 验证器仅在需要 L1 结算或跨链桥时实现
+**交付物**: Rust Groth16 验证器 + SuperVM 集成 + 性能基准报告 + Grafana + 告警规则  
+**架构说明**: L0 核心仅提供 Rust 原生 ZK 验证能力；EVM 链上验证（Solidity）由 L3.2 EVM Adapter 插件负责
 
 ---
 
-### 🔗 Phase 3: 跨链桥与 L1 结算（Week 9-12）
+### 🔗 Phase 3: 证明聚合（Week 9-12）
 
-**目标**: 实现 SuperVM L2 与 L1/其他链的互操作性。
+**目标**: 实现 ZK 证明的高效聚合与递归验证优化。
 
-#### Week 9-10: L1 结算桥（可选）
-- [ ] **Solidity 验证器生成**（仅当需要 L1 提款/结算时）
+> **架构调整**: 
+> - 原跨链桥方案已移除，ChainAdapter 提供更优的多链统一方案
+> - Solidity 验证器移至 L3.2 EVM Adapter 插件（保持 L0 核心纯净）
+> - 本阶段聚焦 Halo2 递归聚合技术本身
+> - **Bulletproofs集成完成** (2025-11-11): 提供透明Setup的Range Proof替代方案
+
+#### Week 9-10: Bulletproofs Range Proof集成 ✅
+- [x] **Bulletproofs依赖集成**
+  - [x] 添加bulletproofs 4.0, curve25519-dalek-ng 4.1, merlin 3.0
+  - [x] 解决类型兼容性问题 (curve25519-dalek vs curve25519-dalek-ng)
+- [x] **核心实现** (`bulletproofs_range_proof.rs` 244行)
+  - [x] BulletproofsRangeProver 证明器
+  - [x] prove_range() - 生成范围证明
+  - [x] verify_range() - 验证单个证明
+  - [x] verify_batch() - 批量验证 (共享生成器优化)
+  - [x] proof_size() - 获取证明大小
+- [x] **单元测试覆盖** (6/6 通过)
+  - [x] test_64bit_range_proof - 64位范围证明
+  - [x] test_32bit_range_proof - 32位范围证明  
+  - [x] test_out_of_range_fails - 超范围检测
+  - [x] test_batch_verification - 批量验证10个证明
+  - [x] test_invalid_proof_fails - 无效证明检测
+  - [x] test_proof_size_comparison - 不同位数证明大小对比
+- [x] **性能对比框架** (`compare_range_proofs.rs` 214行)
+  - [x] Groth16 vs Bulletproofs 全面对比
+  - [x] 批量验证性能测试
+  - [x] 使用场景建议
+- [x] **文档完善**
+  - [x] BULLETPROOFS_PLAN.md - 技术方案与集成计划
+  - [x] 自动化验证脚本
+
+**性能指标** (实测):
+- 64-bit Range Proof大小: ~600-736 bytes (vs Groth16 128B)
+- 批量验证10个证明: ~16.78ms (均摊1.68ms/个)
+- 透明Setup: 无需Trusted Ceremony ✅
+- 适用场景: 链下聚合、开发调试、对信任假设要求极高的场景
+
+**交付物**: Bulletproofs核心模块 + 6个单元测试 + 性能对比框架 + 完整文档
+
+#### Week 9-10: EVM 链上验证（可选 - 由 L3.2 EVM Adapter 负责）
+- [ ] **Solidity 验证器生成**（非 L0 核心任务，由 EVM Adapter 插件实现）
   - [ ] 使用 arkworks 导出 Groth16 验证密钥
   - [ ] 生成 Solidity 验证合约（支持 EVM 链）
   - [ ] 优化 Gas 成本（目标 <200k）
-  - [ ] L1 Bridge 合约：锁定/释放资产逻辑
-- [ ] **L2 → L1 提款流程**
-  - [ ] SuperVM 生成提款证明
-  - [ ] 链下聚合多个提款（批量节省 Gas）
-  - [ ] L1 验证并释放资产
+  - [ ] 集成到 L3.2 EVM Adapter 插件
 - [ ] **测试**
   - [ ] 本地 Ganache/Hardhat 测试链
   - [ ] Gas 成本分析
   - [ ] 安全性审计
 
-#### Week 11-12: Halo2 递归聚合（跨链优化）
+**备注**: 此部分为可选功能，仅在需要 EVM 链上结算时由 L3.2 EVM Adapter 插件负责实现
+
+#### Week 11-12: Halo2 递归聚合
 - [ ] **递归证明实现**
   - [ ] 实现简单递归电路（验证单个 Groth16 证明）
   - [ ] 扩展到批量聚合（N 个证明 → 1 个 Halo2 证明）
@@ -157,21 +192,12 @@
   - [ ] 聚合 10/50/100 个证明的开销
   - [ ] 证明大小增长曲线
   - [ ] 验证时间对比
-
-#### Week 11-12: 跨链桥原型
-- [ ] **跨链架构设计**
-  - [ ] 定义跨链消息格式
-  - [ ] 实现链下聚合服务
-  - [ ] 目标链验证合约
-- [ ] **PoC 实现**
-  - [ ] 源链：发送多个隐私交易
+- [ ] **多链证明聚合 PoC**
+  - [ ] 源链：生成多个隐私交易证明
   - [ ] 链下：Halo2 聚合证明
-  - [ ] 目标链：验证单个聚合证明
-- [ ] **压力测试**
-  - [ ] 吞吐量测试（聚合速度）
-  - [ ] 成本分析（Gas 对比）
+  - [ ] 验证：单个聚合证明验证多笔交易
 
-**交付物**: `supervm-bridge/` crate + 跨链桥 PoC
+**交付物**: `supervm-aggregation/` crate + 证明聚合 PoC
 
 ---
 
@@ -209,13 +235,14 @@
 
 ### 已选定技术
 
-| 组件 | 技术栈 | 理由 |
-|------|--------|------|
-| **链上隐私交易** | arkworks (Groth16) | 证明小（128B）、验证快（3.6ms）、Gas 低 |
-| **跨链聚合** | Halo2 (KZG) | 递归证明、通用 Setup |
-| **zkVM 开发** | Halo2 / RISC Zero | 开发迭代快、生态支持 |
-| **曲线** | Bn254 (BN128) | EVM 原生支持、配对友好 |
-| **哈希** | Poseidon / Blake2s | 零知识友好 |
+| 组件 | 技术栈 | 理由 | 状态 |
+|------|--------|------|------|
+| **链上隐私交易** | arkworks (Groth16) | 证明小（128B）、验证快（3.6ms）、Gas 低 | ✅ 已实现 |
+| **链下批量聚合** | Bulletproofs | 透明Setup、批量验证快、灵活范围 | ✅ 已实现 |
+| **跨链聚合** | Halo2 (KZG) | 递归证明、通用 Setup | 📋 规划中 |
+| **zkVM 开发** | Halo2 / RISC Zero | 开发迭代快、生态支持 | 📋 规划中 |
+| **曲线** | Bn254 (BN128) / Ristretto255 | EVM 原生支持、Bulletproofs友好 | ✅ 已实现 |
+| **哈希** | Poseidon / Blake2s | 零知识友好 | ✅ 已实现 |
 
 ### 依赖库版本
 
@@ -230,6 +257,12 @@ ark-relations = "0.4"
 # Halo2
 halo2_proofs = "0.3"
 halo2curves = "0.6"
+
+# Bulletproofs (新增 2025-11-11)
+bulletproofs = "4.0"
+curve25519-dalek-ng = "4.1"
+merlin = "3.0"
+bincode = "1.3"
 
 # 工具
 rand = "0.8"
@@ -352,7 +385,6 @@ blake2 = "0.10"
 - ✅ halo2-eval-summary.md（Halo2 总结）
 - ✅ RingCT 优化报告（含 Multi-UTXO 扩展）：`zk-groth16-test/OPTIMIZATION_REPORT.md`
 - ⏳ RingCT 设计文档
-- ⏳ 跨链桥架构文档
 - ⏳ zkVM 技术报告
 
 ---

@@ -29,6 +29,7 @@ rayon = "1.10"
 dashmap = "6.1"
 parking_lot = "0.12"
 once_cell = "1.20"
+smallvec = "1.13"  # Phase C: MVCC 版本链优化,避免小版本链堆分配
 
 # 序列化库
 serde = { version = "1.0", features = ["derive"] }
@@ -58,6 +59,11 @@ default = []
 demos = []
 rocksdb-storage = ["dep:rocksdb"]  # Phase 4.3: RocksDB 持久化存储特性
 unstable-examples = [] # 临时隔离编译失败或未完成示例，默认不启用
+dashmap-mvcc = []            # 共识路径 DashMap 优化占位特性（当前默认已启用 DashMap）
+smallvec-chains = []         # 使用 SmallVec<[Version;4]> 存储短版本链，减少堆分配
+thread-local-ts = []         # 线程本地时间戳批量分配，减少 AtomicU64 热点
+partitioned-fastpath = []    # 多核分区化 FastPath/Consensus 执行器 (按 key 哈希分区)
+consensus-optimizations = [] # 共识路径微优化开关（锁持有缩短/批量提交/冲突预检）
 groth16-verifier = [
     "dep:zk-groth16-test",
     "dep:ark-groth16",
@@ -77,6 +83,8 @@ cross-shard = [
     "dep:tokio",
     "dep:tokio-stream"
 ]
+hybrid-exec = ["dep:gpu-executor"] # Phase 13: CPU/GPU 混合执行器集成（当前仅 CPU/并行）
+hybrid-lite = []                 # Phase 13: 轻量模式（禁用指标采集等额外开销）
 
 [dependencies.zk-groth16-test]
 path = "../../zk-groth16-test"
@@ -116,6 +124,12 @@ optional = true
 version = "0.4"
 optional = true
 
+# Phase 13: Hybrid Executor (optional)
+[dependencies.gpu-executor]
+path = "../gpu-executor"
+optional = true
+features = ["cpu", "parallel"]
+
 [[bench]]
 name = "parallel_benchmark"
 harness = false
@@ -126,6 +140,10 @@ harness = false
 
 [[bench]]
 name = "flush_batch_benchmark"
+harness = false
+
+[[bench]]
+name = "hybrid_benchmark"
 harness = false
 
 [[example]]
@@ -234,6 +252,20 @@ path = "examples/metrics_http_demo.rs"
 [[example]]
 name = "mixed_path_bench"
 path = "examples/mixed_path_bench.rs"
+
+[[example]]
+name = "e2e_three_channel_test"
+path = "examples/e2e_three_channel_test.rs"
+
+[[example]]
+name = "multi_core_consensus_bench"
+path = "examples/multi_core_consensus_bench.rs"
+required-features = ["partitioned-fastpath"]
+
+[[example]]
+name = "two_pc_consensus_bench"
+path = "examples/two_pc_consensus_bench.rs"
+required-features = ["partitioned-fastpath"]
 
 [[example]]
 name = "routing_metrics_http_demo"

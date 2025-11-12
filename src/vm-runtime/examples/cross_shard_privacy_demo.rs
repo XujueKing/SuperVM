@@ -2,13 +2,20 @@
 // Run with: cargo run -p vm-runtime --features cross-shard --example cross_shard_privacy_demo
 #![cfg(feature = "cross-shard")]
 
+#[cfg(feature = "cross-shard")]
 use vm_runtime::shard::service::{server, ShardNode};
+#[cfg(feature = "cross-shard")]
 use vm_runtime::{ShardCoordinator, ShardConfig, ShardId, Decision};
+#[cfg(feature = "cross-shard")]
 use vm_runtime::cross_shard_proto::{PrepareRequest, ObjectVersion, KeyWrite, PrivacyProof};
+#[cfg(feature = "cross-shard")]
 use tonic::transport::Server;
+#[cfg(feature = "cross-shard")]
 use std::net::SocketAddr;
+#[cfg(feature = "cross-shard")]
 use std::collections::HashMap;
 
+#[cfg(feature = "cross-shard")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Two shard endpoints
@@ -67,4 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Final decision broadcast: {:?}", decision as i32);
 
     Ok(())
+}
+
+#[cfg(not(feature = "cross-shard"))]
+fn main() {
+    eprintln!("[cross_shard_privacy_demo] feature 'cross-shard' 未启用，示例被跳过。");
 }

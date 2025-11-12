@@ -1,16 +1,24 @@
 // 生成 RingCT BN254 Solidity 验证器 (用于 EVM 链部署)
 // 使用 BN254 曲线,利用 EVM 原生预编译 (0x06/0x07/0x08),实现低 Gas 成本验证
+// 仅在启用 `groth16-verifier` 特性时可用；否则提供占位 main。
 
+#[cfg(feature = "groth16-verifier")]
 use ark_bn254::{Bn254, Fr};
+#[cfg(feature = "groth16-verifier")]
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+#[cfg(feature = "groth16-verifier")]
 use ark_groth16::Groth16;
+#[cfg(feature = "groth16-verifier")]
 use ark_snark::SNARK;
+#[cfg(feature = "groth16-verifier")]
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 
+#[cfg(feature = "groth16-verifier")]
 use vm_runtime::privacy::solidity_verifier::{SolidityVerifierGenerator, CurveKind};
 
 /// 简化的 RingCT 电路 (BN254 版本)
 /// 证明: commitment = value + blinding_factor (Pedersen 承诺简化版)
+#[cfg(feature = "groth16-verifier")]
 #[derive(Clone)]
 struct RingCTCircuitBn254 {
     // 见证值 (私有)
@@ -21,6 +29,7 @@ struct RingCTCircuitBn254 {
     pub commitment: Option<Fr>,       // Pedersen 承诺 C = value*G + blinding_factor*H
 }
 
+#[cfg(feature = "groth16-verifier")]
 impl ConstraintSynthesizer<Fr> for RingCTCircuitBn254 {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         // 分配见证变量
@@ -56,6 +65,7 @@ impl ConstraintSynthesizer<Fr> for RingCTCircuitBn254 {
     }
 }
 
+#[cfg(feature = "groth16-verifier")]
 fn main() {
     println!("=== RingCT BN254 Solidity Verifier Generator ===\n");
 
@@ -130,5 +140,10 @@ fn main() {
 
     println!("✅ BN254 RingCT verifier generation complete!");
     println!("📖 See docs/DUAL-CURVE-VERIFIER-GUIDE.md for usage details");
+}
+
+#[cfg(not(feature = "groth16-verifier"))]
+fn main() {
+    eprintln!("[generate_ringct_bn254_verifier] feature 'groth16-verifier' 未启用，示例被跳过。");
 }
 

@@ -17,6 +17,10 @@ pub struct CommitmentGenerator {
     // TODO: Phase 2.2.3 - 添加椭圆曲线点操作
 }
 
+impl Default for CommitmentGenerator {
+    fn default() -> Self { Self::new() }
+}
+
 impl CommitmentGenerator {
     /// 创建新的生成器
     pub fn new() -> Self {
@@ -45,6 +49,10 @@ impl CommitmentGenerator {
 /// 用于验证承诺的有效性
 pub struct CommitmentVerifier {
     // TODO: Phase 2.2.3 - 添加验证逻辑
+}
+
+impl Default for CommitmentVerifier {
+    fn default() -> Self { Self::new() }
 }
 
 impl CommitmentVerifier {

@@ -31,7 +31,10 @@ SuperVM/
 │   ├── ROADMAP-ZK-Privacy.md              - ZK 隐私专项计划
 │   ├── CHANGELOG.md                       - 版本更新日志
 │   ├── CONTRIBUTING.md                    - 贡献指南
-│   └── DEVELOPER.md                       - 开发者文档
+│   ├── DEVELOPER.md                       - 开发者文档
+│   ├── L0-COMPLETION-REPORT.md            - L0 核心层完成报告 (100% ✅) 🎉 **NEW**
+│   ├── TPS-1.3M-VERIFICATION-REPORT.md    - 1.474M TPS 实测验证报告 (升级版) 🚀 **NEW**
+│   └── BENCHMARK_RESULTS.md               - 基准测试结果汇总 📊
 │
 ├── 📚 docs/ - 设计与分析文档
 │   ├── INDEX.md (本文件)                  - 文档索引与导航
@@ -54,8 +57,12 @@ SuperVM/
 │   ├── ZK-BATCH-VERIFY.md                 - ZK 批量验证用户指南 🔐
 │   ├── NATIVE-MONITOR-DESIGN.md           - 原生监控客户端设计 (egui) 🎨
 │   ├── PHASE-4.3-WEEK3-4-SUMMARY.md       - Phase 4.3 Week 3-4 总结 📝
+│   ├── PERF-OPTIMIZATION-NEXT.md          - 后续性能优化清单 (FastPath/Parallel Prover) 🎯 **NEW**
+│   ├── L0-PERF-OPTIMIZATION-SUMMARY.md    - L0 性能优化总结 (延迟分位 + 线程池复用) ✅ **LATEST**
 │   ├── PHASE-C-PERFORMANCE-PLAN.md        - Phase C: FastPath 1M TPS 优化计划 ⚡ **NEW**
 │   ├── PHASE-D-EVM-ADAPTER-PLAN.md        - Phase D: EVM 适配器研究计划 🔌 **NEW**
+│   ├── TPS-METRICS-EXPLAINED.md           - TPS 性能指标详解 (三维度解读) 📈 **NEW**
+│   ├── TPS-PERFORMANCE-PYRAMID.md         - TPS 性能金字塔可视化 📊 **NEW**
 │   ├── stress-testing-guide.md            - 压力测试指南
 │   ├── gc-observability.md                - GC 可观测性
 │   ├── evm-adapter-design.md              - EVM 适配器插件化设计
@@ -125,8 +132,12 @@ SuperVM/
 ### 白皮书与宣传材料 📄 **NEW**
 - [白皮书 (中文)](../WHITEPAPER.md) - 公开发布版本，包含神经网络架构
 - [白皮书 (English)](../WHITEPAPER_EN.md) - 英文版本，面向国际受众
+- [性能白皮书](./技术白皮书/SuperVM-性能白皮书-800K-1.2M-TPS-论证与实测.md) - 800K-1.3M TPS 可达性论证 🚀 **NEW**
 - [社交媒体发布模板](./SOCIAL-MEDIA-TEMPLATES.md) - Twitter/Medium/Reddit/Discord 素材
 - [投资者 Pitch Deck](./INVESTOR-PITCH-DECK.md) - 18 页投资者演示文稿
+- [投资人路演 PPT 大纲](./商业计划/投资人路演PPT大纲.md) - 25 页完整路演方案 🎯 **NEW**
+- [SuperVM 公链启动商业计划书](./商业计划/SuperVM公链启动商业计划书.md) - 74 页完整商业计划 💼 **NEW**
+- [融资需求速览](./商业计划/融资需求速览.md) - 融资方案与投资回报分析 💰 **NEW**
 - [PDF 生成指南](./PDF-GENERATION-GUIDE.md) - Pandoc 转换专业 PDF
 - [视觉资产指南](./VISUAL-ASSETS-GUIDE.md) - 图表、信息图、架构图生成
 
@@ -266,25 +277,43 @@ SuperVM/
 
 ### 场景 4: 我想做性能调优
 
-推荐路径（1 小时）:
-1. [stress-testing-guide.md](./stress-testing-guide.md) - 压测与基准
+推荐路径（1.5 小时）:
+1. [L0-COMPLETION-REPORT.md](../L0-COMPLETION-REPORT.md) - L0 完成报告 **NEW** 🎉
+   - 核心性能指标汇总
+   - 6 个子模块验证结果
+   - 1.474M TPS 实测数据 (升级版, 含历史 1.305M/1.19M)
+2. [TPS-1.3M-VERIFICATION-REPORT.md](../TPS-1.3M-VERIFICATION-REPORT.md) - TPS 验证报告 **NEW** 🚀
+   - 1.474M TPS 完整测试过程 (含历史对比)
+   - 4 种模式性能对比
+   - 复现步骤与对外宣传建议
+3. [TPS-METRICS-EXPLAINED.md](./TPS-METRICS-EXPLAINED.md) - TPS 指标详解 **NEW** 📈
+   - 微基准 vs 端到端 vs 生产目标
+   - 三维度 TPS 解读
+   - FAQ 与对外说法建议
+4. [TPS-PERFORMANCE-PYRAMID.md](./TPS-PERFORMANCE-PYRAMID.md) - 性能金字塔 **NEW** 📊
+   - 可视化对比图表
+   - 与竞品对比
+   - 影响因素分析
+5. [stress-testing-guide.md](./stress-testing-guide.md) - 压测与基准
    - 高并发读写
    - 热点冲突
    - 长事务模型
-2. [gc-observability.md](./gc-observability.md) - GC 可观测性
+6. [gc-observability.md](./gc-observability.md) - GC 可观测性
    - GC 统计
    - 自适应策略
-3. [parallel-execution.md](./parallel-execution.md) - 并行执行
+7. [parallel-execution.md](./parallel-execution.md) - 并行执行
    - 冲突检测
    - 工作窃取
-4. [AUTO-TUNER.md](./AUTO-TUNER.md) - 自适应调优 **NEW**
+8. [AUTO-TUNER.md](./AUTO-TUNER.md) - 自适应调优
    - 自动参数调节
    - Manual vs Auto 对比
-5. [LFU-HOTKEY-TUNING.md](./LFU-HOTKEY-TUNING.md) - 热点调优
+9. [LFU-HOTKEY-TUNING.md](./LFU-HOTKEY-TUNING.md) - 热点调优
    - 分层热键识别
    - LFU 参数配置
 
 关键问题:
+- **SuperVM 实测性能是多少？** → [1.474M TPS 验证报告 (升级版)](../TPS-1.3M-VERIFICATION-REPORT.md) ✅
+- **如何理解不同的 TPS 数据？** → [TPS 指标详解](./TPS-METRICS-EXPLAINED.md) 📈
 - 如何进行性能压测？
 - 如何调优 GC？
 - 如何提升并发度？

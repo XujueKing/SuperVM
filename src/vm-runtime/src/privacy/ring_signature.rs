@@ -17,6 +17,8 @@ pub struct RingSigner {
     // TODO: Phase 2.2.1 - 添加密钥管理
 }
 
+impl Default for RingSigner { fn default() -> Self { Self::new() } }
+
 impl RingSigner {
     /// 创建新的签名器
     pub fn new() -> Self {
@@ -51,6 +53,8 @@ impl RingSigner {
 pub struct RingVerifier {
     // TODO: Phase 2.2.1 - 添加验证逻辑
 }
+
+impl Default for RingVerifier { fn default() -> Self { Self::new() } }
 
 impl RingVerifier {
     /// 创建新的验证器

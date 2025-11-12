@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use vm_runtime::{GcConfig, MvccStore, RocksDBConfig, RocksDBStorage};
 
 const TEST_DURATION_HOURS: u64 = 1; // 原 24，示例缩短
-const REPORT_INTERVAL_MINUTES: u64 = 5; // 原 10
+const REPORT_INTERVAL_MINUTES: u64 = 1; // 原 10，缩短为1分钟快速验证
 const CHECKPOINT_INTERVAL_HOURS: u64 = 1; // 原 6
 
 fn main() {
@@ -69,6 +69,10 @@ fn main() {
 
         // 定期报告
         if last_report.elapsed() >= report_interval {
+            // 采集 RocksDB 内部指标
+            let rocksdb_metrics = rocksdb.collect_metrics();
+            mvcc.update_rocksdb_metrics(&rocksdb_metrics);
+
             print_progress_report(
                 start_time.elapsed(),
                 test_duration,
@@ -76,6 +80,7 @@ fn main() {
                 total_success,
                 total_conflicts,
                 &mvcc,
+                &rocksdb_metrics,
             );
             last_report = Instant::now();
         }
@@ -159,6 +164,7 @@ fn print_progress_report(
     total_success: u64,
     total_conflicts: u64,
     mvcc: &Arc<MvccStore>,
+    rocksdb_metrics: &vm_runtime::RocksDBMetrics,
 ) {
     let elapsed_hours = elapsed.as_secs() as f64 / 3600.0;
     let progress_pct = (elapsed.as_secs() as f64 / total_duration.as_secs() as f64) * 100.0;
@@ -186,6 +192,29 @@ fn print_progress_report(
     println!("\n📊 实时性能:");
     println!("   - 当前 TPS: {:.0}", current_tps);
     println!("   - 当前成功率: {:.2}%", current_success_rate);
+
+    println!("\n🗄️  RocksDB 存储:");
+    println!("   - 估计键数量: {}", rocksdb_metrics.estimate_num_keys);
+    println!(
+        "   - SST 文件总大小: {:.2} MB",
+        rocksdb_metrics.total_sst_size_bytes as f64 / 1024.0 / 1024.0
+    );
+    let cache_total = rocksdb_metrics.cache_hit + rocksdb_metrics.cache_miss;
+    let cache_hit_rate = if cache_total > 0 {
+        (rocksdb_metrics.cache_hit as f64 / cache_total as f64) * 100.0
+    } else {
+        0.0
+    };
+    println!("   - Block Cache 命中率: {:.2}%", cache_hit_rate);
+    println!(
+        "   - Compaction CPU: {:.2} ms",
+        rocksdb_metrics.compaction_cpu_micros as f64 / 1000.0
+    );
+    println!(
+        "   - Write Stall: {:.2} ms",
+        rocksdb_metrics.write_stall_micros as f64 / 1000.0
+    );
+    println!("   - Level 0 文件数: {}", rocksdb_metrics.num_files_level0);
 
     let gc_stats = mvcc.get_gc_stats();
     println!("\n🗑️  GC 统计:");

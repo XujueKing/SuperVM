@@ -17,6 +17,8 @@ pub struct RangeProofGenerator {
     // TODO: Phase 2.2.3 - 集成 bulletproofs 库
 }
 
+impl Default for RangeProofGenerator { fn default() -> Self { Self::new() } }
+
 impl RangeProofGenerator {
     /// 创建新的生成器
     pub fn new() -> Self {
@@ -57,6 +59,8 @@ impl RangeProofGenerator {
 pub struct RangeProofVerifier {
     // TODO: Phase 2.2.3 - 添加验证逻辑
 }
+
+impl Default for RangeProofVerifier { fn default() -> Self { Self::new() } }
 
 impl RangeProofVerifier {
     /// 创建新的验证器

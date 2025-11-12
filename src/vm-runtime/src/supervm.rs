@@ -221,6 +221,12 @@ impl<'a> SuperVM<'a> {
         proof_bytes: Option<&[u8]>,
         public_input_bytes: Option<&[u8]>,
     ) -> bool {
+        // 当未启用 groth16-verifier 功能时，避免未使用参数的告警
+        #[cfg(not(feature = "groth16-verifier"))]
+        {
+            let _ = proof_bytes;
+            let _ = public_input_bytes;
+        }
         #[cfg(feature = "groth16-verifier")]
         {
             // Batch 逻辑：若启用批量并提供 proof/public_input，则进入缓冲

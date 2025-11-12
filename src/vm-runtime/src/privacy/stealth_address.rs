@@ -16,6 +16,8 @@ pub struct StealthAddressGenerator {
     // TODO: Phase 2.2.2 - 添加 ECDH 密钥交换
 }
 
+impl Default for StealthAddressGenerator { fn default() -> Self { Self::new() } }
+
 impl StealthAddressGenerator {
     /// 创建新的生成器
     pub fn new() -> Self {

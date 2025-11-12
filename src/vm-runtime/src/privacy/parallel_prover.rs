@@ -1,17 +1,57 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // 并行证明生成模块 (Groth16)
 // Phase 2.2.X: 目标 4 核 > 400 TPS (批量 prove)
-// 初始骨架: 后续将接入具体 RingCT / RangeProof 电路输入类型
+// 优化: 持久化线程池复用 + 全局 ProvingKey 缓存
 
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 use rayon::prelude::*;
+use rayon::ThreadPool;
 use ark_bls12_381::Bls12_381;
 use ark_groth16::{Groth16, ProvingKey};
 use ark_snark::SNARK;
 use ark_bls12_381::Fr;
 use crate::metrics::MetricsCollector;
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// 全局共享线程池(避免频繁创建销毁)
+/// 
+/// 默认使用 CPU 核心数作为线程数,可通过环境变量 `PROVER_THREADS` 覆盖
+static GLOBAL_PROVER_POOL: Lazy<Arc<ThreadPool>> = Lazy::new(|| {
+    let num_threads = std::env::var("PROVER_THREADS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        });
+    
+    Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .thread_name(|i| format!("prover-worker-{}", i))
+            .build()
+            .expect("Failed to build global prover thread pool")
+    )
+});
+
+/// 全局线程池使用统计
+static POOL_TASK_COUNT: AtomicU64 = AtomicU64::new(0);
+static POOL_TOTAL_DURATION_NS: AtomicU64 = AtomicU64::new(0);
+
+/// 获取全局线程池统计信息
+pub fn get_pool_stats() -> (u64, f64) {
+    let count = POOL_TASK_COUNT.load(Ordering::Relaxed);
+    let total_ns = POOL_TOTAL_DURATION_NS.load(Ordering::Relaxed);
+    let avg_ms = if count > 0 {
+        (total_ns as f64) / (count as f64) / 1_000_000.0
+    } else {
+        0.0
+    };
+    (count, avg_ms)
+}
 
 /// 单个电路输入占位结构 (后续替换为真实 RingCT 交易上下文)
 #[derive(Clone)]
@@ -58,11 +98,36 @@ pub struct ParallelProver {
     pk: Arc<ProvingKey<Bls12_381>>,
     config: ParallelProveConfig,
     metrics: Option<Arc<MetricsCollector>>,
+    /// 可选的自定义线程池（None 则使用全局共享池）
+    custom_pool: Option<Arc<ThreadPool>>,
 }
 
 impl ParallelProver {
     pub fn new(pk: ProvingKey<Bls12_381>, config: ParallelProveConfig) -> Self {
-        Self { pk: Arc::new(pk), config, metrics: None }
+        Self { 
+            pk: Arc::new(pk), 
+            config, 
+            metrics: None,
+            custom_pool: None,
+        }
+    }
+
+    /// 使用全局共享的 ProvingKey 创建（推荐）
+    ///
+    /// 该方法复用全局缓存的 ProvingKey,避免重复 setup 开销（setup 在首次访问时执行一次）
+    pub fn with_shared_setup(config: ParallelProveConfig) -> Self {
+        Self {
+            pk: MULTIPLY_PROVING_KEY.clone(),
+            config,
+            metrics: None,
+            custom_pool: None,
+        }
+    }
+
+    /// 使用自定义线程池创建（高级用法）
+    pub fn with_custom_pool(mut self, pool: Arc<ThreadPool>) -> Self {
+        self.custom_pool = Some(pool);
+        self
     }
 
     pub fn with_metrics(mut self, metrics: Arc<MetricsCollector>) -> Self {
@@ -75,8 +140,11 @@ impl ParallelProver {
         let start = Instant::now();
         let mut per_latency = Vec::with_capacity(inputs.len());
 
-        // 可选自定义线程池
-        let pool_opt = self.config.num_threads.map(|n| rayon::ThreadPoolBuilder::new().num_threads(n).build().expect("threadpool build"));
+        // 使用全局共享线程池或自定义池
+        let pool = self.custom_pool.as_ref()
+            .map(|p| Arc::clone(p))
+            .unwrap_or_else(|| Arc::clone(&GLOBAL_PROVER_POOL));
+        
         let pk_ref = self.pk.clone();
 
         // 闭包: 生成单个证明 (后续替换为实际 RingCT 电路)
@@ -91,13 +159,14 @@ impl ParallelProver {
             (res.is_ok(), dur)
         };
 
-        let results: Vec<(bool, Duration)> = if let Some(pool) = pool_opt.as_ref() {
-            pool.install(|| {
-                inputs.par_iter().map(prove_one).collect()
-            })
-        } else {
+        // 使用持久化线程池执行
+        let results: Vec<(bool, Duration)> = pool.install(|| {
             inputs.par_iter().map(prove_one).collect()
-        };
+        });
+        
+        // 记录线程池使用统计
+        POOL_TASK_COUNT.fetch_add(inputs.len() as u64, Ordering::Relaxed);
+        POOL_TOTAL_DURATION_NS.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
 
         let total_duration = start.elapsed();
         let mut ok = 0usize;
@@ -138,6 +207,20 @@ impl ParallelProver {
     }
 }
 
+// ====================== 全局 ProvingKey 缓存 ======================
+
+/// Multiply 电路全局 ProvingKey 缓存（单例，避免重复 setup）
+static MULTIPLY_PROVING_KEY: Lazy<Arc<ProvingKey<Bls12_381>>> = Lazy::new(|| {
+    use rand::rngs::OsRng;
+    use zk_groth16_test::MultiplyCircuit;
+
+    let mut rng = OsRng;
+    let circuit = MultiplyCircuit { a: None, b: None };
+    let (pk, _vk) = Groth16::<Bls12_381>::circuit_specific_setup(circuit, &mut rng)
+        .expect("Multiply circuit setup failed in global init");
+    Arc::new(pk)
+});
+
 // ====================== RingCT 并行 Prover（真实 Witness）======================
 
 /// RingCT 全局 ProvingKey 缓存（单例，避免重复 setup）
@@ -170,17 +253,18 @@ impl RingCtWitness {
     }
 }
 
-/// RingCT 并行批量 Prover（共享 ProvingKey）
+/// RingCT 并行批量 Prover(共享 ProvingKey)
 pub struct RingCtParallelProver {
     pk: Arc<ProvingKey<Bls12_381>>,
     config: ParallelProveConfig,
     metrics: Option<Arc<MetricsCollector>>,
+    custom_pool: Option<Arc<rayon::ThreadPool>>,
 }
 
 impl RingCtParallelProver {
     /// 使用给定的 ProvingKey 创建
     pub fn new(pk: ProvingKey<Bls12_381>, config: ParallelProveConfig) -> Self {
-        Self { pk: Arc::new(pk), config, metrics: None }
+        Self { pk: Arc::new(pk), config, metrics: None, custom_pool: None }
     }
 
     /// 使用默认电路形状生成 ProvingKey（基于示例电路的公开输入形状）
@@ -201,17 +285,18 @@ impl RingCtParallelProver {
         }
         let (pk, _vk) = Groth16::<Bls12_381>::circuit_specific_setup(setup_clone, &mut rng)
             .map_err(|e| anyhow::anyhow!("RingCT setup failed: {e}"))?;
-        Ok(Self { pk: Arc::new(pk), config, metrics: None })
+        Ok(Self { pk: Arc::new(pk), config, metrics: None, custom_pool: None })
     }
 
-    /// 使用全局共享的 ProvingKey（推荐）
+    /// 使用全局共享的 ProvingKey(推荐)
     ///
-    /// 该方法复用全局缓存的 ProvingKey，避免重复 setup 开销（setup 在首次访问时执行一次）
+    /// 该方法复用全局缓存的 ProvingKey,避免重复 setup 开销(setup 在首次访问时执行一次)
     pub fn with_shared_setup(config: ParallelProveConfig) -> Self {
         Self {
             pk: RINGCT_PROVING_KEY.clone(),
             config,
             metrics: None,
+            custom_pool: None,
         }
     }
 
@@ -220,18 +305,23 @@ impl RingCtParallelProver {
         self
     }
 
+    /// 使用自定义线程池(高级用法)
+    pub fn with_custom_pool(mut self, pool: Arc<rayon::ThreadPool>) -> Self {
+        self.custom_pool = Some(pool);
+        self
+    }
+
     /// 并行批量证明
     pub fn prove_batch(&self, witnesses: &[RingCtWitness]) -> ParallelProofStats {
         let start = Instant::now();
         let mut per_latency = Vec::with_capacity(witnesses.len());
 
-        let pool_opt = self.config.num_threads.map(|n| {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(n)
-                .build()
-                .expect("threadpool build")
-        });
+        // 使用全局线程池或自定义线程池
+        let pool_ref = self.custom_pool.as_ref().unwrap_or(&GLOBAL_PROVER_POOL);
         let pk_ref = self.pk.clone();
+
+        // 记录池使用统计
+        POOL_TASK_COUNT.fetch_add(witnesses.len() as u64, Ordering::Relaxed);
 
         let prove_one = |w: &RingCtWitness| -> (bool, Duration) {
             let local = Instant::now();
@@ -240,13 +330,13 @@ impl RingCtParallelProver {
             (res.is_ok(), dur)
         };
 
-        let results: Vec<(bool, Duration)> = if let Some(pool) = pool_opt.as_ref() {
-            pool.install(|| witnesses.par_iter().map(prove_one).collect())
-        } else {
+        let results: Vec<(bool, Duration)> = pool_ref.install(|| {
             witnesses.par_iter().map(prove_one).collect()
-        };
+        });
 
         let total_duration = start.elapsed();
+        POOL_TOTAL_DURATION_NS.fetch_add(total_duration.as_nanos() as u64, Ordering::Relaxed);
+
         let mut ok = 0usize;
         let mut failed = 0usize;
         for (succ, dur) in results.into_iter() {

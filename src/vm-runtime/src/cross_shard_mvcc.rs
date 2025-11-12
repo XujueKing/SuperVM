@@ -13,26 +13,29 @@ use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+// 简化复杂类型别名，降低类型复杂度
+type ActiveLocks = Arc<RwLock<HashMap<TxnId, (HashSet<ObjectId>, u64)>>>;
+type WaitGraph = Arc<RwLock<HashMap<TxnId, HashSet<TxnId>>>>;
+
 /// 跨分片 MVCC 扩展（为 MvccScheduler 添加远程验证能力）
 pub struct CrossShardMvccExt {
-    /// 本地分片 ID
-    #[allow(dead_code)]
-    local_shard_id: ShardId,
+    /// 本地分片 ID（保留用于未来扩展，暂时未使用）
+    _local_shard_id: ShardId,
     
     /// 活跃的跨分片事务锁
     /// txn_id -> (locked_objects, prepare_timestamp)
-    active_locks: Arc<RwLock<HashMap<TxnId, (HashSet<ObjectId>, u64)>>>,
+    active_locks: ActiveLocks,
     
     /// 等待图（用于死锁检测）
     /// txn_id -> 等待的事务集合
-    wait_graph: Arc<RwLock<HashMap<TxnId, HashSet<TxnId>>>>,
+    wait_graph: WaitGraph,
 }
 
 impl CrossShardMvccExt {
     /// 创建跨分片扩展
     pub fn new(local_shard_id: ShardId) -> Self {
         Self {
-            local_shard_id,
+            _local_shard_id: local_shard_id,
             active_locks: Arc::new(RwLock::new(HashMap::new())),
             wait_graph: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -203,7 +206,7 @@ impl CrossShardMvccExt {
         self.wait_graph
             .write()
             .entry(waiter)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(holder);
     }
     

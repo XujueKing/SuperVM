@@ -25,6 +25,14 @@ ark-ed-on-bls12-381-bandersnatch = { version = "0.4", features = ["r1cs"] }
 # 随机数
 rand = "0.8"
 
+# Bulletproofs (透明Setup的Range Proof)
+bulletproofs = "4.0"
+curve25519-dalek-ng = "4.1"
+merlin = "3.0"
+
+# 序列化
+bincode = "1.3"
+
 [dev-dependencies]
 criterion = "0.5"
 

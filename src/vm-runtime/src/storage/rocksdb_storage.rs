@@ -755,6 +755,35 @@ impl RocksDBStorage {
         );
         Ok(())
     }
+
+    /// 采集RocksDB内部指标用于Prometheus导出
+    pub fn collect_metrics(&self) -> RocksDBMetrics {
+        RocksDBMetrics {
+            estimate_num_keys: self.prop_u64("rocksdb.estimate-num-keys").unwrap_or(0),
+            total_sst_size_bytes: self.prop_u64("rocksdb.total-sst-files-size").unwrap_or(0),
+            cache_hit: self.prop_u64("rocksdb.block.cache.hit").unwrap_or(0),
+            cache_miss: self.prop_u64("rocksdb.block.cache.miss").unwrap_or(0),
+            compaction_cpu_micros: self.prop_u64("rocksdb.compaction.sum.cpu.micros").unwrap_or(0),
+            compaction_write_bytes: self.prop_u64("rocksdb.compact.write.bytes").unwrap_or(0),
+            write_stall_micros: self.prop_u64("rocksdb.write-stall.micros").unwrap_or(0),
+            num_files_level0: self.prop_u64("rocksdb.num-files-at-level0").unwrap_or(0),
+            num_immutable_mem_table: self.prop_u64("rocksdb.num-immutable-mem-table").unwrap_or(0),
+        }
+    }
+}
+
+/// RocksDB内部指标结构
+#[derive(Debug, Clone)]
+pub struct RocksDBMetrics {
+    pub estimate_num_keys: u64,
+    pub total_sst_size_bytes: u64,
+    pub cache_hit: u64,
+    pub cache_miss: u64,
+    pub compaction_cpu_micros: u64,
+    pub compaction_write_bytes: u64,
+    pub write_stall_micros: u64,
+    pub num_files_level0: u64,
+    pub num_immutable_mem_table: u64,
 }
 
 // 当 feature 未启用时提供空实现

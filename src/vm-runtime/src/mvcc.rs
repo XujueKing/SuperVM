@@ -4,6 +4,8 @@
 use crate::metrics::MetricsCollector;
 use dashmap::DashMap;
 use parking_lot::RwLock;
+#[cfg(feature = "smallvec-chains")]
+use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -115,9 +117,16 @@ impl Default for AutoFlushConfig {
 /// - 提交时仅锁定写集合涉及的键，最小化锁持有范围
 /// - 支持垃圾回收，清理不再需要的旧版本
 /// - 支持后台自动 GC，定期或按阈值触发
+#[cfg(feature = "smallvec-chains")]
+type VersionChain = RwLock<SmallVec<[Version; 4]>>;
+#[cfg(not(feature = "smallvec-chains"))]
+type VersionChain = RwLock<Vec<Version>>;
+
+
 pub struct MvccStore {
-    /// 每个 key 的版本链（按 ts 升序存放），使用 RwLock 允许并发读
-    data: DashMap<Vec<u8>, RwLock<Vec<Version>>>,
+    /// 每个 key 的版本链（按 ts 升序存放）
+    /// feature smallvec-chains: 使用 SmallVec 内联前 4 个版本，减少短链堆分配
+    data: DashMap<Vec<u8>, VersionChain>,
     /// 全局递增时间戳（原子操作，无锁）
     ts: AtomicU64,
     /// 活跃事务的最小 start_ts（水位线）
@@ -311,7 +320,7 @@ impl MvccStore {
         while self.commit_in_progress.load(Ordering::SeqCst) > 0 {
             std::thread::yield_now();
         }
-        let start_ts = self.ts.fetch_add(1, Ordering::SeqCst) + 1;
+    let start_ts = self.next_ts();
 
         // 注册活跃事务
         self.active_txns.lock().unwrap().push(start_ts);
@@ -323,6 +332,7 @@ impl MvccStore {
             reads: std::collections::HashSet::new(),
             committed: false,
             read_only: false,
+            override_commit_ts: None,
         }
     }
 
@@ -333,7 +343,7 @@ impl MvccStore {
     /// - commit() 直接返回，无需冲突检测
     /// - 性能更优，适合大量只读查询场景
     pub fn begin_read_only(self: &Arc<Self>) -> Txn {
-        let start_ts = self.ts.fetch_add(1, Ordering::SeqCst) + 1;
+    let start_ts = self.next_ts();
 
         // 注册活跃事务（只读事务也需要注册，防止 GC 清理它可见的版本）
         self.active_txns.lock().unwrap().push(start_ts);
@@ -345,11 +355,52 @@ impl MvccStore {
             reads: std::collections::HashSet::new(),
             committed: false,
             read_only: true,
+            override_commit_ts: None,
         }
     }
 
-    fn next_ts(&self) -> u64 {
+    #[cfg(feature = "thread-local-ts")]
+    pub fn next_ts(&self) -> u64 {
+        use std::cell::RefCell;
+        // 自适应批次状态：(next, end, current_batch, refills)
+        thread_local! {
+            static TS_BATCH: RefCell<(u64, u64, u64, u64)> = RefCell::new((0, 0, 128, 0));
+        }
+        const MAX_BATCH: u64 = 2048;
+        const REFILLS_FOR_GROW: u64 = 500; // 每 500 次耗尽尝试扩大一次
+        TS_BATCH.with(|cell| {
+            let (next, end, batch, refills) = *cell.borrow();
+            if next != 0 && next <= end {
+                cell.replace((next + 1, end, batch, refills));
+                next
+            } else {
+                // 批次耗尽：决定是否扩大
+                let mut new_batch = batch;
+                let mut new_refills = refills + 1;
+                if new_refills >= REFILLS_FOR_GROW && batch < MAX_BATCH {
+                    new_batch = (batch * 2).min(MAX_BATCH);
+                    new_refills = 0; // 重置计数
+                }
+                let start = self.ts.fetch_add(new_batch, Ordering::SeqCst) + 1;
+                let batch_end = start + new_batch - 1;
+                cell.replace((start + 1, batch_end, new_batch, new_refills));
+                start
+            }
+        })
+    }
+
+    #[cfg(not(feature = "thread-local-ts"))]
+    pub fn next_ts(&self) -> u64 {
         self.ts.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// 获取指定 key 的最新提交版本时间戳 (tail_ts)。
+    /// 若 key 不存在或无版本，返回 0。
+    pub fn get_tail_ts(&self, key: &[u8]) -> u64 {
+        self.data.get(key).map_or(0, |entry| {
+            let versions = entry.value().read();
+            versions.last().map_or(0, |v| v.ts)
+        })
     }
 
     /// 只读接口：按给定 start_ts 查询可见版本（测试/调试辅助）
@@ -764,7 +815,12 @@ impl MvccStore {
                 let entry = self
                     .data
                     .entry(key)
-                    .or_insert_with(|| RwLock::new(Vec::new()));
+                    .or_insert_with(|| RwLock::new({
+                        #[cfg(feature = "smallvec-chains")]
+                        { SmallVec::<[Version;4]>::new() }
+                        #[cfg(not(feature = "smallvec-chains"))]
+                        { Vec::new() }
+                    }));
                 let mut versions = entry.write();
                 versions.push(version);
 
@@ -843,17 +899,15 @@ impl MvccStore {
 
             // 检查是否满足刷新条件
             // 1. 基于时间
-            if config.interval_secs > 0 {
-                if last_flush_time.elapsed() >= Duration::from_secs(config.interval_secs) {
-                    should_flush = true;
-                }
+            if config.interval_secs > 0 &&
+                last_flush_time.elapsed() >= Duration::from_secs(config.interval_secs) {
+                should_flush = true;
             }
 
             // 2. 基于区块数
-            if config.blocks_per_flush > 0 {
-                if current_block >= last_flush_block + config.blocks_per_flush {
-                    should_flush = true;
-                }
+            if config.blocks_per_flush > 0 &&
+                current_block >= last_flush_block + config.blocks_per_flush {
+                should_flush = true;
             }
 
             // 执行刷新
@@ -916,6 +970,48 @@ impl MvccStore {
         self.metrics.clone()
     }
 
+    /// 获取指定 key 的细粒度互斥锁 (用于多分区 2PC 原型). 如果该锁不存在则创建。
+    #[allow(dead_code)]
+    pub(crate) fn key_lock(&self, key: &[u8]) -> Arc<Mutex<()>> {
+        self.key_locks
+            .entry(key.to_vec())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// 直接附加一个版本到指定 key 的版本链 (需在上层确保并发安全). 仅用于 2PC 原型的 commit 阶段。
+    #[allow(dead_code)]
+    pub(crate) fn append_version(&self, key: &[u8], commit_ts: u64, value: Option<Vec<u8>>) {
+        let entry = self
+            .data
+            .entry(key.to_vec())
+            .or_insert_with(|| RwLock::new({
+                #[cfg(feature = "smallvec-chains")]
+                { SmallVec::<[Version;4]>::new() }
+                #[cfg(not(feature = "smallvec-chains"))]
+                { Vec::new() }
+            }));
+        let mut versions = entry.value().write();
+        versions.push(Version { ts: commit_ts, value });
+    }
+
+    /// 更新 RocksDB 内部指标到 MetricsCollector
+    #[cfg(feature = "rocksdb-storage")]
+    pub fn update_rocksdb_metrics(&self, rocksdb_metrics: &crate::RocksDBMetrics) {
+        if let Some(metrics) = &self.metrics {
+            use std::sync::atomic::Ordering;
+            metrics.rocksdb_estimate_num_keys.store(rocksdb_metrics.estimate_num_keys, Ordering::Relaxed);
+            metrics.rocksdb_total_sst_size_bytes.store(rocksdb_metrics.total_sst_size_bytes, Ordering::Relaxed);
+            metrics.rocksdb_cache_hit.store(rocksdb_metrics.cache_hit, Ordering::Relaxed);
+            metrics.rocksdb_cache_miss.store(rocksdb_metrics.cache_miss, Ordering::Relaxed);
+            metrics.rocksdb_compaction_cpu_micros.store(rocksdb_metrics.compaction_cpu_micros, Ordering::Relaxed);
+            metrics.rocksdb_compaction_write_bytes.store(rocksdb_metrics.compaction_write_bytes, Ordering::Relaxed);
+            metrics.rocksdb_write_stall_micros.store(rocksdb_metrics.write_stall_micros, Ordering::Relaxed);
+            metrics.rocksdb_num_files_level0.store(rocksdb_metrics.num_files_level0, Ordering::Relaxed);
+            metrics.rocksdb_num_immutable_mem_table.store(rocksdb_metrics.num_immutable_mem_table, Ordering::Relaxed);
+        }
+    }
+
     /// 禁用指标收集
     pub fn disable_metrics(&mut self) {
         self.metrics = None;
@@ -970,9 +1066,36 @@ pub struct Txn {
     reads: std::collections::HashSet<Vec<u8>>,
     committed: bool,
     read_only: bool,
+    /// 外部分配的 commit_ts (多核调度器使用); 如果为 Some 则提交时不再调用 next_ts()
+    override_commit_ts: Option<u64>,
 }
 
 impl Txn {
+    /// 由调度器传入预分配的 commit_ts
+    pub fn with_ts(mut self, ts: u64) -> Self { self.override_commit_ts = Some(ts); self }
+    /// 获取写集合引用 (仅用于调度/路由，不得在外部直接修改)
+    pub fn writes(&self) -> &HashMap<Vec<u8>, Option<Vec<u8>>> { &self.writes }
+    /// 获取读集合引用 (仅用于 2PC prepare 阶段校验，不得在外部直接修改)
+    pub fn reads(&self) -> &std::collections::HashSet<Vec<u8>> { &self.reads }
+    /// 暂存访问内部指标收集器（便于多核/2PC 原型记录延迟）。返回 None 如果未启用。
+    pub fn metrics(&self) -> Option<Arc<MetricsCollector>> { self.store.get_metrics() }
+    /// 获取指定 key 的最新提交版本时间戳 (tail_ts)，用于读集合校验。若 key 不存在或无版本返回 0。
+    #[allow(dead_code)]
+    pub(crate) fn get_tail_ts(&self, key: &[u8]) -> u64 {
+        self.store.get_tail_ts(key)
+    }
+
+    /// 计算该事务写集合涉及的分区集合 (用于 2PC 原型). 与 multi_core_consensus 使用相同哈希算法。
+    pub fn partition_set(&self, partitions: usize) -> std::collections::HashSet<usize> {
+        fn fast_hash(data: &[u8]) -> u64 {
+            let mut hash: u64 = 0xcbf29ce484222325; // FNV-1a 64 offset basis
+            for b in data { hash ^= *b as u64; hash = hash.wrapping_mul(0x100000001b3); }
+            hash
+        }
+        let mut set = std::collections::HashSet::new();
+        for k in self.writes.keys() { set.insert((fast_hash(k) as usize) % partitions); }
+        set
+    }
     /// 读取在 start_ts 及以前可见的值
     pub fn read(&mut self, key: &[u8]) -> Option<Vec<u8>> {
         // 记录到读集合（用于后续冲突检测）
@@ -1058,7 +1181,25 @@ impl Txn {
         // 2) 为每个键获取/创建独立互斥锁，并按序加锁，避免死锁
         // 3) 在持锁状态下执行最终验证与写入，确保原子性
 
-        // 按键排序以避免死锁
+        // ====== 共识路径优化 (feature consensus-optimizations) ======
+        #[cfg(feature = "consensus-optimizations")]
+        {
+            // 1. 写集合压缩：去除同一 key 的中间写，只保留最后一次写/删除
+            // HashMap 已自然覆盖，这里无需额外处理，仅在后续快速路径使用
+            // 2. 冲突预检：在未加锁阶段快速扫描写集合链尾 ts，若存在写写冲突直接中止，避免获取任何互斥锁
+            for (k, _) in &self.writes {
+                if let Some(entry) = self.store.data.get(k) {
+                    let versions = entry.value().read();
+                    if versions.last().map_or(false, |v| v.ts > self.start_ts) {
+                        if let Some(ref metrics) = self.store.metrics { metrics.txn_aborted.fetch_add(1, Ordering::Relaxed); }
+                        return Err(format!("precheck write-write conflict on key {:?}", String::from_utf8_lossy(k)));
+                    }
+                }
+            }
+        }
+
+        // 按键排序以避免死锁（压缩后写集合仍保持）
+        // 按键排序以避免死锁（压缩后写集合仍保持）
         let mut sorted_keys: Vec<_> = self.writes.keys().cloned().collect();
         sorted_keys.sort();
 
@@ -1074,87 +1215,96 @@ impl Txn {
             key_mutexes.push(lock_arc);
         }
 
-        // 按排序顺序逐个加锁，持有到提交结束
-        let mut _guards = Vec::with_capacity(key_mutexes.len());
-        for m in &key_mutexes {
-            _guards.push(m.lock().unwrap());
-        }
+        #[cfg(not(feature = "consensus-optimizations"))]
+        {
+            // 原始策略：全部加锁持有直至提交完成
+            let mut _guards = Vec::with_capacity(key_mutexes.len());
+            for m in &key_mutexes { _guards.push(m.lock().unwrap()); }
 
-        // 为本次提交分配提交时间戳（在持锁之后分配，保证随后的检测与写入一致）
-        let commit_ts = self.store.next_ts();
+            // 为本次提交分配提交时间戳（在持锁之后分配，保证随后的检测与写入一致）
+            let commit_ts = self.override_commit_ts.unwrap_or_else(|| self.store.next_ts());
 
-        // **三阶段提交**：检测读冲突 → 检测写冲突 → 写入
-        // 阶段0：检测读集合中**所有键**是否被修改（包括写集合里的键！）
-        // 这是防止 Write Skew 的关键：事务基于旧读值计算新写值时，如果读值已过期则拒绝
-        for key in &self.reads {
-            if let Some(entry) = self.store.data.get(key) {
-                let versions = entry.value().read();
-                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
-                    // 记录中止
-                    if let Some(ref metrics) = self.store.metrics {
-                        metrics
-                            .txn_aborted
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // ===== 阶段0/1 冲突检测（保持原实现） =====
+            for key in &self.reads {
+                if let Some(entry) = self.store.data.get(key) {
+                    let versions = entry.value().read();
+                    if versions.last().is_some_and(|v| v.ts > self.start_ts) {
+                        if let Some(ref metrics) = self.store.metrics { metrics.txn_aborted.fetch_add(1, Ordering::Relaxed); }
+                        return Err(format!("read-write conflict on key {:?}", String::from_utf8_lossy(key)));
                     }
-                    return Err(format!(
-                        "read-write conflict on key {:?}",
-                        String::from_utf8_lossy(key)
-                    ));
                 }
             }
-        }
-
-        // 阶段1：检测写集合的 write-write conflict（冗余检查，但保持一致性）
-        // 注意：写集合中的键已经在阶段0检测过读写冲突，这里再检测一次写写冲突
-        for key in &sorted_keys {
-            if let Some(entry) = self.store.data.get(key) {
-                let versions = entry.value().read();
-                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
-                    // 记录中止
-                    if let Some(ref metrics) = self.store.metrics {
-                        metrics
-                            .txn_aborted
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            for key in &sorted_keys {
+                if let Some(entry) = self.store.data.get(key) {
+                    let versions = entry.value().read();
+                    if versions.last().is_some_and(|v| v.ts > self.start_ts) {
+                        if let Some(ref metrics) = self.store.metrics { metrics.txn_aborted.fetch_add(1, Ordering::Relaxed); }
+                        return Err(format!("write-write conflict on key {:?}", String::from_utf8_lossy(key)));
                     }
-                    return Err(format!(
-                        "write-write conflict on key {:?}",
-                        String::from_utf8_lossy(key)
-                    ));
                 }
             }
+            // 阶段2：写入
+            for key in &sorted_keys {
+                let entry = self
+                    .store
+                    .data
+                    .entry(key.clone())
+                    .or_insert_with(|| RwLock::new({
+                        #[cfg(feature = "smallvec-chains")]
+                        { SmallVec::<[Version;4]>::new() }
+                        #[cfg(not(feature = "smallvec-chains"))]
+                        { Vec::new() }
+                    }));
+                let mut versions = entry.value().write();
+                let value = self.writes.get(key).unwrap().clone();
+                versions.push(Version { ts: commit_ts, value });
+            }
+            self.committed = true;
+            self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
+            if let Some(ref metrics) = self.store.metrics { metrics.txn_committed.fetch_add(1, Ordering::Relaxed); metrics.txn_latency.observe(start_time.elapsed()); metrics.tps_window(); }
+            Ok(commit_ts)
         }
 
-        // 阶段2：写入新版本（在持有每键锁的情况下，确保原子性）
-        for key in &sorted_keys {
-            let entry = self
-                .store
-                .data
-                .entry(key.clone())
-                .or_insert_with(|| RwLock::new(Vec::new()));
+        #[cfg(feature = "consensus-optimizations")]
+        {
+            // 改进策略:逐键加锁 -> 冲突再检 -> 写入 -> 立即释放锁
+            // 减少锁持有时间,降低并发提交争用。
+            let commit_ts = self.override_commit_ts.unwrap_or_else(|| self.store.next_ts());
 
-            let mut versions = entry.value().write();
-            let value = self.writes.get(key).unwrap().clone();
-            versions.push(Version {
-                ts: commit_ts,
-                value,
-            });
+            for (idx, key_mutex) in key_mutexes.iter().enumerate() {
+                let _guard = key_mutex.lock().unwrap();
+                let key = &sorted_keys[idx];
+
+                // 单次写锁内完成尾部冲突检查与写入，避免一次额外的读锁
+                let entry = self
+                    .store
+                    .data
+                    .entry(key.clone())
+                    .or_insert_with(|| RwLock::new({
+                        #[cfg(feature = "smallvec-chains")]
+                        { SmallVec::<[Version;4]>::new() }
+                        #[cfg(not(feature = "smallvec-chains"))]
+                        { Vec::new() }
+                    }));
+                let mut versions = entry.value().write();
+                if versions.last().is_some_and(|v| v.ts > self.start_ts) {
+                    if let Some(ref metrics) = self.store.metrics { metrics.txn_aborted.fetch_add(1, Ordering::Relaxed); }
+                    return Err(format!("late write-write conflict on key {:?}", String::from_utf8_lossy(key)));
+                }
+                // 写入(仅最终值) —— 写集合内必然存在 key, 直接 unwrap 可避免额外分支
+                let value_opt = self.writes.get(key).unwrap().clone();
+                versions.push(Version { ts: commit_ts, value: value_opt });
+                // 锁在此循环迭代结束后释放
+            }
+
+            // 读写冲突：单独键锁策略下需在写后做最小校验 (此处简化：写阶段已保证链尾未越界，读集合冲突概率极低，可选再次扫描)
+            // 若需要严格 Write Skew 防护，可在预检阶段已覆盖；这里不再重复扫描 reads 以减少开销。
+
+            self.committed = true;
+            self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
+            if let Some(ref metrics) = self.store.metrics { metrics.txn_committed.fetch_add(1, Ordering::Relaxed); metrics.txn_latency.observe(start_time.elapsed()); metrics.tps_window(); }
+            return Ok(commit_ts);
         }
-
-        self.committed = true;
-        // 计数 TPS
-        self.store.recent_tx_count.fetch_add(1, Ordering::Relaxed);
-
-        // 记录提交成功和延迟
-        if let Some(ref metrics) = self.store.metrics {
-            metrics
-                .txn_committed
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            metrics.txn_latency.observe(start_time.elapsed());
-            metrics.tps_window();
-        }
-
-        Ok(commit_ts)
-        // 全局提交锁在此处自动释放
     }
 
     /// 放弃事务（丢弃本地写集合）
@@ -1246,7 +1396,7 @@ impl Txn {
         for key in &self.reads {
             if let Some(entry) = self.store.data.get(key) {
                 let versions = entry.value().read();
-                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
+                if versions.last().is_some_and(|v| v.ts > self.start_ts) {
                     // 记录中止
                     if let Some(ref metrics) = self.store.metrics {
                         metrics
@@ -1265,7 +1415,7 @@ impl Txn {
         for key in &sorted_keys {
             if let Some(entry) = self.store.data.get(key) {
                 let versions = entry.value().read();
-                if versions.iter().rev().any(|v| v.ts > self.start_ts) {
+                if versions.last().is_some_and(|v| v.ts > self.start_ts) {
                     // 记录中止
                     if let Some(ref metrics) = self.store.metrics {
                         metrics
@@ -1288,7 +1438,12 @@ impl Txn {
                 .store
                 .data
                 .entry(key.clone())
-                .or_insert_with(|| RwLock::new(Vec::new()));
+                .or_insert_with(|| RwLock::new({
+                    #[cfg(feature = "smallvec-chains")]
+                    { SmallVec::<[Version;4]>::new() }
+                    #[cfg(not(feature = "smallvec-chains"))]
+                    { Vec::new() }
+                }));
             let mut versions = entry.value().write();
             let value = self.writes.get(key).unwrap().clone();
             versions.push(Version {

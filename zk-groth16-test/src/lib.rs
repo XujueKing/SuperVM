@@ -9,10 +9,14 @@ pub mod combined;
 pub mod pedersen;
 pub mod range_proof;
 pub mod range_proof_aggregated;
+pub mod range_proof_api;
 pub mod ring_signature;
 pub mod ringct;
 pub mod ringct_compressed;
 pub mod ringct_multi_utxo;
+
+// Bulletproofs Range Proof (透明Setup)
+pub mod bulletproofs_range_proof;
 
 use ark_bls12_381::Fr;
 use ark_relations::r1cs::{

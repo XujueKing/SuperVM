@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Routing metrics HTTP demo: expose SuperVM routing stats via /metrics
+//
+// **指标聚合说明**:
+// - 本示例默认导出 SuperVM 路由 + MVCC MetricsCollector 指标。
+// - 若需同时聚合 MultiCoreConsensus 指标 (multi_consensus_routed_total 等)，
+//   请在初始化后创建 MultiCoreConsensus 实例并在 /metrics 处理中附加其 export_prometheus() 输出。
+// - 2PC commit 阶段指标 (cross_shard_commit_latency_ms) 已集成至 MetricsCollector，无需额外操作。
 
 use std::collections::HashMap;
 use std::sync::Arc;

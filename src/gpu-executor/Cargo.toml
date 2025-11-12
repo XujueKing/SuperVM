@@ -1,0 +1,30 @@
+[package]
+name = "gpu-executor"
+version = "0.1.0"
+edition = "2021"
+authors = ["king <king@example.com>"]
+license = "GPL-3.0-or-later"
+description = "Phase 13 Hybrid GPU/CPU execution skeleton"
+repository = "https://github.com/king/supervm"
+
+[features]
+# 默认只启用 CPU 回退，避免无 GPU 环境编译失败
+default = ["cpu"]
+cpu = []
+gpu = ["wgpu", "pollster", "bytemuck"] # 真实 GPU 后端 (WebGPU 跨平台)
+parallel = ["rayon"] # Rayon 并行 CPU 执行器
+
+[dependencies]
+# GPU 后端（可选）
+wgpu = { version = "27", optional = true }
+pollster = { version = "0.3", optional = true }
+bytemuck = { version = "1.14", optional = true, features = ["derive"] }
+
+# 并行 CPU 执行器（可选）
+rayon = { version = "1.10", optional = true }
+
+# 未来可选：日志与指标
+# log = { version = "0.4", optional = true }
+# prometheus = { version = "0.13", optional = true }
+
+[dev-dependencies]

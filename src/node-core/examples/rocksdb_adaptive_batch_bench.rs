@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // 自适应分批基准示例（支持环境变量配置与 CSV 导出）
 
+#[cfg(feature = "groth16-verifier")] // 仅示例：若未来需要其它特性可调整；当前不依赖该特性，留示例防止与统一启用策略冲突
 use anyhow::Result;
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -32,6 +33,7 @@ fn parse_env_f64(key: &str, default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+#[cfg(feature = "groth16-verifier")]
 fn main() -> Result<()> {
     let path = "./data/adaptive_bench";
     let _ = fs::remove_dir_all(path);
@@ -115,4 +117,10 @@ fn main() -> Result<()> {
 
     println!("\n✓ 结果已追加到: {}", csv_path);
     Ok(())
+}
+
+#[cfg(not(feature = "groth16-verifier"))]
+fn main() {
+    // 如果 future 默认不启用任何额外依赖，保持示例不阻塞构建。
+    println!("[rocksdb_adaptive_batch_bench] 需要特性集或依赖未启用，示例跳过。");
 }

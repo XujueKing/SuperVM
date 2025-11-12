@@ -48,12 +48,7 @@ impl LatencyHistogram {
             (1000.0, AtomicU64::new(0)),
             (f64::INFINITY, AtomicU64::new(0)),
         ];
-
-        Self {
-            buckets,
-            total_count: AtomicU64::new(0),
-            total_sum_ms: AtomicU64::new(0),
-        }
+        Self { buckets, total_count: AtomicU64::new(0), total_sum_ms: AtomicU64::new(0) }
     }
 
     /// 记录一次操作的延迟
@@ -106,6 +101,32 @@ impl LatencyHistogram {
         (p50, p90, p99)
     }
 
+    /// 计算任意百分位延迟
+    ///
+    /// # 参数
+    /// - `pct`: 百分位 (0.0 ~ 1.0), 例如 0.95 表示 P95
+    ///
+    /// # 返回
+    /// 延迟值（毫秒）
+    pub fn percentile(&self, pct: f64) -> f64 {
+        let total = self.total_count.load(Ordering::Relaxed);
+        if total == 0 {
+            return 0.0;
+        }
+
+    let target = ((total as f64) * pct) as u64;
+        let mut cumulative = 0u64;
+
+        for (upper, count) in &self.buckets {
+            cumulative += count.load(Ordering::Relaxed);
+            if cumulative >= target {
+                return *upper;
+            }
+        }
+
+        f64::INFINITY
+    }
+
     /// 获取平均延迟
     pub fn avg(&self) -> f64 {
         let total = self.total_count.load(Ordering::Relaxed);
@@ -117,6 +138,8 @@ impl LatencyHistogram {
         (sum as f64) / (total as f64 * 1000.0)
     }
 }
+
+impl Default for LatencyHistogram { fn default() -> Self { Self::new() } }
 
 /// 指标收集器
 pub struct MetricsCollector {
@@ -147,6 +170,17 @@ pub struct MetricsCollector {
     pub rocksdb_puts: AtomicU64,
     pub rocksdb_deletes: AtomicU64,
 
+    // RocksDB 内部统计指标 (从 get_property 采集)
+    pub rocksdb_estimate_num_keys: AtomicU64,
+    pub rocksdb_total_sst_size_bytes: AtomicU64,
+    pub rocksdb_cache_hit: AtomicU64,
+    pub rocksdb_cache_miss: AtomicU64,
+    pub rocksdb_compaction_cpu_micros: AtomicU64,
+    pub rocksdb_compaction_write_bytes: AtomicU64,
+    pub rocksdb_write_stall_micros: AtomicU64,
+    pub rocksdb_num_files_level0: AtomicU64,
+    pub rocksdb_num_immutable_mem_table: AtomicU64,
+
     // 并行 ZK 证明指标
     pub parallel_proof_total: AtomicU64,
     pub parallel_proof_failed: AtomicU64,
@@ -165,6 +199,13 @@ pub struct MetricsCollector {
 
     // Fast→Consensus 回退统计
     pub fast_fallback_total: AtomicU64,
+
+    // 多核共识（单机多分区）统计
+    pub consensus_routed_total: AtomicU64,
+    pub consensus_fallback_total: AtomicU64,
+    pub consensus_executed_total: AtomicU64,
+    pub consensus_route_latency: LatencyHistogram,
+    pub consensus_commit_latency: LatencyHistogram,
 
     // ZK 验证指标（单次验证）
     pub zk_verify_total: AtomicU64,
@@ -185,9 +226,36 @@ pub struct MetricsCollector {
     pub cross_shard_privacy_invalid_total: AtomicU64,
     // 最近一次 prepare 处理耗时（ms*1000）
     pub cross_shard_prepare_last_latency_ms: AtomicU64,
+    // Prepare 延迟直方图（ms）
+    pub cross_shard_prepare_latency: LatencyHistogram,
+
+    // === 2PC Commit 阶段指标 ===
+    // Commit 成功总次数
+    pub cross_shard_commit_success_total: AtomicU64,
+    // Commit 失败总次数（写入异常等）
+    pub cross_shard_commit_failed_total: AtomicU64,
+    // Commit 延迟直方图（ms）
+    pub cross_shard_commit_latency: LatencyHistogram,
+
+    // === 2PC 批量与流水线指标 ===
+    // 批量 prepare 调用总次数
+    pub cross_shard_batch_prepare_total: AtomicU64,
+    // 批量 prepare 平均批次大小（累计事务数）
+    pub cross_shard_batch_prepare_txn_count: AtomicU64,
+    // 流水线 commit 调用总次数
+    pub cross_shard_pipeline_commit_total: AtomicU64,
+    // 流水线 commit 处理的事务总数
+    pub cross_shard_pipeline_commit_txn_count: AtomicU64,
 
     // 时间窗口统计 (用于计算窗口 TPS 及峰值)
     window_stats: Arc<Mutex<WindowStats>>,
+
+    // ===== Phase 13: Hybrid Executor Metrics =====
+    pub hybrid_executor_duration_ms: AtomicU64,   // 最近一次批处理耗时（ms*1000）
+    pub hybrid_batch_size: AtomicU64,             // 最近一次批次大小
+    pub hybrid_cpu_parallel_factor: AtomicU64,    // 最近一次 CPU 并行度（逻辑线程数）
+    pub hybrid_routing_decisions: AtomicU64,      // 调度决策累计计数
+    pub hybrid_throughput_tps: AtomicU64,         // 最近一次批处理吞吐（task/sec *1000）
 }
 
 #[derive(Debug)]
@@ -238,6 +306,16 @@ impl MetricsCollector {
             rocksdb_puts: AtomicU64::new(0),
             rocksdb_deletes: AtomicU64::new(0),
 
+            rocksdb_estimate_num_keys: AtomicU64::new(0),
+            rocksdb_total_sst_size_bytes: AtomicU64::new(0),
+            rocksdb_cache_hit: AtomicU64::new(0),
+            rocksdb_cache_miss: AtomicU64::new(0),
+            rocksdb_compaction_cpu_micros: AtomicU64::new(0),
+            rocksdb_compaction_write_bytes: AtomicU64::new(0),
+            rocksdb_write_stall_micros: AtomicU64::new(0),
+            rocksdb_num_files_level0: AtomicU64::new(0),
+            rocksdb_num_immutable_mem_table: AtomicU64::new(0),
+
             parallel_proof_total: AtomicU64::new(0),
             parallel_proof_failed: AtomicU64::new(0),
             parallel_proof_batches: AtomicU64::new(0),
@@ -254,6 +332,12 @@ impl MetricsCollector {
 
             fast_fallback_total: AtomicU64::new(0),
 
+            consensus_routed_total: AtomicU64::new(0),
+            consensus_fallback_total: AtomicU64::new(0),
+            consensus_executed_total: AtomicU64::new(0),
+            consensus_route_latency: LatencyHistogram::new(),
+            consensus_commit_latency: LatencyHistogram::new(),
+
             zk_verify_total: AtomicU64::new(0),
             zk_verify_failures: AtomicU64::new(0),
             zk_verify_latency: LatencyHistogram::new(),
@@ -265,6 +349,16 @@ impl MetricsCollector {
             cross_shard_prepare_abort_total: AtomicU64::new(0),
             cross_shard_privacy_invalid_total: AtomicU64::new(0),
             cross_shard_prepare_last_latency_ms: AtomicU64::new(0),
+            cross_shard_prepare_latency: LatencyHistogram::new(),
+
+            cross_shard_commit_success_total: AtomicU64::new(0),
+            cross_shard_commit_failed_total: AtomicU64::new(0),
+            cross_shard_commit_latency: LatencyHistogram::new(),
+
+            cross_shard_batch_prepare_total: AtomicU64::new(0),
+            cross_shard_batch_prepare_txn_count: AtomicU64::new(0),
+            cross_shard_pipeline_commit_total: AtomicU64::new(0),
+            cross_shard_pipeline_commit_txn_count: AtomicU64::new(0),
 
             window_stats: Arc::new(Mutex::new(WindowStats {
                 start_time: now,
@@ -274,6 +368,11 @@ impl MetricsCollector {
                 last_window_tps: 0.0,
                 peak_tps: 0.0,
             })),
+            hybrid_executor_duration_ms: AtomicU64::new(0),
+            hybrid_batch_size: AtomicU64::new(0),
+            hybrid_cpu_parallel_factor: AtomicU64::new(0),
+            hybrid_routing_decisions: AtomicU64::new(0),
+            hybrid_throughput_tps: AtomicU64::new(0),
         }
     }
 
@@ -379,6 +478,23 @@ impl MetricsCollector {
         output.push_str("# TYPE mvcc_success_rate gauge\n");
         output.push_str(&format!("mvcc_success_rate {:.2}\n", self.success_rate()));
 
+    // ===== Hybrid Executor Metrics (Phase 13) =====
+    output.push_str("# HELP hybrid_executor_duration_ms Last hybrid executor batch duration (ms)\n");
+    output.push_str("# TYPE hybrid_executor_duration_ms gauge\n");
+    output.push_str(&format!("hybrid_executor_duration_ms {:.3}\n", self.hybrid_executor_duration_ms.load(Ordering::Relaxed) as f64 / 1000.0));
+    output.push_str("# HELP hybrid_batch_size Number of tasks in last hybrid batch\n");
+    output.push_str("# TYPE hybrid_batch_size gauge\n");
+    output.push_str(&format!("hybrid_batch_size {}\n", self.hybrid_batch_size.load(Ordering::Relaxed)));
+    output.push_str("# HELP hybrid_cpu_parallel_factor Effective CPU parallelism factor in last batch\n");
+    output.push_str("# TYPE hybrid_cpu_parallel_factor gauge\n");
+    output.push_str(&format!("hybrid_cpu_parallel_factor {}\n", self.hybrid_cpu_parallel_factor.load(Ordering::Relaxed)));
+    output.push_str("# HELP hybrid_routing_decisions_total Total number of hybrid routing decisions\n");
+    output.push_str("# TYPE hybrid_routing_decisions_total counter\n");
+    output.push_str(&format!("hybrid_routing_decisions_total {}\n", self.hybrid_routing_decisions.load(Ordering::Relaxed)));
+    output.push_str("# HELP hybrid_throughput_tps Last batch throughput tasks/sec\n");
+    output.push_str("# TYPE hybrid_throughput_tps gauge\n");
+    output.push_str(&format!("hybrid_throughput_tps {:.3}\n", self.hybrid_throughput_tps.load(Ordering::Relaxed) as f64 / 1000.0));
+
     // Fast Path 回退次数（Fast→Consensus）
     output.push_str("# HELP vm_fast_fallback_total Total number of fast path fallbacks to consensus\n");
     output.push_str("# TYPE vm_fast_fallback_total counter\n");
@@ -401,6 +517,88 @@ impl MetricsCollector {
     output.push_str("# HELP cross_shard_prepare_last_latency_ms Last cross-shard Prepare handling latency (ms)\n");
     output.push_str("# TYPE cross_shard_prepare_last_latency_ms gauge\n");
     output.push_str(&format!("cross_shard_prepare_last_latency_ms {:.3}\n", self.cross_shard_prepare_last_latency_ms.load(Ordering::Relaxed) as f64 / 1000.0));
+
+    let (prep_p50, prep_p90, prep_p99) = self.cross_shard_prepare_latency.percentiles();
+    output.push_str("# HELP cross_shard_prepare_latency_ms Cross-shard Prepare latency percentiles (ms)\n");
+    output.push_str("# TYPE cross_shard_prepare_latency_ms summary\n");
+    output.push_str(&format!("cross_shard_prepare_latency_ms{{quantile=\"0.5\"}} {:.2}\n", prep_p50));
+    output.push_str(&format!("cross_shard_prepare_latency_ms{{quantile=\"0.9\"}} {:.2}\n", prep_p90));
+    output.push_str(&format!("cross_shard_prepare_latency_ms{{quantile=\"0.99\"}} {:.2}\n", prep_p99));
+
+    // Cross-shard commit metrics
+    output.push_str("# HELP cross_shard_commit_success_total Total successful 2PC commits\n");
+    output.push_str("# TYPE cross_shard_commit_success_total counter\n");
+    output.push_str(&format!("cross_shard_commit_success_total {}\n", self.cross_shard_commit_success_total.load(Ordering::Relaxed)));
+    output.push_str("# HELP cross_shard_commit_failed_total Total failed 2PC commits\n");
+    output.push_str("# TYPE cross_shard_commit_failed_total counter\n");
+    output.push_str(&format!("cross_shard_commit_failed_total {}\n", self.cross_shard_commit_failed_total.load(Ordering::Relaxed)));
+
+    let (commit_p50, commit_p90, commit_p99) = self.cross_shard_commit_latency.percentiles();
+    output.push_str("# HELP cross_shard_commit_latency_ms Cross-shard Commit latency percentiles (ms)\n");
+    output.push_str("# TYPE cross_shard_commit_latency_ms summary\n");
+    output.push_str(&format!("cross_shard_commit_latency_ms{{quantile=\"0.5\"}} {:.2}\n", commit_p50));
+    output.push_str(&format!("cross_shard_commit_latency_ms{{quantile=\"0.9\"}} {:.2}\n", commit_p90));
+    output.push_str(&format!("cross_shard_commit_latency_ms{{quantile=\"0.99\"}} {:.2}\n", commit_p99));
+
+    // Batch prepare & pipeline commit metrics
+    output.push_str("# HELP cross_shard_batch_prepare_total Total batch prepare operations\n");
+    output.push_str("# TYPE cross_shard_batch_prepare_total counter\n");
+    output.push_str(&format!("cross_shard_batch_prepare_total {}\n", self.cross_shard_batch_prepare_total.load(Ordering::Relaxed)));
+    
+    let avg_batch_size = {
+        let batch_ops = self.cross_shard_batch_prepare_total.load(Ordering::Relaxed);
+        if batch_ops > 0 {
+            self.cross_shard_batch_prepare_txn_count.load(Ordering::Relaxed) as f64 / batch_ops as f64
+        } else {
+            0.0
+        }
+    };
+    output.push_str("# HELP cross_shard_batch_prepare_avg_size Average batch size (txns per batch)\n");
+    output.push_str("# TYPE cross_shard_batch_prepare_avg_size gauge\n");
+    output.push_str(&format!("cross_shard_batch_prepare_avg_size {:.2}\n", avg_batch_size));
+
+    output.push_str("# HELP cross_shard_pipeline_commit_total Total pipeline commit operations\n");
+    output.push_str("# TYPE cross_shard_pipeline_commit_total counter\n");
+    output.push_str(&format!("cross_shard_pipeline_commit_total {}\n", self.cross_shard_pipeline_commit_total.load(Ordering::Relaxed)));
+
+    let avg_pipeline_size = {
+        let pipeline_ops = self.cross_shard_pipeline_commit_total.load(Ordering::Relaxed);
+        if pipeline_ops > 0 {
+            self.cross_shard_pipeline_commit_txn_count.load(Ordering::Relaxed) as f64 / pipeline_ops as f64
+        } else {
+            0.0
+        }
+    };
+    output.push_str("# HELP cross_shard_pipeline_commit_avg_size Average pipeline depth (txns per commit)\n");
+    output.push_str("# TYPE cross_shard_pipeline_commit_avg_size gauge\n");
+    output.push_str(&format!("cross_shard_pipeline_commit_avg_size {:.2}\n", avg_pipeline_size));
+
+    // Multi-core consensus metrics
+    output.push_str("# HELP multi_consensus_routed_total Total transactions routed to partition workers\n");
+    output.push_str("# TYPE multi_consensus_routed_total counter\n");
+    output.push_str(&format!("multi_consensus_routed_total {}\n", self.consensus_routed_total.load(Ordering::Relaxed)));
+
+    output.push_str("# HELP multi_consensus_fallback_total Total transactions fallback to single-thread commit\n");
+    output.push_str("# TYPE multi_consensus_fallback_total counter\n");
+    output.push_str(&format!("multi_consensus_fallback_total {}\n", self.consensus_fallback_total.load(Ordering::Relaxed)));
+
+    output.push_str("# HELP multi_consensus_executed_total Total routed transactions executed (committed)\n");
+    output.push_str("# TYPE multi_consensus_executed_total counter\n");
+    output.push_str(&format!("multi_consensus_executed_total {}\n", self.consensus_executed_total.load(Ordering::Relaxed)));
+
+    let (r_p50, r_p90, r_p99) = self.consensus_route_latency.percentiles();
+    output.push_str("# HELP multi_consensus_route_latency_ms Route latency percentiles in milliseconds\n");
+    output.push_str("# TYPE multi_consensus_route_latency_ms summary\n");
+    output.push_str(&format!("multi_consensus_route_latency_ms{{quantile=\"0.5\"}} {:.2}\n", r_p50));
+    output.push_str(&format!("multi_consensus_route_latency_ms{{quantile=\"0.9\"}} {:.2}\n", r_p90));
+    output.push_str(&format!("multi_consensus_route_latency_ms{{quantile=\"0.99\"}} {:.2}\n", r_p99));
+
+    let (c_p50, c_p90, c_p99) = self.consensus_commit_latency.percentiles();
+    output.push_str("# HELP multi_consensus_commit_latency_ms Commit latency percentiles in milliseconds\n");
+    output.push_str("# TYPE multi_consensus_commit_latency_ms summary\n");
+    output.push_str(&format!("multi_consensus_commit_latency_ms{{quantile=\"0.5\"}} {:.2}\n", c_p50));
+    output.push_str(&format!("multi_consensus_commit_latency_ms{{quantile=\"0.9\"}} {:.2}\n", c_p90));
+    output.push_str(&format!("multi_consensus_commit_latency_ms{{quantile=\"0.99\"}} {:.2}\n", c_p99));
 
         // 延迟百分位
         let (p50, p90, p99) = self.txn_latency.percentiles();
@@ -482,7 +680,82 @@ impl MetricsCollector {
             self.rocksdb_deletes.load(Ordering::Relaxed)
         ));
 
-        // 并行证明指标
+        // RocksDB 内部统计指标
+        output.push_str("# HELP rocksdb_estimate_num_keys Estimated number of keys in RocksDB\n");
+        output.push_str("# TYPE rocksdb_estimate_num_keys gauge\n");
+        output.push_str(&format!(
+            "rocksdb_estimate_num_keys {}\n",
+            self.rocksdb_estimate_num_keys.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_total_sst_size_bytes Total SST file size in bytes\n");
+        output.push_str("# TYPE rocksdb_total_sst_size_bytes gauge\n");
+        output.push_str(&format!(
+            "rocksdb_total_sst_size_bytes {}\n",
+            self.rocksdb_total_sst_size_bytes.load(Ordering::Relaxed)
+        ));
+
+        let cache_total = self.rocksdb_cache_hit.load(Ordering::Relaxed) + self.rocksdb_cache_miss.load(Ordering::Relaxed);
+        let cache_hit_rate = if cache_total > 0 {
+            (self.rocksdb_cache_hit.load(Ordering::Relaxed) as f64 / cache_total as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        output.push_str("# HELP rocksdb_cache_hit_total Total RocksDB block cache hits\n");
+        output.push_str("# TYPE rocksdb_cache_hit_total counter\n");
+        output.push_str(&format!(
+            "rocksdb_cache_hit_total {}\n",
+            self.rocksdb_cache_hit.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_cache_miss_total Total RocksDB block cache misses\n");
+        output.push_str("# TYPE rocksdb_cache_miss_total counter\n");
+        output.push_str(&format!(
+            "rocksdb_cache_miss_total {}\n",
+            self.rocksdb_cache_miss.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_cache_hit_rate Block cache hit rate percentage\n");
+        output.push_str("# TYPE rocksdb_cache_hit_rate gauge\n");
+        output.push_str(&format!("rocksdb_cache_hit_rate {:.2}\n", cache_hit_rate));
+
+        output.push_str("# HELP rocksdb_compaction_cpu_micros Total CPU time spent on compaction (microseconds)\n");
+        output.push_str("# TYPE rocksdb_compaction_cpu_micros counter\n");
+        output.push_str(&format!(
+            "rocksdb_compaction_cpu_micros {}\n",
+            self.rocksdb_compaction_cpu_micros.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_compaction_write_bytes Total bytes written during compaction\n");
+        output.push_str("# TYPE rocksdb_compaction_write_bytes counter\n");
+        output.push_str(&format!(
+            "rocksdb_compaction_write_bytes {}\n",
+            self.rocksdb_compaction_write_bytes.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_write_stall_micros Total time spent in write stalls (microseconds)\n");
+        output.push_str("# TYPE rocksdb_write_stall_micros counter\n");
+        output.push_str(&format!(
+            "rocksdb_write_stall_micros {}\n",
+            self.rocksdb_write_stall_micros.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_num_files_level0 Number of SST files in Level 0\n");
+        output.push_str("# TYPE rocksdb_num_files_level0 gauge\n");
+        output.push_str(&format!(
+            "rocksdb_num_files_level0 {}\n",
+            self.rocksdb_num_files_level0.load(Ordering::Relaxed)
+        ));
+
+        output.push_str("# HELP rocksdb_num_immutable_mem_table Number of immutable memtables\n");
+        output.push_str("# TYPE rocksdb_num_immutable_mem_table gauge\n");
+        output.push_str(&format!(
+            "rocksdb_num_immutable_mem_table {}\n",
+            self.rocksdb_num_immutable_mem_table.load(Ordering::Relaxed)
+        ));
+
+        // 并行 ZK 证明指标
         output.push_str("# HELP vm_privacy_zk_parallel_proof_total Total parallel ZK proofs attempted\n");
         output.push_str("# TYPE vm_privacy_zk_parallel_proof_total counter\n");
         output.push_str(&format!(
@@ -736,6 +1009,13 @@ impl MetricsCollector {
         self.fast_fallback_total.load(Ordering::Relaxed)
     }
 
+    // ===== Multi-core consensus helpers =====
+    pub fn inc_consensus_routed(&self) { self.consensus_routed_total.fetch_add(1, Ordering::Relaxed); }
+    pub fn inc_consensus_fallback(&self) { self.consensus_fallback_total.fetch_add(1, Ordering::Relaxed); }
+    pub fn inc_consensus_executed(&self) { self.consensus_executed_total.fetch_add(1, Ordering::Relaxed); }
+    pub fn record_route_latency(&self, d: Duration) { self.consensus_route_latency.observe(d); }
+    pub fn record_commit_latency(&self, d: Duration) { self.consensus_commit_latency.observe(d); }
+
     /// 便捷 getter：获取 GC 运行次数
     pub fn get_gc_runs(&self) -> u64 {
         self.gc_runs.load(Ordering::Relaxed)
@@ -765,7 +1045,51 @@ impl MetricsCollector {
         if !success { self.cross_shard_prepare_abort_total.fetch_add(1, Ordering::Relaxed); }
         if privacy_invalid { self.cross_shard_privacy_invalid_total.fetch_add(1, Ordering::Relaxed); }
         self.cross_shard_prepare_last_latency_ms.store((latency_ms * 1000.0) as u64, Ordering::Relaxed);
+        // 同时记录延迟直方图
+        self.cross_shard_prepare_latency.observe(Duration::from_secs_f64(latency_ms / 1000.0));
     }
+
+    /// 记录 2PC commit 阶段执行结果与延迟
+    /// 
+    /// # Arguments
+    /// * `duration` - Commit 阶段耗时
+    /// * `success` - 是否成功
+    pub fn record_cross_shard_commit(&self, duration: Duration, success: bool) {
+        if success {
+            self.cross_shard_commit_success_total.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.cross_shard_commit_failed_total.fetch_add(1, Ordering::Relaxed);
+        }
+        self.cross_shard_commit_latency.observe(duration);
+    }
+
+    /// 记录批量 prepare 操作
+    /// 
+    /// # Arguments
+    /// * `batch_size` - 本次批处理的事务数量
+    pub fn record_batch_prepare(&self, batch_size: usize) {
+        self.cross_shard_batch_prepare_total.fetch_add(1, Ordering::Relaxed);
+        self.cross_shard_batch_prepare_txn_count.fetch_add(batch_size as u64, Ordering::Relaxed);
+    }
+
+    /// 记录流水线 commit 操作
+    /// 
+    /// # Arguments
+    /// * `pipeline_depth` - 本次流水线提交的事务数量
+    pub fn record_pipeline_commit(&self, pipeline_depth: usize) {
+        self.cross_shard_pipeline_commit_total.fetch_add(1, Ordering::Relaxed);
+        self.cross_shard_pipeline_commit_txn_count.fetch_add(pipeline_depth as u64, Ordering::Relaxed);
+    }
+
+    // ===== Phase 13: Hybrid recording convenience =====
+    pub fn record_hybrid_batch(&self, batch_tasks: usize, duration: Duration, cpu_parallel_factor: usize) {
+        self.hybrid_batch_size.store(batch_tasks as u64, Ordering::Relaxed);
+        self.hybrid_executor_duration_ms.store((duration.as_secs_f64() * 1000.0) as u64, Ordering::Relaxed);
+        self.hybrid_cpu_parallel_factor.store(cpu_parallel_factor as u64, Ordering::Relaxed);
+        let tps = if duration.as_secs_f64() > 0.0 { (batch_tasks as f64) / duration.as_secs_f64() } else { 0.0 };
+        self.hybrid_throughput_tps.store((tps * 1000.0) as u64, Ordering::Relaxed);
+    }
+    pub fn inc_hybrid_routing_decision(&self) { self.hybrid_routing_decisions.fetch_add(1, Ordering::Relaxed); }
 
     /// 记录一次 ZK 验证（成功或失败）
     /// 
