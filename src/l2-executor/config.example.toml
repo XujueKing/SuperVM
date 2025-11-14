@@ -1,0 +1,12 @@
+# L2 Executor 运行时配置
+
+# 后端选择 (可选值: "trace", "risc0", "halo2")
+# null 或不设置表示自动选择最佳后端
+backend = null
+
+# 是否启用日志输出
+enable_logging = true
+
+# 开发模式 (跳过实际证明生成,仅测试流程)
+# 注意: 此选项也可通过环境变量 RISC0_DEV_MODE=1 设置
+dev_mode = false
