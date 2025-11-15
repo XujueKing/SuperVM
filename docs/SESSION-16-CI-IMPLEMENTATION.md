@@ -34,7 +34,7 @@
 - 优化输出重定向（`2>&1`）
 
 **效果**：
-✅ CI 环境可完整安装 RISC0 toolchain
+✅ CI 使用 Docker 或 1.1.x toolchain 构建 RISC0（规避 1.2.x LLVM “loweratomic” 问题）
 ✅ 性能测试日志保存为 Artifacts
 ⏳ 待手动触发验证
 
