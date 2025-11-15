@@ -22,6 +22,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare artifacts directory
+        run: |
+          set -euxo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/ci_artifacts"
+          : > "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+          : > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -55,21 +62,21 @@ jobs:
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> $GITHUB_PATH
           source "$HOME/.risc0/bin/env"
-          rzup --version | tee -a rzup_install.log
+          rzup --version | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
           # retry rzup install to mitigate transient network/TLS issues
           n=0
           until [ $n -ge 5 ]
           do
-            if rzup install 2>&1 | tee -a rzup_install.log; then
+            if rzup install 2>&1 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"; then
               break
             fi
             n=$((n+1))
-            echo "rzup install failed, retry $n..." | tee -a rzup_install.log
+            echo "rzup install failed, retry $n..." | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
             sleep $((5*n))
           done
           command -v cargo-risczero || true
           cargo risczero --help || true
-          echo "RISC0 toolchain installed successfully" | tee -a rzup_install.log
+          echo "RISC0 toolchain installed successfully" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
 
       - name: Diagnostics (env/rust/cargo/rzup)
         run: |
@@ -86,21 +93,18 @@ jobs:
             rzup toolchain list || true;
             echo "\n=== which cargo-risczero ===";
             command -v cargo-risczero || true;
-          } > ci_diagnostics.txt
+          } > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
 
       - name: Build & Run example
         working-directory: src/l2-executor
         run: |
           set -euxo pipefail
           source "$HOME/.risc0/bin/env"
-          cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee ../../risc0_ci_run.log
+          cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: risc0-perf-logs
-          path: |
-            risc0_ci_run.log
-            rzup_install.log
-            ci_diagnostics.txt
+          path: ci_artifacts
