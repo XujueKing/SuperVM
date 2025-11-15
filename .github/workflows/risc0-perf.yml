@@ -18,6 +18,7 @@ jobs:
       CARGO_NET_RETRY: "5"
       CARGO_HTTP_MULTIPLEXING: "true"
       CARGO_HTTP_TIMEOUT: "600"
+      CARGO_BUILD_JOBS: "2"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,11 +107,21 @@ jobs:
             command -v cargo-risczero || true;
           } > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
 
-      - name: Build & Run example (standalone copy)
+      - name: Build example (compile only)
+        timeout-minutes: 40
         run: |
           set -euxo pipefail
           cd "$RUNNER_TEMP/l2-executor-standalone"
-          cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
+          date
+          cargo build --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/build.log"
+          date
+
+      - name: Run example (no build)
+        timeout-minutes: 15
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP/l2-executor-standalone"
+          ./target/release/examples/risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
 
       - name: Upload artifacts
         if: always()
