@@ -2,6 +2,12 @@ name: RISC0 Performance (Dev Mode)
 
 on:
   workflow_dispatch: {}
+  push:
+    branches:
+      - king/l0-mvcc-privacy-verification
+    paths:
+      - '.github/workflows/risc0-perf.yml'
+      - 'src/l2-executor/**'
 
 jobs:
   run-risc0-perf:
