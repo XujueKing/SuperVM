@@ -60,9 +60,11 @@ jobs:
         run: |
           set -euxo pipefail
           curl -L https://risczero.com/install | bash
-          echo "$HOME/.risc0/bin" >> $GITHUB_PATH
-          source "$HOME/.risc0/bin/env"
-          rzup --version | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+          # Ensure rzup and cargo-risczero are discoverable
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          rzup --help | head -n 5 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
+          rzup --version | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
           # retry rzup install to mitigate transient network/TLS issues
           n=0
           until [ $n -ge 5 ]
@@ -89,7 +91,6 @@ jobs:
             echo "\n=== rustc/cargo versions ===";
             rustc -Vv || true; cargo -Vv || true;
             echo "\n=== rzup toolchain list ===";
-            source "$HOME/.risc0/bin/env" || true
             rzup toolchain list || true;
             echo "\n=== which cargo-risczero ===";
             command -v cargo-risczero || true;
@@ -99,7 +100,6 @@ jobs:
         working-directory: src/l2-executor
         run: |
           set -euxo pipefail
-          source "$HOME/.risc0/bin/env"
           cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
 
       - name: Upload artifacts
