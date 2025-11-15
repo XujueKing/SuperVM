@@ -67,6 +67,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential curl pkg-config libssl-dev clang cmake ninja-build
 
+      - name: Verify Docker availability
+        run: |
+          set -euxo pipefail
+          docker --version
+          docker info | sed -n '1,50p'
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
@@ -145,6 +151,7 @@ jobs:
         timeout-minutes: 40
         env:
           RISC0_DEV_MODE: "1"
+          RISC0_USE_DOCKER: "1"
           CARGO_BUILD_JOBS: "2"
           CARGO_NET_RETRY: "5"
           CARGO_HTTP_TIMEOUT: "600"
