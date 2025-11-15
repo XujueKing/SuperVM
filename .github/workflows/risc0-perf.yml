@@ -19,6 +19,7 @@ jobs:
       CARGO_HTTP_MULTIPLEXING: "true"
       CARGO_HTTP_TIMEOUT: "600"
       CARGO_BUILD_JOBS: "2"
+      RUSTFLAGS: "-C codegen-units=8 -C inline-threshold=0"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +40,8 @@ jobs:
             --exclude 'target' \
             "$GITHUB_WORKSPACE/src/l2-executor/" "$RUNNER_TEMP/l2-executor-standalone/"
           ls -la "$RUNNER_TEMP/l2-executor-standalone"
+          # Pre-create target dir to encourage incremental artifacts reuse across retries
+          mkdir -p "$RUNNER_TEMP/l2-executor-standalone/target"
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -107,14 +110,31 @@ jobs:
             command -v cargo-risczero || true;
           } > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
 
+      - name: Prefetch dependencies
+        timeout-minutes: 10
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP/l2-executor-standalone"
+          cargo fetch
+          echo "Prefetch complete at $(date)"
+
       - name: Build example (compile only)
         timeout-minutes: 40
         run: |
           set -euxo pipefail
           cd "$RUNNER_TEMP/l2-executor-standalone"
+          echo "[heartbeat] build start $(date)"
+          # Heartbeat loop (background) prints every 5 minutes so logs stay alive
+          ( while true; do sleep 300; echo "[heartbeat] still building at $(date)"; done ) &
+          HB_PID=$!
           date
-          cargo build --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/build.log"
+          cargo build --release -vv --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/build.log" || BUILD_ERR=$?
           date
+          kill $HB_PID || true
+          if [ -n "${BUILD_ERR:-}" ]; then
+            echo "Build failed with code $BUILD_ERR" >> "$GITHUB_WORKSPACE/ci_artifacts/build.log"
+            exit $BUILD_ERR
+          fi
 
       - name: Run example (no build)
         timeout-minutes: 15
