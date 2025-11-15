@@ -1,4 +1,5 @@
-# zkSNARK 技术评估报告
+﻿# zkSNARK 技术评估报告
+
 开发者/作者：King Xujue
 **Phase 2 Week 3-4**
 
@@ -9,8 +10,11 @@
 ## 待评估库
 
 ### 1. bellman (Zcash - Groth16)
+
 - **项目**: https://github.com/zkcrypto/bellman
+
 - **证明系统**: Groth16
+
 - **特点**: 
   - 证明大小: 固定 ~128 bytes (3个群元素)
   - 验证时间: 固定 ~5ms (3个配对运算)
@@ -18,8 +22,11 @@
   - 成熟度: 高 (Zcash Sapling 使用)
 
 ### 2. plonky2 (Polygon Zero - PLONK)
+
 - **项目**: https://github.com/0xPolygonZero/plonky2
+
 - **证明系统**: PLONK (Permutation-based)
+
 - **特点**:
   - 证明大小: ~10KB (取决于电路大小)
   - 验证时间: ~10-50ms
@@ -27,8 +34,11 @@
   - 成熟度: 高 (Polygon zkEVM 使用)
 
 ### 3. halo2 (Electric Coin Company - Halo2)
+
 - **项目**: https://github.com/zcash/halo2
+
 - **证明系统**: Halo 2 (递归 SNARK)
+
 - **特点**:
   - 证明大小: ~50KB (递归证明)
   - 验证时间: ~100-200ms
@@ -36,16 +46,22 @@
   - 成熟度: 中 (Zcash Orchard 升级使用)
 
 ### 4. arkworks (通用 zkSNARK 工具库)
+
 - **项目**: https://github.com/arkworks-rs/
+
 - **证明系统**: Groth16, Marlin, GM17 等多种
+
 - **特点**:
   - 模块化设计, 可组合不同证明系统
   - 性能优化良好
   - 文档较完善
 
 ### 5. halo2 (Zcash)
+
 - **项目**: https://github.com/zcash/halo2
+
 - **证明系统**: Halo 2（更通用的 PLONK 变体，支持递归）
+
 - **特点**:
   - 透明或通用 Setup（更灵活）
   - 原生递归友好
@@ -68,6 +84,7 @@
 ### 2. API 复杂度
 
 #### bellman 示例 (Groth16)
+
 ```rust
 use bellman::{Circuit, ConstraintSystem, SynthesisError};
 use pairing::bn256::{Bn256, Fr};
@@ -97,11 +114,13 @@ impl<E: Engine> Circuit<E> for MyCircuit {
         Ok(())
     }
 }
+
 ```
 
 **复杂度**: ⭐⭐⭐ (中等, 需要手动构建 R1CS 约束)
 
 #### plonky2 示例 (PLONK)
+
 ```rust
 use plonky2::iop::witness::{PartialWitness, WitnessWrite};
 use plonky2::plonk::circuit_builder::CircuitBuilder;
@@ -120,11 +139,13 @@ let z = builder.add(x, y);
 builder.register_public_input(z);
 
 let data = builder.build::<C>();
+
 ```
 
 **复杂度**: ⭐⭐ (较低, Builder 模式, 但类型参数复杂)
 
 #### halo2 示例 (Halo2)
+
 ```rust
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -160,6 +181,7 @@ impl Circuit<Fp> for MyCircuit {
         Ok(())
     }
 }
+
 ```
 
 **复杂度**: ⭐⭐⭐⭐ (高, 需要理解 Layouter, Rotation, Gate 等概念)
@@ -176,22 +198,30 @@ impl Circuit<Fp> for MyCircuit {
 ### 4. SuperVM 适配性分析
 
 #### 场景 1: 隐藏合约状态 (RingCT + zkSNARK)
+
 - **需求**: 证明 `Σ输入 = Σ输出 + 手续费` 且所有金额 ∈ [0, 2^64-1]
+
 - **约束规模**: ~10K 约束 (Bulletproofs 约 5K 约束)
+
 - **推荐**: **bellman (Groth16)** 或 **arkworks (Groth16)**
   - 理由: 验证时间 ~5ms, 证明大小 128 bytes, 适合链上验证
   - Trusted Setup 可接受 (一次性, 由社区完成)
 
 #### 场景 2: 通用智能合约隐私 (zkVM)
+
 - **需求**: 证明合约执行正确性, 支持复杂逻辑
+
 - **约束规模**: ~1M+ 约束
+
 - **推荐**: **plonky2 (PLONK)** 或 **halo2 (Halo2)**
   - 理由: 
     - plonky2: 通用 Setup, 适合频繁更新电路
     - halo2: 无 Trusted Setup, 递归证明支持大电路
 
 #### 场景 3: 跨链隐私桥 (递归证明)
+
 - **需求**: 聚合多个证明, 减少链上验证成本
+
 - **推荐**: **halo2 (Halo2)**
   - 理由: 原生支持递归, 可将 N 个证明聚合为 1 个
 
@@ -200,11 +230,15 @@ impl Circuit<Fp> for MyCircuit {
 ## 性能基准测试计划与初步结果
 
 ### 当前实现与环境
+
 - 库与曲线：arkworks（ark-groth16 0.4 + ark-bls12-381 0.4）
+
 - 平台：Windows（PowerShell），Rust stable
+
 - 已实现电路：
   - Multiply（a*b=c）：公开 c；约束 1 个乘法门
   - Range（位分解，8-bit）：公开 c=v；约束若干布尔门 + 线性约束
+
 - 代码位置：`zk-groth16-test/`
 
 ### Groth16 基准（arkworks 0.4 + BLS12-381）
@@ -230,8 +264,11 @@ impl Circuit<Fp> for MyCircuit {
 4. **证明大小**：128 bytes（2×G1 + 1×G2，恒定）
 
 **与理论预期对比**：
+
 - 验证时间符合预期（~3.6ms），接近理论值（3次配对）
+
 - 证明大小符合预期（恒定 128 bytes）
+
 - Setup 与证明时间在正常范围内（微秒级运算 × 约束数 + 配对开销）
 
 **64-bit vs 8-bit 范围证明性能分析**：
@@ -244,13 +281,19 @@ impl Circuit<Fp> for MyCircuit {
 | 证明大小 | 128 bytes | 128 bytes | ×1.0 | **恒定大小**✨ |
 
 **关键发现**：
+
 - **Groth16 扩展性验证成功**：约束数 7 倍增长，证明时间仅 1.7 倍增长
+
 - **验证成本固定**：无论 8-bit 还是 64-bit，验证时间恒定 ~3.6ms，证明大小恒定 128 bytes
+
 - **实用性评估**：64-bit 范围证明（真实场景所需）prove 时间仅 7.4ms，完全满足生产需求
 
 **后续优化方向**：
+
 - 在 Linux/固定硬件环境重测，减少调度抖动
+
 - 批量验证优化（多个证明合并验证可均摊配对成本）
+
 - 考虑 GPU 加速（MSM/配对运算）
 
 注：开发机非严谨测试环境，数据仅供数量级参考；生产部署需在目标平台重测。
@@ -264,13 +307,19 @@ impl Circuit<Fp> for MyCircuit {
    - 注：完整 Pedersen 需椭圆曲线群运算；当前用域乘法模拟线性承诺
 
 **测试状态**：
+
 - 所有 4 个电路测试通过 ✅
+
 - 所有 7 个基准测试完成 ✅
+
 - 性能数据已收集并验证 ✅
 
 ### Halo2 实现与性能数据（halo2-eval 项目）✅
+
 - Crate：`halo2-eval/`（halo2_proofs 0.3 + halo2curves 0.6）
+
 - 电路：Multiply（a*b=c），使用 PLONK-style Gate
+
 - 测试：MockProver 通过 + KZG 真实证明/验证通过
 
 **Halo2 基准（KZG/Bn256）**：
@@ -282,7 +331,9 @@ impl Circuit<Fp> for MyCircuit {
 | 10 | 1024 | 431.3ms | 186.8ms | 10.1ms | 1856 bytes |
 
 **与 Groth16 对比（Combined 电路，~72 约束）**：
+
 - Groth16: Setup=26.8ms | Prove=10.0ms | Verify=3.6ms | 证明大小=128 bytes
+
 - Halo2 (k=8): Setup+Keygen=85.6ms | Prove=106.2ms | Verify=4.8ms | 证明大小=1728 bytes
 
 **关键观察**：
@@ -293,21 +344,28 @@ impl Circuit<Fp> for MyCircuit {
 5. **扩展性**：Halo2 证明时间随 k 值（电路复杂度）增长较快，Groth16 更稳定
 
 ### Pedersen + Range 组合电路（下一步）
+
 - **目标**: 隐藏金额的范围证明
+
 - **公开**: 承诺 `C = v*H + r*G`
+
 - **私有**: 金额 `v ∈ [0, 2^64-1]`, 盲化因子 `r`
+
 - **约束**: 
   1. 承诺打开正确（`C` 计算验证）
   2. 范围检查（64-bit 位分解 + 64 个布尔约束）
+
 - **预估**: ~72 约束（2个承诺约束 + 70个范围约束），证明时间 ~7-8ms（基于 64-bit range 实测）
 
 ### 测试指标
+
 1. 证明生成时间（单/批量）
 2. 验证时间（单/批量）
 3. 证明大小（Groth16 恒定 128 bytes）
 4. 内存占用峰值
 
 ### 实施步骤
+
 1. **Week 3**: 
    - 研究 Groth16 原理 (R1CS, QAP, 配对)
    - 实现 bellman 基准测试
@@ -323,19 +381,27 @@ impl Circuit<Fp> for MyCircuit {
 ## 参考资料
 
 ### Groth16
+
 - 论文: "On the Size of Pairing-based Non-interactive Arguments" (2016)
+
 - 教程: https://www.zeroknowledgeblog.com/index.php/groth16
 
 ### PLONK
+
 - 论文: "PLONK: Permutations over Lagrange-bases for Oecumenical Noninteractive arguments of Knowledge" (2019)
+
 - 教程: https://vitalik.ca/general/2019/09/22/plonk.html
 
 ### Halo2
+
 - 论文: "Recursive Proof Composition without a Trusted Setup" (2019)
+
 - 文档: https://zcash.github.io/halo2/
 
 ### Bulletproofs (对比基准)
+
 - 论文: "Bulletproofs: Short Proofs for Confidential Transactions and More" (2018)
+
 - 我们的实现: `docs/research/monero-study-notes.md` (Bulletproofs 章节)
 
 ---
@@ -359,29 +425,45 @@ impl Circuit<Fp> for MyCircuit {
 ### SuperVM 场景推荐
 
 #### 场景 1: 链上隐私交易（RingCT）✅ **推荐 Groth16**
+
 - **需求**: 证明金额范围 + 承诺正确性
+
 - **优先级**: 证明大小、验证时间、Gas 成本
+
 - **结论**: Groth16 证明小 13.5×、验证快 1.3×，非常适合链上验证
+
 - **实施**: 使用 arkworks 生态，复用已实现的 Combined 电路
 
 #### 场景 2: 跨链隐私桥（递归证明）✅ **推荐 Halo2**
+
 - **需求**: 聚合多个证明，减少链上验证次数
+
 - **优先级**: 递归能力、Setup 灵活性
+
 - **结论**: Halo2 原生支持递归，可将 N 个证明聚合为 1 个
+
 - **实施**: 使用 halo2_proofs，实现递归电路
 
 #### 场景 3: 频繁更新电路（zkVM 开发）✅ **推荐 Halo2**
+
 - **需求**: 电路快速迭代，避免每次重新 Setup
+
 - **优先级**: 开发效率、Setup 灵活性
+
 - **结论**: Halo2 通用 Setup，一次即可用于任意电路
+
 - **实施**: 使用 halo2_proofs，建立电路库
 
 #### 场景 4: 混合策略（最优方案）✨
+
 - **链上部分**: 使用 Groth16（证明小、验证快、Gas 低）
+
 - **链下聚合**: 使用 Halo2 递归（聚合多个 Groth16 证明）
+
 - **开发迭代**: 使用 Halo2（快速原型）→ 生产优化为 Groth16
 
 ### 推荐技术栈
+
 1. **Phase 2 原型 (Week 5-8)**: **arkworks (Groth16)**
    - 优势: 证明小 (128 bytes), 验证快 (~5ms), 成熟稳定
    - 劣势: Trusted Setup (可接受)
@@ -391,13 +473,19 @@ impl Circuit<Fp> for MyCircuit {
    - halo2: 无 Trusted Setup, 适合长期运行
 
 ### 性能预期
+
 - Groth16: 证明生成 ~3s, 验证 ~5ms, 证明大小 128 bytes
+
 - PLONK: 证明生成 ~10s, 验证 ~30ms, 证明大小 ~10KB
+
 - Halo2: 证明生成 ~20s, 验证 ~150ms, 证明大小 ~50KB
 
 **对比 Bulletproofs** (Monero 使用):
+
 - Bulletproofs: 证明生成 ~50ms, 验证 ~10ms, 证明大小 ~700 bytes
+
 - zkSNARK 优势: 验证更快 (5ms vs 10ms), 可通用化
+
 - zkSNARK 劣势: 证明生成慢 (3s vs 50ms)
 
 ---

@@ -1,4 +1,4 @@
-# 并行执行引擎设计文档
+﻿# 并行执行引擎设计文档
 
 作者: king  
 版本: v0.9.0  
@@ -7,13 +7,21 @@
 ## 目录
 
 - [概述](#概述)
+
 - [架构设计](#架构设计)
+
 - [核心组件](#核心组件)
+
 - [两种调度器对比](#两种调度器对比)
+
 - [关键 API](#关键-api)
+
 - [使用示例](#使用示例)
+
 - [性能优化](#性能优化)
+
 - [测试与基准](#测试与基准)
+
 - [最佳实践](#最佳实践)
 
 ---
@@ -33,9 +41,13 @@ SuperVM 并行执行引擎旨在提高区块链交易处理吞吐量，通过智
 ### 核心特性
 
 - **双引擎架构**: 提供 ParallelScheduler 和 MvccScheduler 两种实现
+
 - **智能冲突检测**: 自动分析读写集，构建依赖图
+
 - **工作窃取调度**: 动态负载均衡，最大化 CPU 利用率
+
 - **快照隔离**: 基于 MVCC 的事务隔离级别
+
 - **自适应 GC**: 自动内存管理，无需手动调优
 
 ---
@@ -86,7 +98,8 @@ SuperVM 并行执行引擎旨在提高区块链交易处理吞吐量，通过智
 
 记录事务访问的键集合，用于冲突检测。
 
-\\\ust
+\\\
+ust
 pub struct ReadWriteSet {
     pub read_set: HashSet<StorageKey>,
     pub write_set: HashSet<StorageKey>,
@@ -94,32 +107,44 @@ pub struct ReadWriteSet {
 \\\
 
 **功能**:
+
 - dd_read(key): 记录读操作
+
 - dd_write(key): 记录写操作
+
 - conflicts_with(other): 检测与另一个读写集的冲突
 
 **冲突规则**:
+
 - **WAW** (Write-After-Write): 两个事务写同一个键
+
 - **RAW** (Read-After-Write): 一个事务读，另一个写
+
 - **WAR** (Write-After-Read): 一个事务写，另一个读
 
 ### 2. ConflictDetector (冲突检测器)
 
 分析交易读写集，构建依赖关系。
 
-\\\ust
+\\\
+ust
 pub struct ConflictDetector {
     analyzed: HashMap<TxId, ReadWriteSet>,
 }
 \\\
 
 **核心方法**:
-- ecord(tx_id, rw_set): 记录交易的读写集
+
+- 
+ecord(tx_id, rw_set): 记录交易的读写集
+
 - uild_dependency_graph(tx_order): 构建依赖图
+
 - has_conflict(tx1, tx2): 检测两个交易是否冲突
 
 **依赖图构建算法**:
-\\\ust
+\\\
+ust
 for (i, tx_id) in tx_order.iter().enumerate() {
     // 检查与之前所有交易的冲突
     for prev_tx_id in &tx_order[..i] {
@@ -135,19 +160,24 @@ for (i, tx_id) in tx_order.iter().enumerate() {
 
 DAG (有向无环图) 表示交易之间的依赖关系。
 
-\\\ust
+\\\
+ust
 pub struct DependencyGraph {
     dependencies: HashMap<TxId, Vec<TxId>>,
 }
 \\\
 
 **核心方法**:
+
 - dd_dependency(tx, depends_on): 添加依赖关系
+
 - get_dependencies(tx): 获取指定交易的所有依赖
+
 - get_ready_transactions(all_txs, completed): 获取可立即执行的交易
 
 **调度逻辑**:
-\\\ust
+\\\
+ust
 // 获取无依赖或依赖已完成的交易
 ready_txs = all_txs.filter(|tx| {
     deps = graph.get_dependencies(tx)
@@ -159,7 +189,8 @@ ready_txs = all_txs.filter(|tx| {
 
 管理交易执行状态的快照和回滚。
 
-\\\ust
+\\\
+ust
 pub struct StateManager {
     snapshots: HashMap<SnapshotId, HashMap<StorageKey, Vec<u8>>>,
     current_state: HashMap<StorageKey, Vec<u8>>,
@@ -167,14 +198,21 @@ pub struct StateManager {
 \\\
 
 **核心方法**:
+
 - create_snapshot(): 创建当前状态快照
+
 - get(key): 读取状态
+
 - set(key, value): 写入状态
-- ollback_to_snapshot(id): 回滚到指定快照
+
+- 
+ollback_to_snapshot(id): 回滚到指定快照
+
 - discard_snapshot(id): 丢弃快照释放内存
 
 **快照机制**:
-\\\ust
+\\\
+ust
 // 1. 执行前创建快照
 snapshot_id = state_manager.create_snapshot();
 
@@ -193,7 +231,8 @@ if result.success {
 
 管理交易的并行执行。
 
-\\\ust
+\\\
+ust
 pub struct ParallelScheduler {
     detector: Arc<Mutex<ConflictDetector>>,
     completed: Arc<Mutex<HashSet<TxId>>>,
@@ -206,16 +245,21 @@ pub struct ParallelScheduler {
 \\\
 
 **核心方法**:
+
 - execute_parallel(txs, executor): 并行执行交易列表
+
 - execute_with_retry(tx_id, executor): 带重试的单交易执行
+
 - get_parallel_batch(all_txs): 获取可并行执行的批次
+
 - get_stats(): 获取执行统计
 
 ### 6. WorkStealingScheduler (工作窃取调度器)
 
 基于工作窃取算法的高性能调度器。
 
-\\\ust
+\\\
+ust
 pub struct WorkStealingScheduler {
     global_queue: Arc<Injector<TxId>>,
     local_queues: Vec<Worker<TxId>>,
@@ -231,15 +275,19 @@ pub struct WorkStealingScheduler {
 \\\
 
 **优势**:
+
 -  动态负载均衡
+
 -  减少线程空闲时间
+
 -  提高 CPU 利用率
 
 ### 7. MvccScheduler (MVCC 调度器)
 
 基于 MVCC 存储的新一代调度器 (v0.9.0+)。
 
-\\\ust
+\\\
+ust
 pub struct MvccScheduler {
     store: Arc<MvccStore>,
     config: MvccSchedulerConfig,
@@ -250,9 +298,13 @@ pub struct MvccScheduler {
 \\\
 
 **核心优势**:
+
 -  使用 MVCC 内置冲突检测，无需手动 ConflictDetector
+
 -  快照隔离自动处理，无需 StateManager
+
 -  自适应 GC 自动管理内存
+
 -  更好的并发性能和正确性保证
 
 ---
@@ -275,14 +327,21 @@ pub struct MvccScheduler {
 ### 选择指南
 
 **使用 ParallelScheduler**:
+
 -  需要灵活的存储后端
+
 -  自定义冲突检测逻辑
+
 -  不依赖 MVCC
 
 **使用 MvccScheduler** (推荐):
+
 -  追求最佳性能
+
 -  需要事务隔离
+
 -  自动内存管理
+
 -  生产环境部署
 
 ---
@@ -293,7 +352,8 @@ pub struct MvccScheduler {
 
 #### 创建调度器
 
-\\\ust
+\\\
+ust
 use vm_runtime::ParallelScheduler;
 
 // 默认配置
@@ -306,7 +366,8 @@ let scheduler = ParallelScheduler::with_mvcc_store(mvcc_store);
 
 #### 并行执行
 
-\\\ust
+\\\
+ust
 // 定义执行器
 let executor = |tx_id: TxId, state: &StateManager| -> Result<ExecutionResult> {
     // 执行交易逻辑
@@ -334,7 +395,8 @@ for result in results {
 
 #### 获取统计信息
 
-\\\ust
+\\\
+ust
 let stats = scheduler.get_stats();
 
 println!("成功: {}", stats.successful_txs);
@@ -349,7 +411,8 @@ println!("成功率: {:.2}%", stats.success_rate() * 100.0);
 
 #### 创建调度器
 
-\\\ust
+\\\
+ust
 use vm_runtime::{MvccScheduler, MvccSchedulerConfig, GcConfig, AutoGcConfig};
 
 // 默认配置
@@ -376,7 +439,8 @@ let scheduler = MvccScheduler::with_config(config);
 
 #### 并行执行
 
-\\\ust
+\\\
+ust
 use vm_runtime::TxnFn;
 
 // 定义交易函数
@@ -405,7 +469,8 @@ println!("成功率: {:.2}%",
 
 #### 单交易执行
 
-\\\ust
+\\\
+ust
 let tx_id = 1;
 let txn_fn = Box::new(|txn: &mut Txn| {
     let value = txn.read(b"counter")?
@@ -434,7 +499,8 @@ if result.success {
 
 #### 创建调度器
 
-\\\ust
+\\\
+ust
 use vm_runtime::WorkStealingScheduler;
 
 // 自动检测 CPU 核心数
@@ -446,7 +512,8 @@ let scheduler = WorkStealingScheduler::new(Some(8));
 
 #### 执行任务
 
-\\\ust
+\\\
+ust
 let tx_ids: Vec<TxId> = (1..=100).collect();
 
 let executor = |tx_id: TxId, state: &StateManager| -> Result<ExecutionResult> {
@@ -468,7 +535,8 @@ println!("完成 {} 个交易", results.len());
 
 #### 获取内部调度器
 
-\\\ust
+\\\
+ust
 let parallel_scheduler = scheduler.get_scheduler();
 let stats = parallel_scheduler.get_stats();
 
@@ -481,7 +549,8 @@ println!("统计: {:?}", stats);
 
 ### 示例 1: 简单并行执行
 
-\\\ust
+\\\
+ust
 use vm_runtime::{ParallelScheduler, StateManager, ExecutionResult};
 
 fn main() -> anyhow::Result<()> {
@@ -531,7 +600,8 @@ fn main() -> anyhow::Result<()> {
 
 ### 示例 2: 冲突检测与重试
 
-\\\ust
+\\\
+ust
 use vm_runtime::ParallelScheduler;
 
 fn main() -> anyhow::Result<()> {
@@ -583,7 +653,8 @@ fn main() -> anyhow::Result<()> {
 
 ### 示例 3: MVCC 调度器使用
 
-\\\ust
+\\\
+ust
 use vm_runtime::{MvccScheduler, MvccSchedulerConfig, TxnFn};
 
 fn main() -> anyhow::Result<()> {
@@ -646,7 +717,8 @@ fn main() -> anyhow::Result<()> {
 
 ### 示例 4: 工作窃取调度器
 
-\\\ust
+\\\
+ust
 use vm_runtime::WorkStealingScheduler;
 
 fn main() -> anyhow::Result<()> {
@@ -704,7 +776,8 @@ fn main() -> anyhow::Result<()> {
 
 **策略 1: 键分片**
 
-\\\ust
+\\\
+ust
 // 不好: 所有交易访问同一个键
 let key = b"global_counter";
 
@@ -715,7 +788,8 @@ let key = format!("counter_{}", shard);
 
 **策略 2: 批量操作**
 
-\\\ust
+\\\
+ust
 // 不好: 每个键一个交易
 for i in 0..100 {
     execute_transaction(|state| {
@@ -733,7 +807,8 @@ execute_transaction(|state| {
 
 **策略 3: 只读事务**
 
-\\\ust
+\\\
+ust
 // MVCC 调度器支持只读事务优化
 let txn = store.begin_read_only(); // 无冲突检测
 let value = txn.read(b"key")?;
@@ -744,7 +819,8 @@ txn.commit()?; // 快速路径
 
 **策略 1: 调整工作线程数**
 
-\\\ust
+\\\
+ust
 // 自动检测 CPU 核心数
 let num_cores = num_cpus::get();
 
@@ -757,7 +833,8 @@ let scheduler = WorkStealingScheduler::new(Some(num_cores * 2));
 
 **策略 2: 批次大小调优**
 
-\\\ust
+\\\
+ust
 // 小批次: 更好的负载均衡，但调度开销大
 let batch_size = 10;
 
@@ -772,7 +849,8 @@ let batch_size = if is_complex_task { 10 } else { 100 };
 
 **策略 1: 及时释放快照**
 
-\\\ust
+\\\
+ust
 // 不好: 快照未释放
 let snapshot_id = state_manager.create_snapshot();
 execute_transaction();
@@ -787,7 +865,8 @@ execute_transaction();
 
 **策略 2: 启用自适应 GC**
 
-\\\ust
+\\\
+ust
 let config = MvccSchedulerConfig {
     mvcc_config: GcConfig {
         max_versions_per_key: 20,
@@ -807,7 +886,8 @@ let config = MvccSchedulerConfig {
 
 **策略 1: 批量读取**
 
-\\\ust
+\\\
+ust
 // 不好: 多次系统调用
 for key in keys {
     let value = state.get(&key)?;
@@ -819,7 +899,8 @@ let values = state.batch_get(&keys)?;
 
 **策略 2: 缓存频繁访问的键**
 
-\\\ust
+\\\
+ust
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -848,7 +929,8 @@ fn cached_get(state: &StateManager, key: &[u8]) -> Result<Option<Vec<u8>>> {
 
 ### 单元测试
 
-\\\ust
+\\\
+ust
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -927,7 +1009,8 @@ mod tests {
 
 ### 性能基准
 
-\\\ust
+\\\
+ust
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn bench_parallel_scheduler(c: &mut Criterion) {
@@ -977,13 +1060,17 @@ criterion_main!(benches);
 运行完整的压力测试套件:
 
 \\\ash
+
 # 运行并行执行相关测试
+
 cargo test -p vm-runtime --test parallel_tests -- --nocapture
 
 # 运行 MVCC 调度器测试
+
 cargo test -p vm-runtime --test mvcc_parallel_tests -- --nocapture
 
 # 运行工作窃取调度器测试
+
 cargo test -p vm-runtime --test work_stealing_tests -- --nocapture
 \\\
 
@@ -993,7 +1080,8 @@ cargo test -p vm-runtime --test work_stealing_tests -- --nocapture
 
 ### 1. 选择合适的调度器
 
-\\\ust
+\\\
+ust
 // 场景 1: 通用并行执行，需要灵活性
 let scheduler = ParallelScheduler::new();
 
@@ -1006,7 +1094,8 @@ let scheduler = WorkStealingScheduler::new(None);
 
 ### 2. 合理设置并行度
 
-\\\ust
+\\\
+ust
 // 获取 CPU 核心数
 let num_cores = num_cpus::get();
 
@@ -1025,7 +1114,8 @@ let config = MvccSchedulerConfig {
 
 ### 3. 监控执行统计
 
-\\\ust
+\\\
+ust
 // 定期检查统计信息
 let stats = scheduler.get_stats();
 
@@ -1046,7 +1136,8 @@ if stats.conflict_rate() > 0.1 {
 
 ### 4. 错误处理
 
-\\\ust
+\\\
+ust
 use anyhow::{Context, Result};
 
 fn execute_with_error_handling(
@@ -1086,22 +1177,33 @@ fn execute_with_error_handling(
 ### 5. 性能调优检查清单
 
  **冲突优化**
+
 - 使用键分片减少热点
+
 - 批量操作合并写入
+
 - 只读事务使用快速路径
 
  **并行度调优**
+
 - 根据工作负载类型调整线程数
+
 - 调整批次大小平衡调度开销
 
  **内存管理**
+
 - 启用自适应 GC
+
 - 及时释放快照
+
 - 监控版本数增长
 
  **监控告警**
+
 - 定期检查成功率和冲突率
+
 - 记录执行统计趋势
+
 - 设置性能基准和告警阈值
 
 ---
@@ -1117,9 +1219,13 @@ SuperVM 并行执行引擎提供了三种调度器:
 | **WorkStealingScheduler** | 计算密集型 | 很好 | 低 |
 
 **推荐使用 MvccScheduler**:
+
 -  更好的性能和正确性
+
 -  自动内存管理
+
 -  更简单的 API
+
 -  生产环境验证
 
 **关键要点**:

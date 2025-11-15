@@ -1,4 +1,4 @@
-# 跨分片事务架构设计
+﻿# 跨分片事务架构设计
 
 **版本**: v1.0  
 **作者**: KING XU  
@@ -12,14 +12,19 @@
 ### 1.1 目标
 
 将 SuperVM 从单节点 MVCC 扩展到**水平可扩展的分片架构**：
+
 - 支持跨分片原子事务（2PC 协议）
+
 - 保持 MVCC 并发控制语义
+
 - 最小化跨分片通信开销
+
 - 提供线性扩展能力（N 分片 → N 倍吞吐）
 
 ### 1.2 核心组件
 
 ```
+
 ┌─────────────────────────────────────────────────────────┐
 │                  Transaction Coordinator                 │
 │  (ShardCoordinator - 事务协调器，运行 2PC 协议)           │
@@ -38,6 +43,7 @@
    │         Network Layer (gRPC/tarpc)            │
    │  prepare_txn() / commit_txn() / abort_txn()  │
    └───────────────────────────────────────────────┘
+
 ```
 
 ---
@@ -53,11 +59,15 @@ fn shard_for_object(object_id: &ObjectId, num_shards: usize) -> ShardId {
     let hash = xxhash::xxh64(object_id, 0);
     (hash % num_shards as u64) as ShardId
 }
+
 ```
 
 **特性**:
+
 - 负载均衡：均匀分布对象
+
 - 确定性：相同对象始终路由到同一分片
+
 - 可扩展：增加分片时最小化数据迁移
 
 ### 2.2 分片类型
@@ -75,6 +85,7 @@ fn shard_for_object(object_id: &ObjectId, num_shards: usize) -> ShardId {
 ### 3.1 协议流程
 
 ```
+
 Client → Coordinator: Submit Txn(read_set, write_set)
           │
           ├──> Phase 1: PREPARE
@@ -91,6 +102,7 @@ Client → Coordinator: Submit Txn(read_set, write_set)
                ├─> Shard 0: commit_txn() / abort_txn()
                │    └─> Apply writes & release locks OR rollback
                └─> Shard 1: commit_txn() / abort_txn()
+
 ```
 
 ### 3.2 消息定义
@@ -120,16 +132,19 @@ struct CommitResponse {
     txn_id: TxnId,
     status: CommitStatus, // Success or Failed
 }
+
 ```
 
 ### 3.3 状态机
 
 ```
+
 [INIT] → prepare_all_shards() → [PREPARED]
          ↓ (any NO)              ↓ (all YES)
      [ABORTED]              [COMMITTING] → commit_all() → [COMMITTED]
                                 ↓ (timeout/failure)
                             [ABORTED]
+
 ```
 
 ---
@@ -164,6 +179,7 @@ impl MvccScheduler {
         Ok(true)
     }
 }
+
 ```
 
 ### 4.2 死锁检测
@@ -189,6 +205,7 @@ impl DeadlockDetector {
         cycle.into_iter().max_by_key(|txn_id| txn_id.timestamp).unwrap()
     }
 }
+
 ```
 
 ---
@@ -215,6 +232,7 @@ service ShardService {
     rpc AbortTxn(AbortRequest) returns (AbortResponse);
     rpc GetObjectVersions(VersionRequest) returns (VersionResponse);
 }
+
 ```
 
 ### 5.3 Rust 实现框架
@@ -268,6 +286,7 @@ impl ShardService for ShardNode {
         }))
     }
 }
+
 ```
 
 ---
@@ -285,12 +304,15 @@ struct BatchPrepareRequest {
 
 // 单次 RPC 处理 100 个事务
 const BATCH_SIZE: usize = 100;
+
 ```
 
 ### 6.2 读取优化
 
 - **Read-Only 事务**: 跳过 2PC，直接读取快照
+
 - **本地读优化**: 优先读取本地分片对象
+
 - **版本缓存**: 缓存远程对象版本信息
 
 ### 6.3 延迟优化
@@ -324,13 +346,17 @@ cross_shard_abort_rate                  // 中止率（冲突 + 超时）
 shard_rpc_bytes_sent                    // 发送字节数
 shard_rpc_bytes_received                // 接收字节数
 shard_rpc_errors_total                  // RPC 错误数
+
 ```
 
 ### 7.2 Grafana 面板
 
 新增 "Cross-Shard Transactions" 仪表盘：
+
 - 跨分片事务比例饼图
+
 - 2PC 延迟分布直方图
+
 - 分片间通信流量热力图
 
 ---
@@ -338,23 +364,35 @@ shard_rpc_errors_total                  // RPC 错误数
 ## 8. 实现里程碑
 
 ### Phase 1: 基础框架 (Week 1-2)
+
 - [ ] 定义 `ShardId`、`ShardConfig` 类型
+
 - [ ] 实现 `ShardCoordinator` 骨架
+
 - [ ] 集成 `tonic` 依赖并定义 `.proto` 文件
 
 ### Phase 2: 2PC 协议 (Week 2-3)
+
 - [ ] 实现 prepare/commit/abort RPC 处理器
+
 - [ ] 扩展 `MvccScheduler` 支持远程验证
+
 - [ ] 添加事务状态持久化（WAL）
 
 ### Phase 3: 测试与优化 (Week 3-4)
+
 - [ ] 跨分片基准测试工具 (`mixed_path_bench --shards:4`)
+
 - [ ] 集成测试：2-shard / 4-shard 场景
+
 - [ ] 性能调优：批量提交、流水线
 
 ### Phase 4: 监控与文档 (Week 4)
+
 - [ ] Prometheus 指标导出
+
 - [ ] 更新 `docs/API.md`
+
 - [ ] 编写跨分片最佳实践文档
 
 ---
@@ -413,6 +451,7 @@ pub struct ConflictReason {
     pub expected_version: Version,
     pub actual_version: Version,
 }
+
 ```
 
 ---
@@ -420,7 +459,9 @@ pub struct ConflictReason {
 ## 11. 隐私跨分片 (ZK) 设计
 
 ### 11.1 目标与约束
+
 - 目标：在 2PC 语义下实现跨分片的隐私交易（不泄漏明文数据），保持原子性与一致性。
+
 - 约束：
     - 分片节点不可见敏感明文；
     - 参与分片能够独立验证证明正确性；
@@ -428,6 +469,7 @@ pub struct ConflictReason {
     - 与现有 SuperVM ZK 批量验证机制无缝集成（ZK_BATCH_* 配置与指标）。
 
 ### 11.2 数据模型与消息扩展
+
 在 PrepareRequest 增加隐私证明载荷：
 
 ```rust
@@ -446,6 +488,7 @@ struct PrepareRequest {
         retry_count: u32,              // 重试次数
         privacy: Option<PrivacyProof>, // 隐私交易附加字段
 }
+
 ```
 
 对应 Proto（摘要，详见 proto/cross_shard.proto）：
@@ -466,17 +509,21 @@ message PrepareRequest {
     uint32 retry_count = 102;
     optional PrivacyProof privacy = 200;
 }
+
 ```
 
 ### 11.3 验证策略
+
 - 方案 A：协调器统一验证（一次验证）
     - 优点：开销最小；
     - 缺点：参与分片无法独立信任验证结果。
+
 - 方案 B：各参与分片独立验证（推荐）
     - 优点：每个分片对本地写入安全性有独立背书；
     - 缺点：多次验证，需优化（使用 SuperVM 批量缓冲）。
 
 采用方案 B，并引入 SuperVM 批量验证：
+
 ```rust
 // 伪代码：在 ShardService.prepare_txn 中
 if let Some(p) = req.privacy.as_ref() {
@@ -485,10 +532,13 @@ if let Some(p) = req.privacy.as_ref() {
                 return VoteNo(Reason::InvalidProof);
         }
 }
+
 ```
 
 ### 11.4 执行流程（隐私场景）
+
 ```
+
 Client → Coordinator: Submit Txn(read_set, write_set, privacy_proof)
                  │
                  ├─ Phase 1: PREPARE
@@ -498,28 +548,38 @@ Client → Coordinator: Submit Txn(read_set, write_set, privacy_proof)
                  ├─ Collect Votes (all YES ? COMMIT : ABORT)
                  │
                  └─ Phase 2: COMMIT/ABORT (两边一致)
+
 ```
 
 ### 11.5 失败与恢复
+
 - 证明失败：参与分片直接投 NO，协调器决议 ABORT。
+
 - 超时：协调器记录 `cross_shard_prepare_timeout_total`，并发起 ABORT。
+
 - 协调器故障恢复：新主节点根据 WAL/状态机重放决议（见第 3.3 状态机的 RECOVERING）。
 
 ### 11.6 监控与指标映射
+
 - 新增：
     - `cross_shard_privacy_txn_total`（隐私跨分片事务数）
     - `cross_shard_privacy_abort_total{reason="invalid_proof|timeout|conflict"}`
+
 - 复用：
     - `vm_privacy_zk_batch_verify_*`（批量验证吞吐/延迟/失败率）
 
 ### 11.7 与 SuperVM 集成
+
 - 配置：遵循 `ZK_BATCH_ENABLE|SIZE|FLUSH_INTERVAL_MS`；协调器与参与分片均可独立配置。
+
 - 推荐：在参与分片启用批量模式，减少多事务并发下的平均验证开销。
+
 - 安全：各分片必须独立完成验证成功后才可进行本地锁与 prepare。
 
 ---
 
 ## 12. Proto 说明
+
 已新增 `proto/cross_shard.proto` 草案，覆盖 Prepare/Commit/Abort 及隐私字段（PrivacyProof）。
 后续将配合 tonic 代码生成与服务骨架实现。
 

@@ -1,10 +1,13 @@
-# Remix IDE 部署实战指南 (5 分钟速成)
+﻿# Remix IDE 部署实战指南 (5 分钟速成)
 
 ## 📋 准备清单
 
 - [ ] 浏览器 (Chrome/Edge/Firefox)
+
 - [ ] MetaMask 钱包扩展 (已安装并解锁)
+
 - [ ] Sepolia 测试网账户 (至少 0.01 ETH)
+
 - [ ] 合约文件: `contracts/BN254MultiplyVerifier.sol` (**5210 bytes, 已包含 helper 函数**)
 
 ---
@@ -56,9 +59,12 @@
    - 无红色错误提示
 
 **可能的警告 (可忽略)**:
+
 ```
+
 Warning: SPDX license identifier not provided in source file...
 Warning: This contract has a payable fallback function...
+
 ```
 
 ### 步骤 4: 配置 MetaMask (1 分钟)
@@ -114,11 +120,14 @@ Warning: This contract has a payable fallback function...
    - 保存到记事本,稍后需要
 
 **示例输出**:
+
 ```
+
 creation of BN254MultiplyVerifier pending...
 [block:5678901] from: 0xYourAddress to: BN254MultiplyVerifier.(constructor) value: 0 wei
 ✅ Gas used: 847,234
 📍 Contract address: 0x1234567890abcdef1234567890abcdef12345678
+
 ```
 
 ---
@@ -145,6 +154,7 @@ Gas 成本:
   测试网: Sepolia
   Chain ID: 11155111
   区块浏览器: https://sepolia.etherscan.io/address/0x___
+
 ```
 
 **在 Etherscan 查看**:
@@ -170,6 +180,7 @@ Gas 成本:
    - `input`: uint256[1]
 
 **示例占位符数据** (无效 proof,仅测试接口):
+
 ```javascript
 // a (G1 点)
 ["0x0000000000000000000000000000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000000000000000000000000000002"]
@@ -182,6 +193,7 @@ Gas 成本:
 
 // input (公共输入: 12 = 3*4)
 ["0x000000000000000000000000000000000000000000000000000000000000000c"]
+
 ```
 
 4. 点击 "transact" (会消耗 gas,约 150K-200K)
@@ -203,10 +215,15 @@ Gas 成本:
 ## ✅ 完成检查清单
 
 - [ ] 合约编译成功 (绿色对勾)
+
 - [ ] MetaMask 连接 Sepolia
+
 - [ ] 合约部署成功 (获得地址)
+
 - [ ] 记录 Gas Used 值
+
 - [ ] 在 Etherscan 查看合约
+
 - [ ] (可选) 测试 verifyProof 函数
 
 ---
@@ -218,14 +235,18 @@ Gas 成本:
 将实测 Gas 数据填入 `docs/DUAL-CURVE-VERIFIER-GUIDE.md`:
 
 ```bash
+
 # 编辑文件
+
 code docs\DUAL-CURVE-VERIFIER-GUIDE.md
 
 # 找到 "Gas 成本对比" 章节,更新表格:
+
 | 操作 | Gas 成本 (理论) | Gas 成本 (实测 Sepolia) | 备注 |
 |------|----------------|----------------------|------|
 | 合约部署 | ~800K | ______ | 实测: 2025-11-09 |
 | 单次验证 (1 公共输入) | ~150K-180K | ______ | 需真实 proof |
+
 ```
 
 ### 2. 提交代码 (可选)
@@ -237,14 +258,19 @@ git add docs/DUAL-CURVE-VERIFIER-GUIDE.md
 git commit -m "feat: BN254 Solidity verifier deployed to Sepolia testnet
 
 - Contract address: 0x___
+
 - Deployment gas: ___ 
+
 - Remix IDE deployment successful"
+
 ```
 
 ### 3. 继续 Phase 2.2 任务
 
 - **Task 3**: 批量验证集成 SuperVM PrivacyPath
+
 - **Task 4**: 24 小时稳定性测试
+
 - **Task 5**: Grafana 生产环境配置
 
 ---

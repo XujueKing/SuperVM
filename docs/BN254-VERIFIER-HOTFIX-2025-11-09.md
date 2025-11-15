@@ -1,4 +1,4 @@
-# BN254 Verifier 紧急修复报告
+﻿# BN254 Verifier 紧急修复报告
 
 **日期**: 2025-11-09  
 **严重性**: 🔴 HIGH (阻塞部署)  
@@ -14,10 +14,12 @@
 在 Remix IDE 编译 `BN254MultiplyVerifier.sol` 时报错:
 
 ```
+
 DeclarationError: Undeclared identifier.
 --> contracts/BN254MultiplyVerifier.sol:82:15:
 82 | vkX = pointAdd(vkX, G1Point(0x1e397021bbdeca16177...
    |       ^^^^^^^^
+
 ```
 
 ### 根本原因
@@ -25,13 +27,17 @@ DeclarationError: Undeclared identifier.
 **Rust 生成器缺陷**: `src/vm-runtime/src/privacy/solidity_verifier.rs`
 
 - ❌ **问题**: 只生成 `pairing()` 和 `verifyProof()` 函数
+
 - ❌ **缺失**: 未包含 `negate()`, `pointAdd()`, `scalarMul()` helper 函数
+
 - ❌ **触发条件**: `verifyProof()` 使用 gamma_abc 内联展开,调用 `pointAdd(vkX, ...)`
 
 ### 影响版本
 
 - `BN254MultiplyVerifier.sol` (生成于修复前)
+
 - `RingCTVerifierBN254.sol` (生成于修复前)
+
 - 所有使用 `generate_bn254()` 生成的合约
 
 ---
@@ -75,6 +81,7 @@ function scalarMul(G1Point memory p, uint256 s) internal view returns (G1Point m
     require(success, "Scalar multiplication failed");
     return G1Point(result[0], result[1]);
 }
+
 ```
 
 ### 2. Rust 生成器修复
@@ -97,23 +104,29 @@ code.push_str("    function negate(G1Point memory p) internal pure returns (G1Po
 // ... (49 行代码生成逻辑)
 
 code  // ← 返回完整代码 (pairing + helpers)
+
 ```
 
 ### 3. 验证修复
 
 ```powershell
+
 # 重新生成合约
+
 cargo run -p vm-runtime --features groth16-verifier \
   --example generate_bn254_multiply_sol_verifier --release
 
 # 检查 helper 函数
+
 Select-String -Path "contracts\BN254MultiplyVerifier.sol" \
   -Pattern "function (negate|pointAdd|scalarMul)"
 
 # 输出 (修复后)
+
 > function negate(G1Point memory p) internal pure ...
 > function pointAdd(G1Point memory p1, G1Point memory p2) internal view ...
 > function scalarMul(G1Point memory p, uint256 s) internal view ...
+
 ```
 
 ---
@@ -150,6 +163,7 @@ G1Point(0, 0)
 
 // Point negation
 y_neg = q - (y % q)
+
 ```
 
 ### Gamma ABC 内联展开
@@ -167,6 +181,7 @@ vkX = pointAdd(vkX, G1Point(0x1e39..., 0x20bf...));  // gamma_abc[0]
 vkX = pointAdd(vkX, scalarMul(G1Point(0x2cf4..., 0x1a89...), input[0])); // gamma_abc[1]
 vkX = pointAdd(vkX, scalarMul(G1Point(0x0e8d..., 0x1756...), input[1])); // gamma_abc[2]
 // ... (根据 num_public_inputs 展开)
+
 ```
 
 **依赖**: 需要 `pointAdd` 和 `scalarMul` 实现!
@@ -202,7 +217,9 @@ vkX = pointAdd(vkX, scalarMul(G1Point(0x0e8d..., 0x1756...), input[1])); // gamm
 ### 文档更新 (Agent 执行)
 
 - [ ] 更新 `DUAL-CURVE-VERIFIER-GUIDE.md` Gas 表格
+
 - [ ] 标记 Phase 2.2 Task 2 完成
+
 - [ ] 创建 Gas 测量报告 (Task 2.4)
 
 ---
@@ -218,8 +235,11 @@ vkX = pointAdd(vkX, scalarMul(G1Point(0x0e8d..., 0x1756...), input[1])); // gamm
 ### 代码审查清单
 
 - [ ] Solidity 合约所有函数定义完整
+
 - [ ] EVM precompile 地址正确 (0x06, 0x07, 0x08)
+
 - [ ] Field modulus 匹配曲线规范 (BN254 vs BLS12-381)
+
 - [ ] 优化开关一致 (gamma_abc 内联 ↔ helper 函数存在)
 
 ---
@@ -227,14 +247,18 @@ vkX = pointAdd(vkX, scalarMul(G1Point(0x0e8d..., 0x1756...), input[1])); // gamm
 ## 📚 相关文档
 
 - [DUAL-CURVE-VERIFIER-GUIDE.md](DUAL-CURVE-VERIFIER-GUIDE.md) - API 参考
+
 - [REMIX-DEPLOYMENT-QUICK-START.md](REMIX-DEPLOYMENT-QUICK-START.md) - 部署教程
+
 - [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md) - 多工具部署方案
 
 ---
 
 **修复提交**: `[HOTFIX] Add BN254 helper functions (negate/pointAdd/scalarMul) to Solidity generator`  
 **文件变更**: 
+
 - `src/vm-runtime/src/privacy/solidity_verifier.rs` (+49 lines)
+
 - `contracts/BN254MultiplyVerifier.sol` (重新生成, 5210 bytes)
 
 **测试验证**: ✅ 本地重新生成通过, 等待 Remix 编译确认

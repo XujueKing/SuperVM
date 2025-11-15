@@ -1,4 +1,4 @@
-# BN254 Solidity 验证器部署指南
+﻿# BN254 Solidity 验证器部署指南
 
 本指南详细说明如何将生成的 BN254 Solidity 验证器合约部署到以太坊测试网,并进行 Gas 成本测量。
 
@@ -11,24 +11,32 @@
 首先生成 BN254 验证器合约:
 
 ```bash
+
 # 简单乘法验证器 (用于测试)
+
 cargo run -p vm-runtime --features groth16-verifier --example generate_bn254_multiply_sol_verifier --release
 
 # RingCT 验证器 (隐私交易)
+
 cargo run -p vm-runtime --features groth16-verifier --example generate_ringct_bn254_verifier --release
+
 ```
 
 生成的合约位置:
+
 - `contracts/BN254MultiplyVerifier.sol` (~3.5KB)
+
 - `contracts/RingCTVerifierBN254.sol` (~3.8KB)
 
 ### 2. 准备测试网账户
 
 - **测试网**: Sepolia (推荐), Goerli, Mumbai (Polygon)
+
 - **获取测试币**:
   - Sepolia: https://sepoliafaucet.com/
   - Goerli: https://goerlifaucet.com/
   - Mumbai: https://faucet.polygon.technology/
+
 - **RPC Endpoint**: Infura, Alchemy, 或公共 RPC
 
 ---
@@ -81,7 +89,9 @@ cd bn254-verifier-deploy
 npm init -y
 npm install --save-dev hardhat @nomicfoundation/hardhat-toolbox
 npx hardhat init
+
 # 选择 "Create a JavaScript project"
+
 ```
 
 ### 步骤 2: 配置 Hardhat
@@ -111,12 +121,14 @@ module.exports = {
     },
   },
 };
+
 ```
 
 ### 步骤 3: 复制合约
 
 ```bash
 cp ../contracts/BN254MultiplyVerifier.sol ./contracts/
+
 ```
 
 ### 步骤 4: 编写部署脚本
@@ -151,21 +163,26 @@ main()
     console.error(error);
     process.exit(1);
   });
+
 ```
 
 ### 步骤 5: 部署
 
 ```bash
 npx hardhat run scripts/deploy.js --network sepolia
+
 ```
 
 **预期输出**:
+
 ```
+
 Deploying BN254MultiplyVerifier...
 ✅ BN254MultiplyVerifier deployed to: 0x1234...abcd
 
 Gas Used for Deployment: 812345
 Block Number: 5678901
+
 ```
 
 ### 步骤 6: 验证合约 (可选)
@@ -174,6 +191,7 @@ Block Number: 5678901
 npm install --save-dev @nomicfoundation/hardhat-verify
 
 npx hardhat verify --network sepolia 0x1234...abcd
+
 ```
 
 ---
@@ -183,19 +201,26 @@ npx hardhat verify --network sepolia 0x1234...abcd
 ### 步骤 1: 安装 Foundry
 
 **Windows**:
+
 ```powershell
+
 # 使用 WSL 或下载预编译二进制
+
 # 推荐使用 WSL:
+
 wsl --install
 wsl
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
+
 ```
 
 **Linux/macOS**:
+
 ```bash
 curl -L https://foundry.paradigm.xyz | bash
 foundryup
+
 ```
 
 ### 步骤 2: 编译合约
@@ -204,28 +229,36 @@ foundryup
 
 ```bash
 forge build
+
 ```
 
 ### 步骤 3: 部署到测试网
 
 ```bash
+
 # 设置环境变量
+
 export PRIVATE_KEY="your_private_key_without_0x_prefix"
 export RPC_URL="https://sepolia.infura.io/v3/YOUR_INFURA_KEY"
 
 # 部署合约
+
 forge create \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
   contracts/BN254MultiplyVerifier.sol:BN254MultiplyVerifier
+
 ```
 
 **预期输出**:
+
 ```
+
 Deployer: 0xYourAddress
 Deployed to: 0x1234...abcd
 Transaction hash: 0xabcd...1234
 Gas Used: 812345
+
 ```
 
 ### 步骤 4: 验证合约
@@ -236,6 +269,7 @@ forge verify-contract \
   --etherscan-api-key YOUR_ETHERSCAN_KEY \
   0x1234...abcd \
   contracts/BN254MultiplyVerifier.sol:BN254MultiplyVerifier
+
 ```
 
 ---
@@ -290,11 +324,14 @@ describe("BN254MultiplyVerifier", function () {
     expect(receipt.gasUsed).to.be.lt(250000); // 预期 <250K
   });
 });
+
 ```
 
 运行测试:
+
 ```bash
 npx hardhat test
+
 ```
 
 **方法 3: 使用 Foundry Gas Reporter**
@@ -330,11 +367,14 @@ contract VerifierTest is Test {
         assertTrue(result || !result); // Placeholder assertion
     }
 }
+
 ```
 
 运行测试:
+
 ```bash
 forge test --gas-report -vvv
+
 ```
 
 ---
@@ -353,8 +393,11 @@ forge test --gas-report -vvv
 | **标量乘法 (0x07)** | ~6K gas/op | 每个公共输入 |
 
 **优化空间**:
+
 - 如果验证 Gas >200K,可实施 Yul 内联优化
+
 - 减少公共输入数量 (聚合 Merkle 根)
+
 - 批量验证 (amortize pairing cost)
 
 ---

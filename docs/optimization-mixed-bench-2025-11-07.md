@@ -1,4 +1,4 @@
-# 混合负载基准（80% 单分片 + 20% 跨分片）完整测试报告（2025-11-07）
+﻿# 混合负载基准（80% 单分片 + 20% 跨分片）完整测试报告（2025-11-07）
 
 ## 测试概述
 
@@ -12,12 +12,19 @@
 ## 测试环境
 
 - **Profile**: release
+
 - **示例程序**: `node-core/examples/ownership_sharding_mixed_bench.rs`
+
 - **线程数**: 8
+
 - **每线程事务数**: 200
+
 - **批大小**: 20
+
 - **负载构成**: 80% 单分片，20% 跨分片
+
 - **跨分片热键池**: 8 个 (制造冲突)
+
 - **运行轮次**: 每配置 3 次取平均
 
 ## 完整测试结果
@@ -32,8 +39,11 @@
 | Bloom + Sharding | 248,009 | ±12,764 | 231,800 | 262,994 | 6.47ms | 83.0% | 271.7 | 8.34% |
 
 **关键发现**:
+
 - Bloom + Sharding 的候选密度为 8.34%，**超过 5% 密度回退阈值**
+
 - 密度回退机制触发，跳过 Bloom 分组，直接并行提交跨分片子集
+
 - 诊断显示: may_conflict=0, precise=0, edges=0, groups=0 (确认回退生效)
 
 ### 2. 热键隔离对比 (threshold=5)
@@ -46,9 +56,13 @@
 | Bloom + Sharding + HotKey(5) | 263,136 | ±20,101 | +6.0% | 83.2% | 269.0 | 8.26% |
 
 **关键发现**:
+
 - **最佳配置**: Bloom only + HotKey(5) 达到 **320,517 TPS**
+
 - 相比 Bloom-only 基线提升 **+20.2%** (266,506 → 320,517)
+
 - 热键隔离对 Bloom-only 场景收益最大
+
 - Sharding + HotKey 出现性能回退 (需进一步调优或负载特定)
 
 ### 3. 热键阈值调优 (Bloom + Sharding)
@@ -61,20 +75,27 @@
 | 10 | 270,547 | ±9,272 | 8.34% | ⚠️ 阈值偏高，部分热键未识别 |
 
 **关键发现**:
+
 - **最佳阈值**: threshold=5
+
 - threshold=3 时:
   - 候选密度飙升至 **14.28%**
   - 性能下降至 252K TPS
   - 原因: 识别过多"伪热键"，导致串行处理过多事务
+
 - threshold≥7 时:
   - 候选密度恢复至 8.34%
   - 性能略低于 5，但稳定
   - 原因: 未识别部分真实热键，热键团簇仍存在
 
 **阈值选择建议**:
+
 - 热键池大小 ≤10: threshold=5
+
 - 热键池大小 10-20: threshold=7
+
 - 热键池大小 >20: threshold=10
+
 - 动态自适应: 根据历史密度调整
 
 ### 4. 热键分桶并发对比 (Bloom + Sharding, threshold=5)
@@ -85,13 +106,19 @@
 | **Bucketed Hot-Key** | **267,352** | ±20,973 | **+1.2%** | 8.42% |
 
 **关键发现**:
+
 - 8 个热键场景下，分桶并发提升约 **1.2%**
+
 - 诊断显示密度相同 (8.42%)，但成功率略有提升
+
 - 预期热键数量 ≥16 时收益更明显
 
 **分桶并发建议**:
+
 - 热键数量 <8: 不启用 (开销 > 收益)
+
 - 热键数量 8-16: 可选启用 (~1-2% 提升)
+
 - 热键数量 >16: 建议启用 (预期 3-5% 提升)
 
 ## 诊断指标详解
@@ -99,28 +126,41 @@
 ### 候选密度 (Candidate Density)
 
 **计算公式**:
+
 ```
+
 candidates = Σ C(n_readers_per_key, 2) + Σ C(n_writers_per_key, 2)
 total_pairs = C(n_transactions, 2)
 density = candidates / total_pairs
+
 ```
 
 **典型值**:
+
 - 0.00%: 无冲突或已完全分离 (单分片事务)
+
 - 5-10%: 中等密度，Bloom 分组有效
+
 - 10-15%: 高密度，Bloom 开销 > 收益
+
 - >15%: 极高密度，必须回退
 
 **本次测试中的密度**:
+
 - 基线/Bloom-only/Sharding-only: 0.00% (单分片事务未进入密度统计)
+
 - Bloom + Sharding (threshold=5): 8.34% (刚好超过 5% 阈值)
+
 - Bloom + Sharding (threshold=3): 14.28% (过度识别热键)
 
 ### Bloom 诊断字段
 
 所有配置均显示:
+
 - `may_conflict total=0, true=0`: Bloom 检查未执行
+
 - `precise checks=0, edges=0`: 精确冲突检测未执行
+
 - `groups=0, grouped_txns=0`: 未进行分组
 
 **原因**: 密度回退机制触发，跳过 Bloom 分组路径
@@ -150,6 +190,7 @@ config.hot_key_threshold = 5;
 config.enable_hot_key_bucketing = false;  // 热键<16时关闭
 config.density_fallback_threshold = 0.05;
 config.enable_owner_sharding = false;     // Bloom-only最优
+
 ```
 
 **性能**: 321K TPS  
@@ -164,6 +205,7 @@ config.enable_hot_key_isolation = true;
 config.hot_key_threshold = 5;
 config.density_fallback_threshold = 0.05;
 config.enable_hot_key_bucketing = false;
+
 ```
 
 **性能**: 290K TPS  
@@ -177,6 +219,7 @@ config.enable_hot_key_isolation = true;
 config.hot_key_threshold = 7;              // 提高阈值
 config.enable_hot_key_bucketing = true;    // 启用分桶
 config.density_fallback_threshold = 0.05;
+
 ```
 
 **性能**: 预期 280-300K TPS  
@@ -189,8 +232,11 @@ config.density_fallback_threshold = 0.05;
 **目标**: 跨批次维护键访问统计，提前识别全局热键
 
 **实现要点**:
+
 - 使用 LRU/LFU 缓存维护全局热键列表
+
 - 周期性衰减，适应负载变化
+
 - 提前规划热键事务路由
 
 **预期收益**: +5-8% TPS (提前隔离，减少动态检测开销)
@@ -200,8 +246,11 @@ config.density_fallback_threshold = 0.05;
 **目标**: 根据历史冲突率动态调整 hot_key_threshold
 
 **实现要点**:
+
 - 监控连续 N 批次的冲突率和候选密度
+
 - 冲突率上升 → 降低阈值 (识别更多热键)
+
 - 冲突率下降 → 提高阈值 (减少串行开销)
 
 **预期收益**: 负载适应性提升，稳定性提升
@@ -211,8 +260,11 @@ config.density_fallback_threshold = 0.05;
 **目标**: 根据热度分级处理
 
 **分级策略**:
+
 - 极热键 (>threshold×3): 专用串行队列
+
 - 中热键 (threshold~threshold×3): 分桶并发
+
 - 冷键: Bloom 分组或直接并行
 
 **预期收益**: +3-5% TPS (更细粒度优化)
@@ -222,8 +274,11 @@ config.density_fallback_threshold = 0.05;
 **目标**: 经济激励分散热点
 
 **机制**:
+
 - 热键访问收取更高 Gas
+
 - 实时监控热键访问频率
+
 - 动态调整 Gas 价格
 
 **预期收益**: 降低热键访问频率，提升整体吞吐

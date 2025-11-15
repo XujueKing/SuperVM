@@ -1,4 +1,4 @@
-# SuperVM 内核定义与开发规范
+﻿# SuperVM 内核定义与开发规范
 
 > **文档版本**: v1.0  
 > **最后更新**: 2025-11-05  
@@ -9,10 +9,15 @@
 ## 📚 目录
 
 - [1. 内核定义](#1-内核定义)
+
 - [2. 分级保护机制](#2-分级保护机制)
+
 - [3. 开发规范](#3-开发规范)
+
 - [4. 修改审批流程](#4-修改审批流程)
+
 - [5. 测试要求](#5-测试要求)
+
 - [6. 性能基准](#6-性能基准)
 
 ---
@@ -24,9 +29,13 @@
 **SuperVM 内核** = Phase 2 (WASM Runtime) + Phase 4 (并行调度)
 
 内核是 SuperVM 的**核心执行引擎**,负责:
+
 - ✅ WASM 字节码执行
+
 - ✅ 并行交易调度
+
 - ✅ MVCC 并发控制
+
 - ✅ 状态存储抽象
 
 ### 1.2 内核边界
@@ -34,6 +43,7 @@
 #### ✅ 属于内核 (必须极度谨慎)
 
 ```
+
 vm-runtime/
 ├── src/
 │   ├── lib.rs                    ← L0: 内核入口
@@ -58,11 +68,13 @@ vm-runtime/
 │   ├── storage.rs                ← L0: 存储抽象 trait
 │   ├── storage_api.rs            ← L0: Storage Host Functions
 │   └── chain_api.rs              ← L0: Chain Host Functions
+
 ```
 
 #### 🟡 内核扩展 (L1 层 - 连接 L0 和 L2)
 
 ```
+
 vm-runtime/
 ├── src/
 │   ├── ownership.rs              ← L1: 对象所有权模型 (Phase 5)
@@ -72,15 +84,18 @@ vm-runtime/
 │                                       - 向下: 封装 L0 的 WASM 执行能力
 │                                       - 向上: 为 L2 EVM Adapter 提供统一接口
 │                                       - 支持: WASM/EVM 多引擎切换
+
 ```
 
 #### ❌ 非内核 (独立开发)
 
 ```
+
 evm-adapter/                      ← L3: EVM 适配器插件
 node-core/                        ← L4: 节点应用层
 examples/                         ← 示例代码
 benches/                          ← 基准测试
+
 ```
 
 ### 1.3 内核版本号规则
@@ -88,16 +103,21 @@ benches/                          ← 基准测试
 内核遵循严格的语义化版本:
 
 ```
+
 vm-runtime v0.MAJOR.MINOR
 
 MAJOR: L0 核心修改 (破坏性变更)
 MINOR: L1 扩展功能 (向后兼容)
 PATCH: Bug 修复 (完全兼容)
+
 ```
 
 **示例**:
+
 - `v0.9.0 → v0.10.0`: 添加 ownership.rs (L1 扩展)
+
 - `v0.10.0 → v1.0.0`: 重构 MVCC 存储引擎 (L0 破坏性变更)
+
 - `v0.10.0 → v0.10.1`: 修复 GC bug (补丁)
 
 ---
@@ -161,6 +181,7 @@ PATCH: Bug 修复 (完全兼容)
 #### 对于 L0 核心内核修改:
 
 ```markdown
+
 ## L0 内核修改申请
 
 **申请人**: [姓名]
@@ -168,35 +189,53 @@ PATCH: Bug 修复 (完全兼容)
 **涉及文件**: [列出所有修改的 L0 文件]
 
 ### 1. 修改原因 (必填)
+
 - [ ] 性能优化 (附基准测试)
+
 - [ ] Bug 修复 (附问题描述)
+
 - [ ] 新功能 (附设计文档)
+
 - [ ] 重构 (附影响分析)
 
 ### 2. 影响评估 (必填)
+
 - [ ] 是否破坏 API 兼容性?
+
 - [ ] 是否影响性能? (附测试数据)
+
 - [ ] 是否需要更新文档?
+
 - [ ] 是否影响现有测试?
 
 ### 3. 测试覆盖 (必填)
+
 - [ ] 新增单元测试
+
 - [ ] 运行全量测试 (cargo test)
+
 - [ ] 性能基准测试 (cargo bench)
+
 - [ ] 压力测试
 
 ### 4. 回滚方案 (必填)
+
 如果修改导致问题,如何快速回滚?
 
 ### 5. 审批签字
+
 - [ ] 架构师: ___________
+
 - [ ] 核心开发者 1: ___________
+
 - [ ] 核心开发者 2: ___________
+
 ```
 
 #### 对于 L1 内核扩展修改:
 
 ```markdown
+
 ## L1 扩展修改申请
 
 **申请人**: [姓名]
@@ -204,21 +243,31 @@ PATCH: Bug 修复 (完全兼容)
 **涉及文件**: [列出修改的 L1 文件]
 
 ### 1. 修改说明
+
 - 功能描述:
+
 - 是否新增文件:
+
 - 是否修改 L0 代码: [ ] 是 [ ] 否 (如果是,需转为 L0 申请)
 
 ### 2. Feature Flag
+
 - Feature 名称: `[feature-name]`
+
 - 默认启用: [ ] 是 [ ] 否
 
 ### 3. 测试
+
 - [ ] 单元测试
+
 - [ ] 集成测试
+
 - [ ] 文档更新
 
 ### 4. 审批
+
 - [ ] 核心开发者: ___________
+
 ```
 
 ### 3.2 Git Commit 规范
@@ -226,35 +275,47 @@ PATCH: Bug 修复 (完全兼容)
 #### L0 核心内核修改
 
 ```bash
+
 # 格式
+
 [L0-CRITICAL] <type>: <subject>
 
 # 示例
+
 [L0-CRITICAL] perf: optimize MVCC read path by 20%
 [L0-CRITICAL] fix: resolve data race in parallel scheduler
 [L0-CRITICAL] refactor: simplify storage trait interface
+
 ```
 
 #### L1 内核扩展修改
 
 ```bash
+
 # 格式
+
 [L1-CORE] <type>: <subject>
 
 # 示例
+
 [L1-CORE] feat: add ownership transfer API
 [L1-CORE] fix: ownership validation bug
+
 ```
 
 #### L2+ 其他修改
 
 ```bash
+
 # 格式
+
 [L2-INTERFACE] / [L3-PLUGIN] / [L4-APP] <type>: <subject>
 
 # 示例
+
 [L3-PLUGIN] feat: add EVM precompile support
 [L4-APP] feat: add CLI command for node status
+
 ```
 
 ### 3.3 代码审查规则
@@ -299,6 +360,7 @@ graph TD
     
     P --> Q[更新 CHANGELOG]
     Q --> R[发布新版本]
+
 ```
 
 ### 4.2 紧急 Bug 修复流程
@@ -322,27 +384,36 @@ graph TD
 #### 必须通过的测试
 
 ```bash
+
 # 1. 单元测试 (覆盖率 > 80%)
+
 cargo test -p vm-runtime
 
 # 2. 集成测试
+
 cargo test --workspace
 
 # 3. 并发测试 (10 次运行,全部通过)
+
 for i in {1..10}; do cargo test --release; done
 
 # 4. 性能基准测试 (无回退)
+
 cargo bench --bench parallel_execution
 cargo bench --bench mvcc_throughput
 
 # 5. 压力测试 (24 小时稳定运行)
+
 cargo run --example stress_test --release
 
 # 6. 内存泄漏检测
+
 valgrind --leak-check=full ./target/release/node-core
 
 # 7. Miri 并发检测 (可选,但推荐)
+
 cargo +nightly miri test -p vm-runtime
+
 ```
 
 #### 性能基准线
@@ -359,14 +430,19 @@ cargo +nightly miri test -p vm-runtime
 ### 5.2 L1 内核扩展测试标准
 
 ```bash
+
 # 1. 功能测试 (feature enabled)
+
 cargo test --features ownership
 
 # 2. 默认测试 (feature disabled)
+
 cargo test --no-default-features
 
 # 3. 兼容性测试
+
 cargo test --all-features
+
 ```
 
 ---
@@ -379,6 +455,7 @@ cargo test --all-features
 
 ```bash
 #!/bin/bash
+
 # SuperVM 内核性能基准测试
 
 set -e
@@ -387,24 +464,29 @@ echo "🚀 SuperVM L0 Kernel Benchmark"
 echo "=============================="
 
 # 1. 编译 release 版本
+
 echo "📦 Building release..."
 cargo build --release -p vm-runtime
 
 # 2. 运行基准测试
+
 echo "⚡ Running benchmarks..."
 cargo bench --bench parallel_execution -- --save-baseline main
 cargo bench --bench mvcc_throughput -- --save-baseline main
 
 # 3. 对比基准线
+
 echo "📊 Comparing with baseline..."
 cargo bench --bench parallel_execution -- --baseline main
 cargo bench --bench mvcc_throughput -- --baseline main
 
 # 4. 检查性能回退
+
 echo "🔍 Checking for regressions..."
 cargo bench -- --baseline main | grep -E "(time|change)" || true
 
 echo "✅ Benchmark complete!"
+
 ```
 
 ### 6.2 持续性能监控
@@ -412,7 +494,9 @@ echo "✅ Benchmark complete!"
 在 CI/CD 中集成:
 
 ```yaml
+
 # .github/workflows/performance.yml
+
 name: Performance Benchmark
 
 on:
@@ -441,6 +525,7 @@ jobs:
       run: |
         echo "⚠️ 性能回退检测!" >> $GITHUB_STEP_SUMMARY
         echo "请审查 L0 内核修改是否影响性能" >> $GITHUB_STEP_SUMMARY
+
 ```
 
 ---
@@ -479,6 +564,7 @@ pub fn old_api() -> Result<()> {
 
 // v1.0.0: 完全移除
 // old_api() 不再存在
+
 ```
 
 ---
@@ -491,6 +577,7 @@ pub fn old_api() -> Result<()> {
 
 ```bash
 #!/bin/bash
+
 # 验证内核纯净性
 
 set -e
@@ -499,6 +586,7 @@ echo "🔍 Verifying SuperVM Kernel Purity"
 echo "==================================="
 
 # 1. 检查 L0 文件是否被修改
+
 echo "📂 Checking L0 files..."
 L0_FILES=(
     "src/vm-runtime/src/runtime.rs"
@@ -516,6 +604,7 @@ for file in "${L0_FILES[@]}"; do
 done
 
 # 2. 检查依赖纯净性
+
 echo "📦 Checking dependencies..."
 CORE_DEPS=$(cargo tree -p vm-runtime --depth 1 | wc -l)
 if [ "$CORE_DEPS" -gt 20 ]; then
@@ -524,6 +613,7 @@ if [ "$CORE_DEPS" -gt 20 ]; then
 fi
 
 # 3. 检查是否有 revm 依赖 (不应该在内核中)
+
 if cargo tree -p vm-runtime | grep -q "revm"; then
     echo "❌ FAILED: revm found in kernel dependencies!"
     echo "   EVM adapter should be isolated"
@@ -531,6 +621,7 @@ if cargo tree -p vm-runtime | grep -q "revm"; then
 fi
 
 # 4. 编译纯净内核
+
 echo "🔨 Building pure kernel..."
 cargo build -p vm-runtime --no-default-features
 if [ $? -eq 0 ]; then
@@ -541,6 +632,7 @@ else
 fi
 
 # 5. 运行内核测试
+
 echo "🧪 Running kernel tests..."
 cargo test -p vm-runtime --no-default-features
 if [ $? -eq 0 ]; then
@@ -552,6 +644,7 @@ fi
 
 echo ""
 echo "✅ Kernel purity verification PASSED!"
+
 ```
 
 ### 8.2 Pre-commit Hook
@@ -560,9 +653,11 @@ echo "✅ Kernel purity verification PASSED!"
 
 ```bash
 #!/bin/bash
+
 # Pre-commit hook: 检查 L0 修改
 
 # 检查是否修改了 L0 文件
+
 L0_MODIFIED=$(git diff --cached --name-only | grep -E "(runtime\.rs|wasm_executor\.rs|parallel/|mvcc/|storage\.rs)" | wc -l)
 
 if [ "$L0_MODIFIED" -gt 0 ]; then
@@ -593,6 +688,7 @@ fi
 
 echo "✅ Pre-commit check passed"
 exit 0
+
 ```
 
 ---
@@ -612,8 +708,11 @@ exit 0
 ### Q2: 我能直接在 vm-runtime 中添加新功能吗?
 
 **A**: 取决于功能类型:
+
 - **L0 核心功能** (如新的并发原语): 需要 L0 审批
+
 - **L1 扩展功能** (如新的对象类型): 需要 L1 审批,并用 feature flag 控制
+
 - **建议**: 先在 L3 插件层实现,验证后再考虑集成到内核
 
 ### Q3: 发现内核 Bug 但不确定如何修复?
@@ -628,15 +727,20 @@ exit 0
 ### Q4: 能不能修改 Storage trait 接口?
 
 **A**: Storage trait 是 L0 核心接口:
+
 - **添加方法**: 可以,但需要 L0 审批和兼容性测试
+
 - **修改现有方法**: 非常危险,需要架构评审
+
 - **建议**: 通过扩展 trait 实现新功能,而不是修改核心 trait
 
 ### Q5: 如何验证我的修改没有破坏内核纯净性?
 
 **A**: 运行验证脚本:
+
 ```bash
 ./scripts/verify-kernel-purity.sh
+
 ```
 
 ---
@@ -648,6 +752,7 @@ exit 0
 完整的 L0 核心文件列表 (需要最高级别保护):
 
 ```
+
 src/vm-runtime/src/
 ├── lib.rs                          # 内核入口
 ├── runtime.rs                      # WASM 执行引擎
@@ -674,6 +779,7 @@ src/vm-runtime/src/
 └── parallel_mvcc/                 # MVCC 调度器
     ├── mod.rs
     └── mvcc_scheduler.rs
+
 ```
 
 **总计**: 约 20 个核心文件
@@ -684,38 +790,50 @@ src/vm-runtime/src/
 
 ```toml
 [dependencies]
+
 # 执行引擎 (必需)
+
 wasmtime = "17.0"
 wasmi = "0.31"
 
 # 并发原语 (必需)
+
 crossbeam-deque = "0.8"
 dashmap = "6.1"
 parking_lot = "0.12"
 rayon = "1.10"
 
 # 基础工具 (必需)
+
 anyhow = "1.0"
 thiserror = "1.0"
 log = "0.4"
 
 # 序列化 (必需)
+
 serde = { version = "1.0", features = ["derive"] }
 
 # 密码学 (Host Functions)
+
 sha2 = "0.10"
 sha3 = "0.10"
 k256 = "0.13"
 ed25519-dalek = "2.0"
 
 # WAT 测试 (dev-dependencies)
+
 wat = "1.0"
+
 ```
 
 **禁止添加**:
+
 - ❌ revm (应在 evm-adapter)
+
 - ❌ tokio (应在 node-core)
+
 - ❌ 大型框架依赖
+
 - ❌ 非必需的密码学库
 
 ### 10.3 性能监控指标
@@ -732,13 +850,17 @@ supervm_mvcc_retries_total            // 重试次数
 supervm_gc_pause_ms                   // GC 暂停时间
 supervm_memory_usage_bytes            // 内存使用
 supervm_active_transactions           // 活跃交易数
+
 ```
 
 ### 10.4 联系方式
 
 - **架构师**: KING XU (CHINA)
+
 - **内核维护团队**: [待定]
+
 - **紧急联系**: [待定]
+
 - **技术讨论**: GitHub Discussions
 
 ---

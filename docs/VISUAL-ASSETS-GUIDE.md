@@ -1,4 +1,4 @@
-# SuperVM 视觉资产与图表生成指南
+﻿# SuperVM 视觉资产与图表生成指南
 
 > 为白皮书、社交媒体、演示文稿创建专业视觉资产
 
@@ -53,18 +53,25 @@ graph TB
     style L2 fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff
     style L3 fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff
     style L4 fill:#f39c12,stroke:#e67e22,stroke-width:2px,color:#fff
+
 ```
 
 **导出命令 (使用 mermaid-cli):**
+
 ```bash
+
 # 安装
+
 npm install -g @mermaid-js/mermaid-cli
 
 # 生成 PNG
+
 mmdc -i architecture.mmd -o architecture.png -w 2000 -H 1500
 
 # 生成 SVG (可缩放)
+
 mmdc -i architecture.mmd -o architecture.svg
+
 ```
 
 ---
@@ -72,6 +79,7 @@ mmdc -i architecture.mmd -o architecture.svg
 ### 2. 多链融合架构 (ASCII 增强版)
 
 ```
+
 ┌───────────────────────────────────────────────────────────────┐
 │                     SuperVM 核心层 (L0)                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │
@@ -105,6 +113,7 @@ mmdc -i architecture.mmd -o architecture.svg
 对比传统跨链桥:
 ❌ 桥: Lock BTC → Mint wBTC (信任中介,可被盗)
 ✅ SuperVM: Bitcoin 节点直接集成 → 无需封装
+
 ```
 
 ---
@@ -159,12 +168,15 @@ digraph SuperVM_Network {
     labelloc="t";
     label="SuperVM 自组织网络拓扑\n灾难场景: Internet 中断后自动切换到 Mesh";
 }
+
 ```
 
 **生成图片:**
+
 ```bash
 dot -Tpng network-topology.dot -o network-topology.png
 dot -Tsvg network-topology.dot -o network-topology.svg
+
 ```
 
 ---
@@ -241,9 +253,11 @@ dot -Tsvg network-topology.dot -o network-topology.svg
     </ul>
 </body>
 </html>
+
 ```
 
 **生成静态图片 (使用 Puppeteer):**
+
 ```javascript
 // screenshot.js
 const puppeteer = require('puppeteer');
@@ -255,6 +269,7 @@ const puppeteer = require('puppeteer');
     await page.screenshot({ path: 'performance-chart.png' });
     await browser.close();
 })();
+
 ```
 
 ---
@@ -268,14 +283,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # 数据
+
 chains = ['Ethereum', 'BSC', 'Polygon', 'Arbitrum', 'Optimism', 'SuperVM']
 gas_usd = [15.30, 0.50, 0.05, 0.80, 0.60, 0.01]  # USD per transaction
 
 # 创建柱状图
+
 fig, ax = plt.subplots(figsize=(10, 6))
 bars = ax.bar(chains, gas_usd, color=['#627EEA', '#F3BA2F', '#8247E5', '#28A0F0', '#FF0420', '#E74C3C'])
 
 # 添加数值标签
+
 for i, bar in enumerate(bars):
     height = bar.get_height()
     ax.text(bar.get_x() + bar.get_width()/2., height,
@@ -283,24 +301,29 @@ for i, bar in enumerate(bars):
             ha='center', va='bottom', fontsize=11, fontweight='bold')
 
 # 样式
+
 ax.set_ylabel('Gas Fee (USD)', fontsize=12)
 ax.set_title('Cross-Chain Gas Fee Comparison\nSuperVM: 99.3% cheaper than Ethereum', fontsize=14, fontweight='bold')
 ax.set_ylim(0, max(gas_usd) * 1.2)
 ax.grid(axis='y', alpha=0.3, linestyle='--')
 
 # 高亮 SuperVM
+
 bars[-1].set_edgecolor('black')
 bars[-1].set_linewidth(3)
 
 plt.tight_layout()
 plt.savefig('gas-comparison.png', dpi=300, bbox_inches='tight')
 print("✅ Gas 对比图已生成: gas-comparison.png")
+
 ```
 
 **运行:**
+
 ```bash
 pip install matplotlib numpy
 python gas-comparison.py
+
 ```
 
 ---
@@ -315,6 +338,7 @@ python gas-comparison.py
 import matplotlib.pyplot as plt
 
 # 代币分配
+
 labels = ['生态挖矿 40%', '团队 20%\n(4年解锁)', '投资者 15%\n(2年解锁)', '基金会 15%', '公开发售 10%']
 sizes = [40, 20, 15, 15, 10]
 colors = ['#3498db', '#e74c3c', '#f39c12', '#2ecc71', '#9b59b6']
@@ -325,6 +349,7 @@ wedges, texts, autotexts = ax.pie(sizes, explode=explode, labels=labels, colors=
                                     autopct='%1.1f%%', startangle=90, textprops={'fontsize': 12})
 
 # 加粗百分比
+
 for autotext in autotexts:
     autotext.set_color('white')
     autotext.set_fontweight('bold')
@@ -335,6 +360,7 @@ ax.set_title('$SUPERVM 代币分配\n总供应量: 1,000,000,000', fontsize=16, 
 plt.tight_layout()
 plt.savefig('tokenomics-distribution.png', dpi=300, bbox_inches='tight')
 print("✅ 代币分配图已生成")
+
 ```
 
 ---
@@ -356,6 +382,7 @@ graph LR
     style F fill:#2ecc71,stroke:#27ae60,stroke-width:2px,color:#fff
     style G fill:#3498db,stroke:#2980b9,stroke-width:2px,color:#fff
     style H fill:#f39c12,stroke:#e67e22,stroke-width:2px,color:#fff
+
 ```
 
 ---
@@ -386,6 +413,7 @@ gantt
     主网 Beta           :crit, 2026-01-01, 90d
     代币发行 TGE        :milestone, 2026-04-01, 1d
     企业合作            : 2026-05-01, 180d
+
 ```
 
 ---
@@ -440,6 +468,7 @@ gantt
     </script>
 </body>
 </html>
+
 ```
 
 ---
@@ -449,6 +478,7 @@ gantt
 ### 10. 灾难应急场景 (ASCII Art)
 
 ```
+
 场景: 地震后 Internet 中断
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -496,6 +526,7 @@ T+24h 完全恢复
 • 离线容错窗口: 72 小时
 • 交易零丢失率: 100%
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ```
 
 ---
@@ -505,6 +536,7 @@ T+24h 完全恢复
 **文字内容 (可导入设计工具):**
 
 ```
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
          传统跨链桥 vs SuperVM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -524,6 +556,7 @@ T+24h 完全恢复
 图标建议:
 • 传统桥: 🔒 → 💸 → ❌ (锁定→铸造→被盗)
 • SuperVM: 🔌 → ⚡ → ✅ (插入→实时→安全)
+
 ```
 
 ---
@@ -547,18 +580,27 @@ T+24h 完全恢复
 ### 在线工具
 
 **架构图:**
+
 - https://app.diagrams.net (Draw.io) - 免费在线绘图
+
 - https://www.lucidchart.com - 专业流程图工具
+
 - https://excalidraw.com - 手绘风格图表
 
 **数据可视化:**
+
 - https://www.datawrapper.de - 新闻级数据图表
+
 - https://flourish.studio - 动态可视化
+
 - https://www.chartblocks.com - 简单图表生成
 
 **信息图:**
+
 - https://www.canva.com - 设计模板库
+
 - https://piktochart.com - 信息图专用
+
 - https://www.visme.co - 演示文稿 + 信息图
 
 ---
@@ -568,33 +610,40 @@ T+24h 完全恢复
 创建 `scripts/generate-visuals.ps1`:
 
 ```powershell
+
 # SuperVM 视觉资产生成脚本
 
 Write-Host "🎨 开始生成 SuperVM 视觉资产..." -ForegroundColor Cyan
 
 # 创建输出目录
+
 New-Item -ItemType Directory -Force -Path "visuals" | Out-Null
 
 # 生成 Mermaid 图表
+
 Write-Host "📊 生成架构图..." -ForegroundColor Yellow
 mmdc -i docs/diagrams/architecture.mmd -o visuals/architecture.png -w 2000
 mmdc -i docs/diagrams/gas-mechanism.mmd -o visuals/gas-mechanism.svg
 
 # 生成 Graphviz 图表
+
 Write-Host "🌐 生成网络拓扑图..." -ForegroundColor Yellow
 dot -Tpng docs/diagrams/network-topology.dot -o visuals/network-topology.png
 dot -Tsvg docs/diagrams/network-topology.dot -o visuals/network-topology.svg
 
 # 运行 Python 脚本
+
 Write-Host "📈 生成性能对比图..." -ForegroundColor Yellow
 python scripts/gas-comparison.py
 python scripts/tokenomics.py
 
 # 移动生成的文件
+
 Move-Item -Force gas-comparison.png visuals/
 Move-Item -Force tokenomics-distribution.png visuals/
 
 Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
+
 ```
 
 ---
@@ -604,6 +653,7 @@ Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
 ### 品牌色彩
 
 ```
+
 主色:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 • 潘多拉红:  #E74C3C (品牌主色)
@@ -623,11 +673,13 @@ Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
 • 警告:      #F39C12
 • 错误:      #E74C3C
 • 信息:      #3498DB
+
 ```
 
 ### 字体
 
 ```
+
 中文:
 • 标题: 思源黑体 (Noto Sans CJK SC Bold)
 • 正文: 思源宋体 (Noto Serif CJK SC)
@@ -637,11 +689,13 @@ Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
 • 标题: Montserrat Bold
 • 正文: Open Sans
 • 代码: Fira Code
+
 ```
 
 ### 图表尺寸
 
 ```
+
 社交媒体:
 • Twitter 卡片:  1200x675 px
 • LinkedIn 封面: 1584x396 px
@@ -651,6 +705,7 @@ Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
 • 白皮书配图:    1000x600 px
 • Pitch Deck:    1920x1080 px (16:9)
 • 博客文章:      800x500 px
+
 ```
 
 ---
@@ -658,12 +713,19 @@ Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
 ## ✅ 发布检查清单
 
 - [ ] 所有图表包含版权声明 (© 2025 SuperVM Foundation)
+
 - [ ] 导出 PNG (高分辨率 300 DPI) + SVG (可缩放) 两种格式
+
 - [ ] 文件名规范: `supervm-architecture-v1.png`
+
 - [ ] 添加替代文本 (Alt text) 用于可访问性
+
 - [ ] 优化文件大小 (TinyPNG 压缩 PNG)
+
 - [ ] 创建缩略图版本 (400x300 px)
+
 - [ ] 上传到 CDN 或 GitHub repo (`docs/images/`)
+
 - [ ] 更新文档链接 (`![架构图](docs/images/architecture.png)`)
 
 ---
@@ -671,22 +733,33 @@ Write-Host "✅ 视觉资产生成完成: visuals/" -ForegroundColor Green
 **快速生成所有视觉资产:**
 
 ```powershell
+
 # 安装依赖
+
 npm install -g @mermaid-js/mermaid-cli
 choco install graphviz
 pip install matplotlib
 
 # 运行生成脚本
+
 .\scripts\generate-visuals.ps1
 
 # 检查输出
+
 ls visuals/
+
 ```
 
 🎉 生成完成后,`visuals/` 目录将包含:
+
 - ✅ architecture.png/svg (四层架构图)
+
 - ✅ network-topology.png/svg (网络拓扑)
+
 - ✅ gas-comparison.png (Gas 费用对比)
+
 - ✅ tokenomics-distribution.png (代币分配)
+
 - ✅ performance-chart.png (TPS 性能)
+
 - ✅ gas-mechanism.svg (燃烧机制流程)

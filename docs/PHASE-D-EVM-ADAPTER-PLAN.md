@@ -1,4 +1,4 @@
-# Phase D: 多链统一插件系统 - ChainAdapter 架构实现
+﻿# Phase D: 多链统一插件系统 - ChainAdapter 架构实现
 
 **目标**: 实现多链统一架构的 ChainAdapter 插件系统（EVM/WASM/BTC/Solana 等作为可插拔模块）
 
@@ -17,6 +17,7 @@
 **新架构**: 根据 **MULTICHAIN-ARCHITECTURE-VISION.md（多链统一架构愿景）**，调整为：
 
 ```
+
 SuperVM 核心 (L0/L1 - 纯净内核)
     ↓ 统一抽象层
 ChainAdapter 插件层 (L2 - 可插拔)
@@ -25,12 +26,17 @@ ChainAdapter 插件层 (L2 - 可插拔)
     ├── BTC Adapter (UTXO 模型适配)
     ├── Solana Adapter (账户模型适配)
     └── ... (可扩展其他链)
+
 ```
 
 **核心原则**:
+
 - ✅ **零侵入**: EVM 不进入 `vm-runtime` 核心
+
 - ✅ **插件化**: 所有链适配器平等对待，可热插拔
+
 - ✅ **统一抽象**: 通过 `ChainAdapter` trait 归一化所有链
+
 - ✅ **性能隔离**: FastPath/Consensus 路径不受任何适配器影响
 
 ### 新目标
@@ -143,6 +149,7 @@ pub trait ChainAdapter: Send + Sync {
     /// 适配器性能指标
     fn metrics(&self) -> AdapterMetrics;
 }
+
 ```
 
 ### TxIR 设计要点
@@ -157,26 +164,35 @@ pub trait ChainAdapter: Send + Sync {
 | **WASM** | 函数调用 | `payload = WasmInvoke` |
 
 **统一原则**:
+
 - `from/to` 可变长字节数组（适配不同地址格式）
+
 - `value_list` 支持多输出（BTC UTXO）
+
 - `payload` 枚举保留链特定语义
+
 - `privacy_tags` 可选字段（SuperVM 隐私增强）
 │  ├─ gas_used (实际 Gas 消耗)              │
 │  ├─ logs (事件日志)                       │
 │  └─ state_diff (状态变更集)               │
 └───────────────────────────────────────────┘
+
 ```
 
 ### revm 依赖分析
 
 ```toml
 [dependencies]
+
 # 核心 EVM
+
 revm = { version = "5.0", default-features = false, features = ["std"] }
 revm-primitives = "2.0"  # 基础类型定义（Address, U256, Bytes）
 
 # 可选特性
+
 # revm = { version = "5.0", features = ["serde", "memory_limit", "optimism"] }
+
 ```
 
 ### Database Trait 接口
@@ -209,6 +225,7 @@ pub struct AccountInfo {
     pub code_hash: B256,
     pub code: Option<Bytecode>,
 }
+
 ```
 
 ### 典型使用流程
@@ -243,6 +260,7 @@ match result {
         println!("Halted: {:?}", reason);
     }
 }
+
 ```
 
 ---
@@ -254,6 +272,7 @@ match result {
 ### 模块结构
 
 ```
+
 src/
 ├── chain-adapters/           # 适配器框架（新 crate）
 │   ├── Cargo.toml
@@ -280,6 +299,7 @@ src/
     │   ├── lib.rs
     │   └── executor.rs      # Wasmtime 执行封装
     └── tests/
+
 ```
 
 ### EVM Adapter 核心实现
@@ -335,6 +355,7 @@ impl EvmTranslator {
         })
     }
 }
+
 ```
 
 #### 2. revm Database 适配器
@@ -401,6 +422,7 @@ impl Database for MvccEvmDatabase {
         }
     }
 }
+
 ```
 
 #### 3. EVM Adapter 实现
@@ -453,6 +475,7 @@ impl ChainAdapter for EvmAdapter {
     
     // ... 其他方法实现
 }
+
 ```
 
 ### WASM Adapter 对比实现
@@ -491,11 +514,13 @@ impl ChainAdapter for WasmAdapter {
         }
     }
 }
+
 ```
 
 ### 架构设计
 
 ```
+
 ┌─────────────────────────────────────────────────────────┐
 │               SuperVM 统一执行层                        │
 ├─────────────────────────────────────────────────────────┤
@@ -514,6 +539,7 @@ impl ChainAdapter for WasmAdapter {
 │  ├─ Storage Slots (contract storage)                    │
 │  └─ Block Context (block_hash, timestamp, etc.)         │
 └─────────────────────────────────────────────────────────┘
+
 ```
 
 ### MvccDatabase 实现
@@ -612,6 +638,7 @@ impl<'a> Database for MvccDatabase<'a> {
         Ok(hash)
     }
 }
+
 ```
 
 ### EvmEngine 实现
@@ -679,6 +706,7 @@ impl ExecutionEngine for EvmEngine {
         EngineType::Evm
     }
 }
+
 ```
 
 ---
@@ -737,6 +765,7 @@ impl AdapterRegistry {
         adapters.keys().cloned().collect()
     }
 }
+
 ```
 
 ### 启动配置
@@ -778,11 +807,13 @@ fn main() -> Result<()> {
     
     Ok(())
 }
+
 ```
 
 ### Feature Flag 控制
 
 ```toml
+
 # Cargo.toml (workspace)
 
 [workspace]
@@ -801,19 +832,25 @@ evm-adapter = ["evm-adapter/default"]
 btc-adapter = ["btc-adapter/default"]
 solana-adapter = ["solana-adapter/default"]
 all-adapters = ["evm-adapter", "btc-adapter", "solana-adapter", "wasm-adapter"]
+
 ```
 
 构建示例：
 
 ```bash
+
 # 仅 WASM（最小核心）
+
 cargo build --no-default-features --features wasm-adapter
 
 # WASM + EVM
+
 cargo build --features evm-adapter
 
 # 全部适配器
+
 cargo build --features all-adapters
+
 ```
 
 ### 示例 1: 部署 ERC20 合约
@@ -845,6 +882,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Contract deployed at: {:?}", result.contract_address);
     Ok(())
 }
+
 ```
 
 ### 示例 2: 调用 ERC20.transfer
@@ -882,6 +920,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Transfer successful, gas used: {}", result.gas_used);
     Ok(())
 }
+
 ```
 
 ### 测试覆盖
@@ -938,6 +977,7 @@ mod tests {
         assert!(result.success);
     }
 }
+
 ```
 
 ---
@@ -1001,6 +1041,7 @@ impl ChainAdapter for BtcAdapter {
         todo!("Bitcoin P2P protocol implementation")
     }
 }
+
 ```
 
 ### Solana Adapter 设计要点
@@ -1059,6 +1100,7 @@ impl ChainAdapter for SolanaAdapter {
         }
     }
 }
+
 ```
 
 ### 适配器对比表
@@ -1073,6 +1115,7 @@ impl ChainAdapter for SolanaAdapter {
 ### 优化方向
 
 #### 1. 状态缓存
+
 ```rust
 pub struct CachedMvccDatabase<'a> {
     inner: MvccDatabase<'a>,
@@ -1090,6 +1133,7 @@ impl<'a> Database for CachedMvccDatabase<'a> {
         Ok(value)
     }
 }
+
 ```
 
 #### 2. 并行 EVM 执行
@@ -1104,6 +1148,7 @@ pub fn execute_evm_batch(
         .map(|ctx| EvmEngine.execute(ctx).unwrap())
         .collect()
 }
+
 ```
 
 #### 3. Precompile 优化
@@ -1116,6 +1161,7 @@ pub fn register_custom_precompiles(evm: &mut EVM) {
         Box::new(Blake2bPrecompile),
     );
 }
+
 ```
 
 ### SuperVM 集成
@@ -1141,6 +1187,7 @@ impl SuperVM {
         }
     }
 }
+
 ```
 
 ---
@@ -1150,51 +1197,83 @@ impl SuperVM {
 ## 📊 成功指标（更新）
 
 ### 架构指标
+
 - ✅ **零侵入**: `vm-runtime` 核心无任何 EVM 依赖
+
 - ✅ **插件化**: 所有适配器通过 `ChainAdapter` trait 统一接口
+
 - ✅ **热插拔**: 支持运行时注册/卸载适配器（AdapterRegistry）
+
 - ✅ **Feature Gating**: 可选编译任意适配器组合
 
 ### 功能指标（Phase D）
+
 - ✅ `ChainAdapter` trait 设计完成（TxIR/BlockIR/StateIR）
+
 - ✅ **EVM Adapter** 实现完成（revm 集成 + MVCC Database）
+
 - ✅ **WASM Adapter** 实现完成（Wasmtime 集成）
+
 - ✅ 跨适配器交易路由（根据 ChainId 自动分发）
+
 - 📋 **BTC Adapter** 接口设计完成（Phase E 实施）
+
 - 📋 **Solana Adapter** 接口设计完成（Phase E 实施）
 
 ### 性能指标（EVM Adapter）
+
 - 🎯 EVM 合约执行 TPS > 10K（单核，简单转账）
+
 - 🎯 EVM 存储读写延迟 < 1μs（MVCC 缓存命中）
+
 - 🎯 ERC20 transfer 吞吐 > 5K TPS
+
 - 🎯 相对 revm 原生性能 > 60%（MVCC 映射开销 < 40%）
 
 ### 兼容性指标
+
 - ✅ 支持标准 ERC20/ERC721 合约
+
 - ✅ 通过 revm 官方测试套件
+
 - ✅ 兼容 Solidity 0.8.x 编译输出
+
 - 📋 支持 EVM 预编译合约（ecrecover/sha256/etc.）
 
 ### 文档指标
+
 - ✅ ChainAdapter 接口文档（本文档）
+
 - ✅ EVM Adapter 使用指南
+
 - ✅ WASM Adapter 使用指南
+
 - 📋 BTC/Solana Adapter 设计文档（Phase E）
+
 - 📋 多链统一架构白皮书更新
 
 ### 功能指标
+
 - ✅ 成功部署 ERC20 合约
+
 - ✅ 成功调用 ERC20.transfer
+
 - ✅ 通过 OpenZeppelin 测试套件
+
 - ✅ 支持 Solidity 0.8+ 特性
 
 ### 性能指标
+
 - ✅ EVM 执行性能 > 50% revm 原生性能（考虑 MVCC 开销）
+
 - ✅ 并行 EVM 执行线性扩展至 4 核
+
 - ✅ 状态缓存命中率 > 80%
 
 ### 可观测性
+
 - ✅ Prometheus 指标：evm_calls_total, evm_gas_used, evm_errors
+
 - ✅ 区分 WASM 与 EVM 执行路径统计
 
 ---
@@ -1202,16 +1281,23 @@ impl SuperVM {
 ## 📚 参考资源
 
 ### revm 文档
+
 - [revm GitHub](https://github.com/bluealloy/revm)
+
 - [revm Book](https://bluealloy.github.io/revm/)
+
 - [Ethereum Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf)
 
 ### 示例项目
+
 - [reth](https://github.com/paradigmxyz/reth): 使用 revm 的 Ethereum 客户端
+
 - [Foundry](https://github.com/foundry-rs/foundry): Solidity 开发框架，内置 revm
 
 ### Solidity 工具链
+
 - [solc](https://docs.soliditylang.org/en/latest/installing-solidity.html): Solidity 编译器
+
 - [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts)
 
 ---
@@ -1221,20 +1307,28 @@ impl SuperVM {
 ## 📋 任务清单（更新）
 
 ### Week 1: ChainAdapter 框架设计
+
 - [ ] 创建 `chain-adapters` crate（统一接口定义）
+
 - [ ] 设计 `ChainAdapter` trait（参考 MULTICHAIN-ARCHITECTURE-VISION.md）
+
 - [ ] 定义 TxIR/BlockIR/StateIR 统一中间表示
+
 - [ ] 设计 `TxPayload` 枚举（支持 EVM/WASM/BTC/Solana）
+
 - [ ] 实现 `AdapterRegistry`（注册/卸载/查询）
+
 - [ ] 编写 ChainAdapter 接口文档
 
 ### Week 2-3: EVM & WASM Adapter 实现
+
 - [ ] **EVM Adapter**:
   - [ ] 创建 `evm-adapter` crate（依赖 revm 5.0）
   - [ ] 实现 `EvmTranslator`（EVM Tx/Block → TxIR/BlockIR）
   - [ ] 实现 `MvccEvmDatabase`（revm Database trait）
   - [ ] 实现 `EvmAdapter`（ChainAdapter trait）
   - [ ] 测试 ERC20 部署与调用
+
 - [ ] **WASM Adapter**:
   - [ ] 创建 `wasm-adapter` crate（依赖 wasmtime）
   - [ ] 实现 `WasmAdapter`（ChainAdapter trait）
@@ -1242,53 +1336,83 @@ impl SuperVM {
   - [ ] 测试简单 WASM 合约执行
 
 ### Week 4: 热插拔与集成测试
+
 - [ ] 实现 Feature Flag 控制（default/evm-adapter/btc-adapter/etc.）
+
 - [ ] 创建 `multi_chain_demo` 示例（同时运行 EVM + WASM）
+
 - [ ] 测试运行时注册/卸载适配器
+
 - [ ] 跨适配器交易路由测试
+
 - [ ] 性能基准测试（EVM vs WASM TPS 对比）
 
 ### Week 5-6: BTC/Solana Adapter 设计（规划）
+
 - [ ] **BTC Adapter** 接口设计:
   - [ ] UTXO → TxIR 映射策略
   - [ ] Bitcoin P2P 协议集成方案
   - [ ] SPV/头部同步策略
+
 - [ ] **Solana Adapter** 接口设计:
   - [ ] 多指令 tx → TxIR 映射
   - [ ] QUIC/Turbine 网络协议集成
   - [ ] 账户模型差异处理
+
 - [ ] 编写 BTC/Solana Adapter 设计文档
 
 ### 文档与优化
+
 - [ ] 更新 ROADMAP.md Phase D 进度
+
 - [ ] 更新 MULTICHAIN-ARCHITECTURE-VISION.md（实施细节）
+
 - [ ] 编写"多链统一架构"博客文章
+
 - [ ] 性能优化报告（EVM Adapter MVCC 映射开销分析）
 
 ### Week 1: revm 调研
+
 - [x] 安装 revm 依赖
+
 - [ ] 运行 revm 官方示例
+
 - [ ] 阅读 Database trait 文档
+
 - [ ] 分析 reth 的 Database 实现
+
 - [ ] 编写技术调研报告
 
 ### Week 2: 适配器设计
+
 - [ ] 实现 MvccDatabase 基础结构
+
 - [ ] 实现 EvmEngine trait
+
 - [ ] 设计键格式规范（文档化）
+
 - [ ] 创建 evm-adapter crate
 
 ### Week 3: PoC 实现
+
 - [ ] 部署简单合约测试
+
 - [ ] 部署 ERC20 合约
+
 - [ ] 调用 ERC20.transfer
+
 - [ ] 编写单元测试（覆盖率 > 80%）
 
 ### Week 4: 优化与集成
+
 - [ ] 实现状态缓存
+
 - [ ] 并行 EVM 执行测试
+
 - [ ] 集成到 SuperVM 路由器
+
 - [ ] 性能基准测试
+
 - [ ] 更新 ROADMAP Phase D 进度
 
 ---
@@ -1296,6 +1420,7 @@ impl SuperVM {
 ## 🚀 未来扩展方向（更新）
 
 ### Phase E: BTC & Solana Adapter 完整实现（4-6 周）
+
 - **BTC Adapter**:
   - 完整 Bitcoin P2P 协议实现（version/verack/getdata/block/tx）
   - SPV 轻客户端模式（仅同步区块头）
@@ -1309,21 +1434,33 @@ impl SuperVM {
   - Wormhole 跨链桥集成（可选）
 
 ### Phase F: 多链统一隐私层（Phase B 扩展）
+
 - 跨链承诺树（统一 Merkle Root）
+
 - 多链 Nullifier 集（防止跨链双花）
+
 - 加密索引（跨链资产查询）
+
 - ZK 证明聚合（批量验证多链交易）
 
 ### Phase G: P2P 网络层统一调度
+
 - 多协议 P2P Orchestrator（同时运行 DevP2P/Bitcoin P2P/QUIC）
+
 - 身份伪装（对外呈现为原链节点）
+
 - 协议路由（根据消息类型分发到适配器）
+
 - Reorg 事件总线（统一处理所有链的重组）
 
 ### Phase H: Web3 存储与寻址层
+
 - 去中心化 Web 存储（基于 IPFS/Arweave）
+
 - 域名系统（基于 ENS/Handshake）
+
 - SuperVM Web3 浏览器（访问链上存储空间）
+
 - 热插拔硬盘接入（传统网站迁移到区块链）
 
 ---
@@ -1336,12 +1473,14 @@ impl SuperVM {
 **新定位**: Phase D 作为"多链统一插件系统"的**基础设施实现**
 
 ```
+
 多链统一架构全景:
 ├── Phase D: ChainAdapter 框架 + EVM/WASM 参考实现 ← 当前
 ├── Phase E: BTC/Solana Adapter 完整实现
 ├── Phase F: 多链统一隐私层
 ├── Phase G: P2P 网络层统一调度
 └── Phase H: Web3 存储与寻址层
+
 ```
 
 ### 核心价值

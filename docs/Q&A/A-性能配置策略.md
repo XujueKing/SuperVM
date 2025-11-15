@@ -1,4 +1,4 @@
-# SuperVM 性能配置策略快速参考
+﻿# SuperVM 性能配置策略快速参考
 
 ## 🎯 核心问题
 
@@ -27,12 +27,17 @@
 ```rust
 // 完全自动检测硬件和负载
 let coord = TwoPhaseCoordinator::auto_configure(store);
+
 ```
 
 **自动检测因素**:
+
 - ✅ CPU核心数 (决定线程数)
+
 - ✅ 内存容量 (决定批量上限)
+
 - ✅ 实时TPS (决定性能模式)
+
 - ✅ 冲突率 (决定锁粒度)
 
 **预期性能**: 400K - 600K TPS
@@ -49,6 +54,7 @@ let coord = TwoPhaseCoordinator::for_application(
     store,
     ApplicationProfile::DeFi  // 或 NFT, GameFi, Enterprise
 );
+
 ```
 
 **应用类型映射**:
@@ -62,8 +68,11 @@ let coord = TwoPhaseCoordinator::for_application(
 | **DataLayer** | 96 | 3% | 粗粒度 | 1.0M - 1.2M |
 
 **自动调优特性**:
+
 - ✅ 批量大小根据冲突率动态调整 (8-128)
+
 - ✅ 冲突率 >8% 自动切换细粒度锁
+
 - ✅ 延迟 P99 >20ms 自动降级
 
 **预期性能**: 600K - 1.2M TPS
@@ -89,6 +98,7 @@ let config = CoordinatorConfig {
 };
 
 let coord = TwoPhaseCoordinator::with_config(store, config);
+
 ```
 
 **预期性能**: 900K - 1.2M TPS (需要调优)
@@ -98,6 +108,7 @@ let coord = TwoPhaseCoordinator::with_config(store, config);
 ## 🎯 决策流程
 
 ```
+
 选择配置模式
     │
     ├─ 有性能专家？
@@ -112,6 +123,7 @@ let coord = TwoPhaseCoordinator::with_config(store, config);
     │   └─ 否 ↓
     │
     └─ 自动模式 (零配置启动)
+
 ```
 
 ---
@@ -119,34 +131,43 @@ let coord = TwoPhaseCoordinator::with_config(store, config);
 ## 📈 三阶段上线策略
 
 ### 阶段1: 初期上线 (0-3个月)
+
 ```rust
 // 自动模式，稳定为主
 let coord = TwoPhaseCoordinator::auto_configure(store);
+
 ```
+
 **目标**: 400K - 600K TPS
 
 ---
 
 ### 阶段2: 优化期 (3-6个月)
+
 ```rust
 // 半自动模式，根据业务选择
 let coord = TwoPhaseCoordinator::for_application(
     store,
     ApplicationProfile::DeFi
 );
+
 ```
+
 **目标**: 600K - 900K TPS
 
 ---
 
 ### 阶段3: 极限期 (6个月+)
+
 ```rust
 // 手工模式，基于监控精调
 let coord = TwoPhaseCoordinator::with_config(
     store,
     tuned_config_from_metrics()
 );
+
 ```
+
 **目标**: 900K - 1.2M TPS
 
 ---
@@ -162,8 +183,11 @@ let coord = TwoPhaseCoordinator::with_config(
 | **网络带宽** | 跨分片并发 | 10Gbps → 8分片 |
 
 **示例**:
+
 - 8核16GB → 6线程, 批量32-64
+
 - 16核32GB → 12线程, 批量64-96
+
 - 4核8GB → 3线程, 批量16-32
 
 ---
@@ -190,6 +214,7 @@ let coord = TwoPhaseCoordinator::with_config(
 | **性能模式** | ⚠️ 降级保护 | 3种模式 | 延迟 P99 >20ms |
 
 **自适应批量算法**:
+
 ```rust
 if conflict_rate < target × 0.8 {
     batch_size *= 1.2  // 增大批量 20%
@@ -197,6 +222,7 @@ if conflict_rate < target × 0.8 {
     batch_size *= 0.8  // 减小批量 20%
 }
 batch_size.clamp(min_size, max_size)
+
 ```
 
 ---
@@ -233,7 +259,9 @@ batch_size.clamp(min_size, max_size)
 ## 📚 相关文档
 
 - [ROADMAP.md - 实际区块链场景性能预期](../ROADMAP.md#实际区块链场景性能预期)
+
 - [ROADMAP.md - 场景选择与配置策略](../ROADMAP.md#场景选择与配置策略)
+
 - [concurrent_batch_2pc_bench.rs](../../src/vm-runtime/examples/concurrent_batch_2pc_bench.rs) - 基准测试代码
 
 ---

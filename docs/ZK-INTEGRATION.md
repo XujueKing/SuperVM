@@ -1,4 +1,4 @@
-# ZK 验证器集成指南
+﻿# ZK 验证器集成指南
 
 ## 概述
 
@@ -22,6 +22,7 @@ pub trait ZkVerifier: Send + Sync {
     /// 获取后端枚举
     fn backend(&self) -> ZkBackend;
 }
+
 ```
 
 ### 支持的后端类型
@@ -32,6 +33,7 @@ pub enum ZkBackend {
     Plonk,             // Plonk (预留)
     Mock,              // Mock 验证器（测试用）
 }
+
 ```
 
 ## Feature Gates
@@ -46,15 +48,21 @@ pub enum ZkBackend {
 ### 编译配置
 
 ```toml
+
 # Cargo.toml
+
 [dependencies]
 vm-runtime = { path = "...", features = ["groth16-verifier"] }
+
 ```
 
 ```bash
+
 # 命令行
+
 cargo build --features groth16-verifier
 cargo test --features groth16-verifier
+
 ```
 
 ## 验证器实现
@@ -74,6 +82,7 @@ let verifier = Groth16Verifier::new_for_testing()?;
 
 // 验证证明
 let result = verifier.verify(&proof_bytes, &public_input_bytes)?;
+
 ```
 
 ### 2. MockVerifier
@@ -99,6 +108,7 @@ let verifier = MockVerifier::new_with_delay(
 assert_eq!(verifier.call_count(), 0);
 verifier.verify(&[], &[])?;
 assert_eq!(verifier.call_count(), 1);
+
 ```
 
 ## 环境变量配置
@@ -120,22 +130,28 @@ use vm_runtime::zk_verifier::create_verifier_from_env;
 
 // 根据环境变量创建验证器
 let verifier = create_verifier_from_env();
+
 ```
 
 ```bash
+
 # CI 测试 - 使用 mock
+
 export ZK_VERIFIER_MODE=mock
 export ZK_MOCK_ALWAYS_SUCCEED=true
 cargo test
 
 # 性能测试 - 模拟延迟
+
 export ZK_VERIFIER_MODE=mock
 export ZK_MOCK_DELAY_US=5000  # 5ms
 cargo run --example zk_perf_test
 
 # 生产环境 - 真实验证
+
 export ZK_VERIFIER_MODE=real
 cargo run --features groth16-verifier
+
 ```
 
 ## Prometheus 指标
@@ -145,45 +161,61 @@ cargo run --features groth16-verifier
 #### 验证次数
 
 ```promql
+
 # 总验证次数
+
 vm_zk_verify_total
 
 # 失败次数
+
 vm_zk_verify_failures_total
+
 ```
 
 #### 失败率
 
 ```promql
+
 # 失败率（0.0-1.0）
+
 vm_zk_verify_failure_rate
 
 # PromQL 计算失败率
+
 rate(vm_zk_verify_failures_total[5m]) / rate(vm_zk_verify_total[5m])
+
 ```
 
 #### 延迟指标
 
 ```promql
+
 # 平均延迟
+
 vm_zk_verify_latency_avg_ms
 
 # P50/P90/P99 延迟
+
 vm_zk_verify_latency_p50_ms
 vm_zk_verify_latency_p90_ms
 vm_zk_verify_latency_p99_ms
+
 ```
 
 #### 后端类型分布
 
 ```promql
+
 # 按后端类型分组
+
 vm_zk_backend_count{backend="groth16-bls12-381"}
 vm_zk_backend_count{backend="plonk"}
 vm_zk_backend_count{backend="mock"}
 
 # 查询各后端占比
+
 sum by (backend) (vm_zk_backend_count)
+
 ```
 
 ### 指标收集
@@ -208,6 +240,7 @@ metrics.record_zk_verify(
 
 // 导出 Prometheus 格式
 let prom_output = metrics.export_prometheus();
+
 ```
 
 ## 典型用例
@@ -231,12 +264,15 @@ mod tests {
         assert_eq!(verifier.call_count(), 1);
     }
 }
+
 ```
 
 ### 用例 2: CI 环境使用环境变量
 
 ```yaml
+
 # .github/workflows/test.yml
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -245,6 +281,7 @@ jobs:
       ZK_MOCK_ALWAYS_SUCCEED: true
     steps:
       - run: cargo test --all-features
+
 ```
 
 ### 用例 3: 多后端切换
@@ -263,6 +300,7 @@ fn get_verifier(use_production: bool) -> Arc<dyn ZkVerifier> {
 
 // 运行时切换
 let verifier = get_verifier(cfg!(feature = "production"));
+
 ```
 
 ### 用例 4: Prometheus 监控集成
@@ -282,6 +320,7 @@ for request in server.incoming_requests() {
         request.respond(response).ok();
     }
 }
+
 ```
 
 ### 用例 5: 延迟模拟性能测试
@@ -301,6 +340,7 @@ let elapsed = start.elapsed();
 
 println!("100 次验证耗时: {:?}", elapsed);
 println!("平均延迟: {:?}", elapsed / 100);
+
 ```
 
 ## 最佳实践
@@ -315,6 +355,7 @@ use vm_runtime::zk_verifier::Groth16Verifier;
 // 测试代码
 #[cfg(test)]
 use vm_runtime::zk_verifier::MockVerifier;
+
 ```
 
 ### 2. 环境感知配置
@@ -328,12 +369,15 @@ let verifier = if cfg!(test) {
 } else {
     create_verifier_from_env()
 };
+
 ```
 
 ### 3. 指标告警
 
 ```yaml
+
 # prometheus-alerts.yml
+
 groups:
   - name: zk_verification
     rules:
@@ -348,6 +392,7 @@ groups:
         for: 10m
         annotations:
           summary: "ZK 验证 P99 延迟超过 100ms"
+
 ```
 
 ### 4. 日志集成
@@ -368,6 +413,7 @@ match result {
     Ok(false) => warn!("ZK verification failed (invalid proof)"),
     Err(e) => warn!(error = ?e, "ZK verification error"),
 }
+
 ```
 
 ## 性能优化
@@ -385,6 +431,7 @@ let verifier_clone = Arc::clone(&verifier);
 std::thread::spawn(move || {
     verifier_clone.verify(&proof, &inputs).unwrap();
 });
+
 ```
 
 ### 2. 批量验证（未来支持）
@@ -394,6 +441,7 @@ std::thread::spawn(move || {
 trait BatchZkVerifier: ZkVerifier {
     fn verify_batch(&self, proofs: &[ProofBatch]) -> Result<Vec<bool>, ZkError>;
 }
+
 ```
 
 ## 故障排查
@@ -403,29 +451,38 @@ trait BatchZkVerifier: ZkVerifier {
 #### 1. Feature 未启用
 
 ```
+
 error: could not find `zk_verifier` in the crate root
+
 ```
 
 **解决**：启用 `groth16-verifier` feature
 
 ```bash
 cargo build --features groth16-verifier
+
 ```
 
 #### 2. 验证失败
 
 ```
+
 ZkError::VerificationError("Pairing check failed")
+
 ```
 
 **排查**：
+
 - 检查 proof 和 public inputs 是否匹配
+
 - 确认 verifying key 来自同一 setup
+
 - 验证序列化/反序列化正确性
 
 #### 3. Mock 未按预期工作
 
 **排查**：
+
 ```rust
 // 打印环境变量
 println!("MODE: {}", std::env::var("ZK_VERIFIER_MODE").unwrap_or_default());
@@ -433,6 +490,7 @@ println!("MODE: {}", std::env::var("ZK_VERIFIER_MODE").unwrap_or_default());
 // 检查 verifier 类型
 println!("Type: {}", verifier.verifier_type());
 println!("Backend: {:?}", verifier.backend());
+
 ```
 
 ## 扩展开发
@@ -448,6 +506,7 @@ pub enum ZkBackend {
     PlonkBn254,  // 新后端
     Mock,
 }
+
 ```
 
 2. **实现 Verifier**
@@ -470,6 +529,7 @@ impl ZkVerifier for PlonkBn254Verifier {
         ZkBackend::PlonkBn254
     }
 }
+
 ```
 
 3. **更新指标收集**
@@ -482,13 +542,17 @@ match backend {
     }
     // ...
 }
+
 ```
 
 ## 相关资源
 
 - [Groth16 论文](https://eprint.iacr.org/2016/260.pdf)
+
 - [arkworks-rs](https://github.com/arkworks-rs/groth16)
+
 - [Prometheus 最佳实践](https://prometheus.io/docs/practices/)
+
 - [SuperVM 文档目录](./INDEX.md)
 
 ## 更新日志

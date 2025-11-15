@@ -1,4 +1,4 @@
-# Grafana RingCT 并行证明指标面板建议
+﻿# Grafana RingCT 并行证明指标面板建议
 
 本文档提供新增 Prometheus 指标的 Grafana 面板配置建议，用于监控 RingCT 并行证明性能。
 
@@ -22,14 +22,20 @@
 
 **面板类型**: Time series  
 **PromQL 查询**:
+
 ```promql
 vm_privacy_zk_parallel_tps
+
 ```
 
 **配置建议**:
+
 - **单位**: `proofs/sec` (自定义)
+
 - **Y 轴标签**: "Proofs per Second"
+
 - **图例**: 显示 Mean / Last / Max
+
 - **阈值**:
   - 绿色: > 100 proofs/s (健康)
   - 黄色: 50-100 proofs/s (警告)
@@ -41,19 +47,29 @@ vm_privacy_zk_parallel_tps
 
 **面板类型**: Time series (双 Y 轴)  
 **PromQL 查询**:
+
 ```promql
+
 # 左 Y 轴：批次总延迟
+
 vm_privacy_zk_parallel_batch_latency_ms
 
 # 右 Y 轴：单证明平均延迟
+
 vm_privacy_zk_parallel_avg_latency_ms
+
 ```
 
 **配置建议**:
+
 - **单位**: `ms` (毫秒)
+
 - **Y 轴 (左)**: 批次总延迟
+
 - **Y 轴 (右)**: 单证明平均延迟
+
 - **图例**: Table 模式，显示 Mean / P90 / Max
+
 - **阈值 (avg_latency)**:
   - 绿色: < 50ms
   - 黄色: 50-100ms
@@ -65,18 +81,26 @@ vm_privacy_zk_parallel_avg_latency_ms
 
 **面板类型**: Stat (单值面板)  
 **PromQL 查询**:
+
 ```promql
+
 # 成功率百分比
+
 100 * (1 - (rate(vm_privacy_zk_parallel_proof_failed_total[5m]) / rate(vm_privacy_zk_parallel_proof_total[5m])))
+
 ```
 
 **配置建议**:
+
 - **单位**: `percent (0-100)`
+
 - **颜色模式**: 基于阈值
+
 - **阈值**:
   - 绿色: > 99.5%
   - 黄色: 95-99.5%
   - 红色: < 95%
+
 - **显示**: 大号数字 + 趋势线
 
 ---
@@ -85,14 +109,21 @@ vm_privacy_zk_parallel_avg_latency_ms
 
 **面板类型**: Time series  
 **PromQL 查询**:
+
 ```promql
+
 # 失败率 (每秒)
+
 rate(vm_privacy_zk_parallel_proof_failed_total[1m])
+
 ```
 
 **配置建议**:
+
 - **单位**: `failures/sec`
+
 - **Y 轴标签**: "Proof Failures per Second"
+
 - **告警规则**: 当 `rate(vm_privacy_zk_parallel_proof_failed_total[5m]) > 1` 持续 2 分钟时触发
 
 ---
@@ -101,14 +132,21 @@ rate(vm_privacy_zk_parallel_proof_failed_total[1m])
 
 **面板类型**: Time series  
 **PromQL 查询**:
+
 ```promql
+
 # 回退率 (每秒)
+
 rate(vm_fast_fallback_total[1m])
+
 ```
 
 **配置建议**:
+
 - **单位**: `fallbacks/sec`
+
 - **Y 轴标签**: "Fast Path Fallbacks per Second"
+
 - **阈值**:
   - 绿色: < 1 fallback/s (正常)
   - 黄色: 1-5 fallbacks/s (注意)
@@ -152,6 +190,7 @@ rate(vm_fast_fallback_total[1m])
 ## 推荐仪表盘布局
 
 ```
+
 ┌──────────────────────────────────────────────────────────────────┐
 │  Row 1: RingCT 并行证明性能总览                                    │
 ├────────────────────────────┬─────────────────────────────────────┤
@@ -168,6 +207,7 @@ rate(vm_fast_fallback_total[1m])
 │  [4] 失败率趋势            │  [5] Fast 回退监控                   │
 │  (Time series, 12w x 6h)  │  (Time series, 12w x 6h)            │
 └────────────────────────────┴─────────────────────────────────────┘
+
 ```
 
 ---
@@ -175,7 +215,9 @@ rate(vm_fast_fallback_total[1m])
 ## 告警规则建议 (Prometheus Alertmanager)
 
 ### 1. 高失败率告警
+
 ```yaml
+
 - alert: RingCTProofHighFailureRate
   expr: |
     100 * (rate(vm_privacy_zk_parallel_proof_failed_total[5m]) / rate(vm_privacy_zk_parallel_proof_total[5m])) > 5
@@ -185,10 +227,13 @@ rate(vm_fast_fallback_total[1m])
   annotations:
     summary: "RingCT proof failure rate > 5%"
     description: "Current failure rate: {{ $value | humanizePercentage }}"
+
 ```
 
 ### 2. 低吞吐量告警
+
 ```yaml
+
 - alert: RingCTProofLowThroughput
   expr: vm_privacy_zk_parallel_tps < 50
   for: 5m
@@ -197,10 +242,13 @@ rate(vm_fast_fallback_total[1m])
   annotations:
     summary: "RingCT proof throughput below 50 proofs/sec"
     description: "Current TPS: {{ $value | printf \"%.2f\" }}"
+
 ```
 
 ### 3. Fast 回退异常
+
 ```yaml
+
 - alert: FastPathFallbackSpike
   expr: rate(vm_fast_fallback_total[2m]) > 10
   for: 1m
@@ -209,6 +257,7 @@ rate(vm_fast_fallback_total[1m])
   annotations:
     summary: "Fast→Consensus fallback rate exceeds 10/sec"
     description: "Current rate: {{ $value | printf \"%.2f\" }} fallbacks/sec"
+
 ```
 
 ---
@@ -258,6 +307,7 @@ rate(vm_fast_fallback_total[1m])
   "title": "RingCT Parallel Proof Throughput",
   "type": "timeseries"
 }
+
 ```
 
 ---
@@ -291,8 +341,11 @@ rate(vm_fast_fallback_total[1m])
 ## 参考资源
 
 - **Prometheus 查询语法**: https://prometheus.io/docs/prometheus/latest/querying/basics/
+
 - **Grafana 面板配置**: https://grafana.com/docs/grafana/latest/panels/
+
 - **SuperVM HTTP Bench 示例**: `src/vm-runtime/examples/zk_parallel_http_bench.rs`
+
 - **指标收集器实现**: `src/vm-runtime/src/metrics.rs`
 
 ---

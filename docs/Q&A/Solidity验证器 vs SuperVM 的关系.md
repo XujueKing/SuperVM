@@ -1,9 +1,11 @@
-理清 Solidity 验证器与当前 SuperVM 架构的关系：
+﻿理清 Solidity 验证器与当前 SuperVM 架构的关系：
 
 ## 🔍 Solidity 验证器 vs SuperVM 的关系
 
 ### 当前 SuperVM 架构（L2/链下验证）
+
 ```
+
 用户提交隐私交易
     ↓
 SuperVM Rust Runtime
@@ -13,11 +15,13 @@ PrivacyPath 路由
 Rust Groth16 Verifier（已实现 ✅）
     ↓
 验证通过 → 执行交易
+
 ```
 
 ### Solidity 验证器的作用场景（L1 结算层）
 
 ```
+
 SuperVM L2 (链下批量处理)
     ↓
 生成批量证明
@@ -27,6 +31,7 @@ SuperVM L2 (链下批量处理)
 Solidity Verifier Contract（链上验证）
     ↓
 验证通过 → L1 状态更新/资产转移
+
 ```
 
 ## 💡 是否需要在隐私层实现？
@@ -51,6 +56,7 @@ Solidity Verifier Contract（链上验证）
 仅在以下场景：
 
 #### 场景 1: L2 → L1 提款桥
+
 ```rust
 // SuperVM L2 处理提款请求
 用户在 L2 发起提款 1 ETH
@@ -62,9 +68,11 @@ SuperVM 生成提款证明（Groth16）
 Solidity Verifier 验证证明  ← 这里需要
     ↓
 L1 释放 1 ETH 给用户
+
 ```
 
 #### 场景 2: 跨链隐私桥
+
 ```rust
 // 从 SuperVM 转账到其他链
 SuperVM 生成跨链转账证明
@@ -74,9 +82,11 @@ SuperVM 生成跨链转账证明
 Solidity Verifier 验证  ← 这里需要
     ↓
 目标链铸造资产
+
 ```
 
 #### 场景 3: L1 数据可用性挑战
+
 ```rust
 // 有人质疑 SuperVM 的状态
 挑战者提交争议
@@ -86,6 +96,7 @@ SuperVM Sequencer 提交欺诈证明
 L1 Arbitration 合约
     ↓
 Solidity Verifier 验证欺诈证明  ← 这里需要
+
 ```
 
 ## 📋 当前 ROADMAP 建议调整 
@@ -100,9 +111,11 @@ Solidity Verifier 验证欺诈证明  ← 这里需要
 ```
 
 ```
+
 ## 🎯 总结建议
 
 ### ✅ **您现在应该专注的**（核心隐私层）
+
 1. ✅ Rust Groth16 验证器（已完成）
 2. ✅ PrivacyPath 路由与可观测性（已完成）
 3. 🔄 隐私交易业务逻辑优化
@@ -111,19 +124,27 @@ Solidity Verifier 验证欺诈证明  ← 这里需要
    - 环签名电路完善
 
 ### ⏳ **Solidity 验证器可以后续做**（互操作层）
+
 **仅在以下情况需要**：
+
 - 需要 L1 以太坊提款功能
+
 - 需要跨链到其他 EVM 链
+
 - 需要 L1 数据可用性保证
 
 **优先级低的原因**：
+
 - SuperVM 作为 L2，自己的隐私验证用 Rust 即可
+
 - Solidity 验证器是"对外接口"，不是"核心功能"
+
 - 可以等业务需求明确后再实现
 
 ### 📊 架构清晰图
 
 ```
+
 ┌─────────────────────────────────────┐
 │   SuperVM L2 Runtime (Rust)         │
 │   ┌─────────────────────────────┐   │
@@ -146,6 +167,7 @@ Solidity Verifier 验证欺诈证明  ← 这里需要
 │   │  └─ Solidity Verifier       │   │ ← 外部接口 ⏳
 │   └─────────────────────────────┘   │
 └─────────────────────────────────────┘
+
 ```
 
 **结论**：Solidity 验证器不属于 SuperVM 核心隐私层，是**桥接/互操作**的可选组件。

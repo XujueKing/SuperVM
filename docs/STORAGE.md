@@ -1,9 +1,11 @@
-# Storage Layer Documentation
+﻿# Storage Layer Documentation
 
 ## 概述
 
 SuperVM 存储层提供灵活的存储抽象,支持多种后端实现:
+
 - **MemoryStorage**: 内存存储 (BTreeMap, 测试用)
+
 - **RocksDBStorage**: 持久化存储 (RocksDB, 生产用)
 
 本文档重点介绍 **RocksDBStorage** 的配置、管理、优化和最佳实践。
@@ -26,6 +28,7 @@ let config = RocksDBConfig::default()
     .with_target_file_size_base(64 * 1024 * 1024);  // 64MB
 
 let storage = RocksDBStorage::new(config)?;
+
 ```
 
 ### 高级配置参数
@@ -57,6 +60,7 @@ storage.maybe_create_snapshot(block_num, &SnapshotConfig {
 
 // 手动创建检查点
 storage.create_checkpoint("checkpoint_2025_11_11")?;
+
 ```
 
 ### 检查点恢复
@@ -70,6 +74,7 @@ let storage = RocksDBStorage::restore_from_checkpoint(
     &checkpoints[0],
     RocksDBConfig::default()
 )?;
+
 ```
 
 ### 检查点清理策略
@@ -80,6 +85,7 @@ storage.cleanup_old_snapshots(&SnapshotConfig {
     keep_recent: 10,
     ..Default::default()
 })?;
+
 ```
 
 ---
@@ -99,6 +105,7 @@ let flush_config = AutoFlushConfig {
 };
 
 mvcc.start_auto_flush(flush_config, storage.clone())?;
+
 ```
 
 ### 手动刷新
@@ -108,6 +115,7 @@ mvcc.start_auto_flush(flush_config, storage.clone())?;
 let (keys_flushed, bytes_flushed) = mvcc.manual_flush(&mut storage, 5)?;
 
 println!("Flushed {} keys, {} bytes", keys_flushed, bytes_flushed);
+
 ```
 
 ### 刷新统计
@@ -119,6 +127,7 @@ println!("Flush count: {}", flush_stats.flush_count);
 println!("Keys flushed: {}", flush_stats.keys_flushed);
 println!("Bytes flushed: {} MB", flush_stats.bytes_flushed / 1024 / 1024);
 println!("Last flush block: {}", flush_stats.last_flush_block);
+
 ```
 
 ---
@@ -165,6 +174,7 @@ std::thread::spawn(move || {
         }
     }
 });
+
 ```
 
 ---
@@ -185,6 +195,7 @@ if let Some(metrics) = mvcc.get_metrics() {
     let prometheus_output = metrics.export_prometheus();
     // HTTP /metrics 端点返回 prometheus_output
 }
+
 ```
 
 ### 关键指标说明
@@ -230,6 +241,7 @@ if let Some(metrics) = mvcc.get_metrics() {
     }
   ]
 }
+
 ```
 
 ---
@@ -241,11 +253,13 @@ if let Some(metrics) = mvcc.get_metrics() {
 **问题**: 写入停顿 (`write_stall_micros` 高)
 
 **解决方案**:
+
 ```rust
 RocksDBConfig::default()
     .with_max_write_buffer_number(6)          // 增加并发MemTable
     .with_min_write_buffer_number_to_merge(2) // 减少合并阈值
     .with_max_background_jobs(8)              // 增加后台线程
+
 ```
 
 ### 2. 读取优化
@@ -253,10 +267,12 @@ RocksDBConfig::default()
 **问题**: Cache 命中率低 (`rocksdb_cache_hit_rate` < 80%)
 
 **解决方案**:
+
 ```rust
 RocksDBConfig::default()
     .with_block_cache_size(2 * 1024 * 1024 * 1024)  // 增大cache到2GB
     .with_bloom_filter_bits_per_key(10)              // 启用Bloom Filter
+
 ```
 
 ### 3. Compaction 优化
@@ -264,10 +280,12 @@ RocksDBConfig::default()
 **问题**: Level 0 文件过多 (`rocksdb_num_files_level0` > 10)
 
 **解决方案**:
+
 ```rust
 RocksDBConfig::default()
     .with_level0_file_num_compaction_trigger(4)  // 更早触发compaction
     .with_max_bytes_for_level_base(256 * 1024 * 1024)  // 增大L1大小
+
 ```
 
 ### 4. 空间优化
@@ -275,8 +293,11 @@ RocksDBConfig::default()
 **问题**: SST 文件过大 (`rocksdb_total_sst_size_bytes` > 10GB)
 
 **解决方案**:
+
 - 定期执行状态裁剪 `prune_old_versions(10, &storage)`
+
 - 启用 LZ4 压缩: `with_compression_type(CompressionType::Lz4)`
+
 - 减少 `max_versions_per_key` 配置
 
 ---
@@ -295,31 +316,41 @@ let storage = RocksDBStorage::restore_from_checkpoint(
     &checkpoints[0],
     RocksDBConfig::default()
 )?;
+
 ```
 
 ### 2. 写入停顿处理
 
 ```bash
+
 # 检查告警
+
 curl http://localhost:9090/metrics | grep write_stall
 
 # 紧急措施: 停止写入,手动触发 compaction
+
 # (RocksDB 会自动触发,但可能需要时间)
 
 # 长期方案: 调整配置参数
+
 ```
 
 ### 3. 磁盘空间不足
 
 ```bash
+
 # 1. 检查 SST 文件大小
+
 du -sh data/rocksdb
 
 # 2. 执行状态裁剪
+
 cargo run --example state_pruning_demo --features rocksdb-storage
 
 # 3. 清理旧检查点
+
 # (保留最近5个)
+
 ```
 
 ---
@@ -339,16 +370,23 @@ let config = RocksDBConfig::default()
     .with_block_cache_size(2 * 1024 * 1024 * 1024)  // 2GB
     .with_enable_statistics(true)  // 启用监控
     .with_bloom_filter_bits_per_key(10);
+
 ```
 
 ### 监控检查清单
 
 - [ ] `rocksdb_cache_hit_rate` >= 80%
+
 - [ ] `rocksdb_write_stall_micros` < 100ms/分钟
+
 - [ ] `rocksdb_num_files_level0` < 8
+
 - [ ] `rocksdb_num_immutable_mem_table` < 3
+
 - [ ] 定期检查 SST 文件大小增长趋势
+
 - [ ] 每周执行一次状态裁剪
+
 - [ ] 每天创建检查点快照
 
 ### 容量规划
@@ -410,6 +448,7 @@ fn initialize_storage() -> anyhow::Result<(RocksDBStorage, Arc<MvccStore>)> {
     
     Ok((storage, mvcc))
 }
+
 ```
 
 ### 指标监控示例
@@ -430,6 +469,7 @@ loop {
         serve_metrics(prom);
     }
 }
+
 ```
 
 ---
@@ -437,7 +477,9 @@ loop {
 ## 参考资料
 
 - [RocksDB Wiki](https://github.com/facebook/rocksdb/wiki)
+
 - [RocksDB Tuning Guide](https://github.com/facebook/rocksdb/wiki/RocksDB-Tuning-Guide)
+
 - [Prometheus Metrics Best Practices](https://prometheus.io/docs/practices/naming/)
 
 ---

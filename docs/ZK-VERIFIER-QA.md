@@ -1,4 +1,4 @@
-# ZK 验证器系统 Q&A
+﻿# ZK 验证器系统 Q&A
 
 ## Q1: 这个 ZK 验证器系统的主要用途是什么？
 
@@ -41,11 +41,15 @@ let tx2 = Transaction { privacy: Privacy::Public, ... };
 
 // 3. PrivatePath - 隐私交易（使用 ZK 验证）
 let tx3 = Transaction { privacy: Privacy::Private, ... };
+
 ```
 
 当交易标记为 `Privacy::Private` 时：
+
 - 进入 **PrivatePath** 处理
+
 - 验证 ZK 证明确保交易合法性
+
 - 调用 `supervm.verify_with(&circuit_id, &proof, &public_inputs)`
 
 ---
@@ -55,29 +59,38 @@ let tx3 = Transaction { privacy: Privacy::Private, ... };
 **A:** 三大核心场景：
 
 ### 场景 A: 匿名转账
+
 ```
+
 Alice 给 Bob 转 100 代币，但不想让链上观察者知道：
 ✓ 谁是发送者（环签名混淆）
 ✓ 转了多少钱（Pedersen 承诺隐藏金额）
 ✓ 金额是否合法（范围证明确保 >= 0）
 
 链上只需验证 ZK 证明 ✅，无需查看明文交易
+
 ```
 
 ### 场景 B: 合规审计
+
 ```
+
 监管机构可以获得"审计密钥"：
 ✓ 特定条件下解密 Pedersen 承诺
 ✓ 验证范围证明确保没有洗钱
 ✓ 普通用户无法解密
+
 ```
 
 ### 场景 C: DeFi 隐私交易
+
 ```
+
 在 DEX 上交易，隐藏：
 ✓ 交易策略（环签名隐藏身份）
 ✓ 持仓量（承诺隐藏金额）
 验证器只需确认"这笔交易数学上是对的"
+
 ```
 
 ---
@@ -91,11 +104,15 @@ Alice 给 Bob 转 100 代币，但不想让链上观察者知道：
 3. **L1 保护** - 验证器不影响 FastPath/ConsensusPath 的关键路径性能
 
 ```toml
+
 # 默认构建（轻量）
+
 cargo build
 
 # 启用隐私功能
+
 cargo build --features groth16-verifier
+
 ```
 
 ---
@@ -112,9 +129,13 @@ cargo build --features groth16-verifier
 | ringct_v1 | ~300ms | ~400ms | ~20ms | ~400 |
 
 **优化空间**：
+
 - 批量验证（一次验证多个 proof）
+
 - 并行验证（rayon）
+
 - Compressed 序列化（减小传输开销）
+
 - PVK 预热缓存
 
 ---
@@ -131,9 +152,13 @@ cargo build --features groth16-verifier
 | **SuperVM** | **可选隐私路径** | **高**（分离） | **高**（三路径） |
 
 **SuperVM 优势**：
+
 - 普通交易走 FastPath（高性能，无 ZK 开销）
+
 - 隐私交易走 PrivatePath（ZK 验证）
+
 - 应用自由选择隐私级别
+
 - 不牺牲整体性能
 
 ---
@@ -159,6 +184,7 @@ cargo build --features groth16-verifier
     // 4. 执行隐私交易（自动验证 ZK 证明）
     let receipt = supervm.execute_transaction(&private_tx);
 }
+
 ```
 
 ---
@@ -168,12 +194,15 @@ cargo build --features groth16-verifier
 **A:** 两种编码方式：
 
 ### 单 Fr 协议（简单电路）
+
 ```rust
 // multiply_v1, ring_signature_v1, range_proof_v1
 public_inputs_bytes = Fr.serialize_uncompressed()
+
 ```
 
 ### Vec<Fr> 协议（多输入电路）
+
 ```rust
 // ringct_v1 等
 public_inputs_bytes = [
@@ -182,6 +211,7 @@ public_inputs_bytes = [
     Fr1.serialize(), // 第二个 Fr
     ...
 ]
+
 ```
 
 ---
@@ -204,18 +234,27 @@ public_inputs_bytes = [
 **A:** 路线图：
 
 ### 短期（已规划）
+
 - ✅ 基础电路接入（multiply/ring_signature/range_proof/ringct）
+
 - 🔄 序列化工具化（减少样板代码）
+
 - 🔄 性能优化（批量验证、并行化）
 
 ### 中期
+
 - RingCT 压缩版（减小证明大小）
+
 - 多 UTXO 支持（批量输入/输出）
+
 - 聚合范围证明（降低约束数）
 
 ### 长期
+
 - 递归证明（Halo2 / Nova）
+
 - 跨链隐私桥
+
 - 合规审计工具链
 
 ---
@@ -225,23 +264,33 @@ public_inputs_bytes = [
 **A:** 四个可运行示例（需启用 `groth16-verifier` 特性）：
 
 ```powershell
+
 # 1. Multiply 电路（入门）
+
 cargo run -p vm-runtime --features groth16-verifier --example zk_verify_multiply
 
 # 2. Ring Signature（环签名）
+
 cargo run -p vm-runtime --features groth16-verifier --example zk_verify_ring_signature
 
 # 3. Range Proof（范围证明）
+
 cargo run -p vm-runtime --features groth16-verifier --example zk_verify_range_proof
 
 # 4. RingCT（完整隐私交易）
+
 cargo run -p vm-runtime --features groth16-verifier --example zk_verify_ringct
+
 ```
 
 每个示例包含：
+
 - 完整的 Setup → Prove → Verify 流程
+
 - VK/Proof/Inputs 序列化与文件持久化
+
 - 正确/错误公开输入的验证对比
+
 - 详细的 README 文档
 
 ---
@@ -249,9 +298,13 @@ cargo run -p vm-runtime --features groth16-verifier --example zk_verify_ringct
 ## 总结
 
 这套 ZK 验证器系统为 SuperVM 提供了**生产级隐私交易能力**，同时保持：
+
 - ✅ 架构灵活性（特性开关 + 可选路径）
+
 - ✅ 高性能（隐私与普通交易分离）
+
 - ✅ 合规友好（支持选择性披露）
+
 - ✅ 开发者友好（完整 API/测试/示例/文档）
 
 这是构建**下一代隐私 DeFi/Web3 应用**的基础设施 🛡️

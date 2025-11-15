@@ -1,11 +1,14 @@
-# RocksDB 编译问题修复指南
+﻿# RocksDB 编译问题修复指南
 
 ## ❌ 问题
 
 编译 RocksDB 时出现错误:
+
 ```
+
 Unable to find libclang: "couldn't find any valid shared libraries matching: 
 ['clang.dll', 'libclang.dll'], set the `LIBCLANG_PATH` environment variable"
+
 ```
 
 ## 🔍 原因
@@ -20,8 +23,11 @@ RocksDB 的 Rust 绑定 (`rocksdb` crate) 依赖 `bindgen`,而 `bindgen` 需要 
 
 ```toml
 [dependencies]
+
 # 使用系统 RocksDB (如果可用) 或禁用某些压缩
+
 rocksdb = { version = "0.22", optional = true, default-features = false, features = ["lz4"] }
+
 ```
 
 **优点**: 避免复杂的 C++ 编译
@@ -71,6 +77,7 @@ use vm_runtime::{MemoryStorage, Storage};
 
 let mut storage = MemoryStorage::new();
 storage.set(b"key", b"value")?;
+
 ```
 
 等 RocksDB 编译成功后再切换。
@@ -82,9 +89,12 @@ storage.set(b"key", b"value")?;
 RocksDB 在 Linux 环境下编译更顺畅:
 
 ```bash
+
 # WSL2 Ubuntu
+
 sudo apt-get install clang libclang-dev
 cargo build -p vm-runtime --features rocksdb-storage
+
 ```
 
 ---
@@ -92,15 +102,20 @@ cargo build -p vm-runtime --features rocksdb-storage
 ## 🚀 推荐行动方案
 
 ### 快速方案 (5分钟):
+
 **方案 1**: 简化依赖,禁用 zstd 压缩
 
 ```toml
+
 # src/vm-runtime/Cargo.toml
+
 [dependencies]
 rocksdb = { version = "0.22", optional = true, default-features = false }
+
 ```
 
 ### 完整方案 (30分钟):
+
 **方案 2**: 安装 LLVM,获得完整功能
 
 ---
@@ -108,8 +123,11 @@ rocksdb = { version = "0.22", optional = true, default-features = false }
 ## 📝 当前状态
 
 编译进度:
+
 - ✅ librocksdb-sys 编译成功 (RocksDB C++ 库)
+
 - ❌ zstd-sys 编译失败 (缺少 libclang)
+
 - 🚧 rocksdb crate 等待中
 
 ---
@@ -117,17 +135,23 @@ rocksdb = { version = "0.22", optional = true, default-features = false }
 ## 🔄 修复后验证
 
 ```powershell
+
 # 1. 清理旧的编译产物
+
 cargo clean -p vm-runtime
 
 # 2. 重新编译
+
 cargo build -p vm-runtime --features rocksdb-storage --release
 
 # 3. 运行测试
+
 cargo test -p vm-runtime --features rocksdb-storage --lib rocksdb
 
 # 4. 运行演示
+
 cargo run -p node-core --example rocksdb_demo --features rocksdb-storage --release
+
 ```
 
 ---
@@ -157,9 +181,13 @@ cargo run -p node-core --example rocksdb_demo --features rocksdb-storage --relea
 **我的建议**: 先使用 **方案 1 (简化依赖)** 快速验证功能,Week 2 再考虑安装 LLVM 获得完整功能。
 
 ```powershell
+
 # 立即尝试方案 1
+
 # 编辑 src/vm-runtime/Cargo.toml,修改 rocksdb 依赖
+
 # 然后重新编译
+
 ```
 
 需要我帮你修改 Cargo.toml 吗?

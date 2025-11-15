@@ -1,4 +1,4 @@
-# Autoscale Interfaces (v0)
+﻿# Autoscale Interfaces (v0)
 
 ## 采集接口（示意）
 
@@ -16,6 +16,7 @@ pub struct MetricsSnapshot {
 pub trait MetricsCollector {
     fn collect(&self) -> anyhow::Result<MetricsSnapshot>;
 }
+
 ```
 
 ## 决策钩子（示意）
@@ -26,8 +27,11 @@ pub enum Mode { FullNode, LightClient, ComputeOnly, StorageProxy, Hybrid }
 pub trait Autoscaler {
     fn evaluate(&self, m: &MetricsSnapshot) -> Mode;
 }
+
 ```
 
 ## 上报/导出
+
 - Prometheus Exporter（/metrics）
+
 - 本地事件总线（autoscale.mode.changed）

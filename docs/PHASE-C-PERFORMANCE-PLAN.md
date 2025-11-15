@@ -1,4 +1,4 @@
-# Phase C: FastPath 性能画像与 1M TPS 优化计划
+﻿# Phase C: FastPath 性能画像与 1M TPS 优化计划
 
 **目标**: 使用 perf/Flamegraph 分析 FastPath 热点，优化至 1M TPS
 
@@ -11,17 +11,27 @@
 ## 🎯 总体目标
 
 当前 FastPath 性能基线（基于 Phase 5 路由实现）：
+
 - ✅ **FastPath 纯吞吐**: **28.57M TPS** (2857万 TPS, Release, Windows)
+
 - ✅ **FastPath 延迟**: **34-35 纳秒** (avg)
+
 - ✅ **混合负载 (80% Fast)**: **1.20M TPS**
+
 - **多线程热键冲突 (Consensus)**: ~290K TPS (10 线程, MVCC 路径)
+
 - **Consensus 纯吞吐**: 377K TPS (100% 共享对象)
 
 **Phase C 目标**（已基本达成，需进一步验证与优化）：
+
 - ✅ FastPath 单核吞吐 **已达到 28.57M TPS**（超越目标 57倍）
+
 - ✅ P99 延迟 **已达到 34-35ns**（比 100μs 目标低 3000倍）
+
 - 🎯 **新目标**: Consensus 路径优化至 **1M TPS**（当前 377K）
+
 - 🎯 **新目标**: 多核并行扩展至 **50M TPS**（8 核）
+
 - 🎯 **新目标**: 跨分片隐私验证吞吐 **> 10K TPS**（当前 ~200 TPS）
 
 ---
@@ -59,25 +69,36 @@
 ### 工具链准备（保持不变）
 
 #### Linux 环境 (推荐)
+
 ```bash
+
 # 安装 perf (Linux 内核性能分析工具)
+
 sudo apt-get install linux-tools-common linux-tools-generic
 
 # 安装 Flamegraph 工具
+
 git clone https://github.com/brendangregg/FlameGraph
 export PATH=$PATH:$(pwd)/FlameGraph
 
 # Rust 符号优化编译
+
 cargo build --release --features parallel-mvcc,cross-shard
+
 ```
 
 #### Windows 环境 (替代方案)
+
 ```powershell
+
 # 使用 cargo-flamegraph (跨平台)
+
 cargo install flamegraph
 
 # Windows Performance Analyzer (WPA)
+
 # https://docs.microsoft.com/en-us/windows-hardware/test/wpt/
+
 ```
 
 ### 基准测试准备（更新）
@@ -128,26 +149,36 @@ fn cross_shard_privacy_benchmark(c: &mut Criterion) {
 
 criterion_group!(benches, consensus_path_benchmark, cross_shard_privacy_benchmark);
 criterion_main!(benches);
+
 ```
 
 ### 性能画像采集
 
 #### 方法 1: perf + Flamegraph (Linux)
+
 ```bash
+
 # 采集 CPU 性能数据（60 秒，99Hz 采样）
+
 perf record -F 99 -g -- cargo run --release --example fastpath_pressure_test
 
 # 生成 Flamegraph
+
 perf script | stackcollapse-perf.pl | flamegraph.pl > fastpath.svg
 
 # 查看火焰图（浏览器打开）
+
 firefox fastpath.svg
+
 ```
 
 #### 方法 2: cargo-flamegraph (跨平台)
+
 ```bash
 cargo flamegraph --bench fastpath_1m_tps_bench -- --bench
+
 # 输出: flamegraph.svg
+
 ```
 
 ### 预期热点分析（更新）
@@ -176,11 +207,15 @@ cargo flamegraph --bench fastpath_1m_tps_bench -- --bench
 ```bash
 perf stat -e cache-misses,cache-references,L1-dcache-loads,L1-dcache-load-misses \
     cargo run --release --example fastpath_pressure_test
+
 ```
 
 **关注指标**:
+
 - Cache Miss Rate < 5%
+
 - Instructions Per Cycle (IPC) > 2.0
+
 - Branch Mispredict Rate < 1%
 
 ---
@@ -211,6 +246,7 @@ impl MvccVersionChain {
         self.versions.iter().rev().find(|v| v.committed && v.tx_id < tx_id)
     }
 }
+
 ```
 
 **预期收益**: 减少 30-40% 版本链堆分配
@@ -237,6 +273,7 @@ impl LockFreeVersionChain {
         }
     }
 }
+
 ```
 
 **预期收益**: 消除版本链更新锁竞争，+20-30% 并发吞吐
@@ -262,6 +299,7 @@ impl SuperVM {
         }).collect()
     }
 }
+
 ```
 
 **预期收益**: 8 核下吞吐提升 6-7×（200 TPS → 1400 TPS）
@@ -287,6 +325,7 @@ impl SuperVM {
         Ok(self.cuda_ctx.dtoh_copy(results)?)
     }
 }
+
 ```
 
 **预期收益**: GPU 加速下吞吐提升 50-100×（200 TPS → 10K-20K TPS）
@@ -325,6 +364,7 @@ impl PartitionedFastPath {
         partition.execute(tx.id, op)
     }
 }
+
 ```
 
 **预期收益**: 8 核下 FastPath 达到 50M+ TPS（当前单核 28.57M × 多核系数 ~1.8）
@@ -349,6 +389,7 @@ impl PartitionedFastPath {
         Self { partitions, num_partitions: partitions.len() }
     }
 }
+
 ```
 
 **预期收益**: 多 NUMA 节点服务器上提升 10-20%（减少跨节点内存访问）
@@ -400,6 +441,7 @@ impl BatchedConsensusExecutor {
         }
     }
 }
+
 ```
 
 **预期收益**: Consensus 吞吐提升至 600K-800K TPS（批次大小 32-64）
@@ -423,20 +465,27 @@ impl BatchedConsensusExecutor {
 ### 性能回归测试（更新）
 
 ```bash
+
 # Consensus 路径基准测试
+
 cargo bench --bench consensus_1m_tps_bench
 
 # 跨分片隐私验证基准测试
+
 cargo bench --bench cross_shard_privacy_bench
 
 # FastPath 多核扩展测试
+
 cargo bench --bench fastpath_multicore_bench -- --threads 1,2,4,8
 
 # 保存优化后基线
+
 cargo bench -- --save-baseline phase_c_optimized
 
 # 对比优化前后
+
 cargo bench -- --baseline phase_c_optimized
+
 ```
 
 ### 延迟分布验证
@@ -452,6 +501,7 @@ let p99 = latencies[990_000];
 assert!(p50 < Duration::from_micros(50), "P50: {:?}", p50);
 assert!(p90 < Duration::from_micros(80), "P90: {:?}", p90);
 assert!(p99 < Duration::from_micros(100), "P99: {:?}", p99);
+
 ```
 
 ---
@@ -459,23 +509,37 @@ assert!(p99 < Duration::from_micros(100), "P99: {:?}", p99);
 ## 📈 成功指标（更新）
 
 ### 性能指标
+
 - ✅ **FastPath 单核 TPS**: 28.57M (已达成)
+
 - ✅ **FastPath 延迟**: 34-35ns (已达成)
+
 - 🎯 **FastPath 8核 TPS** > 50M（新目标）
+
 - 🎯 **Consensus 路径 TPS** > 1M（当前 377K）
+
 - 🎯 **跨分片隐私 CPU** > 1.5K TPS（当前 ~200）
+
 - 🎯 **跨分片隐私 GPU** > 10K TPS（PoC）
+
 - 🎯 **混合负载 (80% Fast)** > 3M TPS（当前 1.20M）
 
 ### 可观测性指标
+
 - ✅ FastPath Flamegraph 热点 < 10%（零锁/零分配已证明）
+
 - 🎯 Consensus Flamegraph 显示版本链分配 < 20%（当前预估 40%）
+
 - 🎯 跨分片隐私 Flamegraph 显示 ZK 验证并行化效果
+
 - 🎯 perf stat IPC > 2.0（CPU 利用率优化）
 
 ### 文档指标
+
 - ✅ Phase 5 性能报告已完成（PHASE5-METRICS-2025-11-10.md）
+
 - 🎯 Phase C 优化报告（优化前后对比 + Flamegraph）
+
 - 🎯 跨分片隐私优化最佳实践（CPU vs GPU 选型指南）
 
 ---
@@ -483,6 +547,7 @@ assert!(p99 < Duration::from_micros(100), "P99: {:?}", p99);
 ## 🔧 工具与依赖（更新）
 
 ### Cargo 依赖
+
 ```toml
 [dependencies]
 dashmap = "5.5"          # 无锁并发哈希表（Consensus 优化）
@@ -502,18 +567,25 @@ gpu-accel = ["cudarc"]   # GPU 加速（Phase 8 提前实施）
 [dependencies.cudarc]
 version = "0.10"
 optional = true
+
 ```
 
 ### 系统工具
+
 ```bash
+
 # Linux
+
 sudo apt-get install linux-tools-common linux-tools-generic
 
 # macOS
+
 brew install flamegraph
 
 # Windows
+
 cargo install flamegraph
+
 ```
 
 ---
@@ -521,28 +593,47 @@ cargo install flamegraph
 ## 📋 任务清单（更新）
 
 ### Week 1: 新瓶颈识别
+
 - [x] ~~FastPath 性能画像~~（已完成,28.57M TPS）
+
 - [ ] Consensus 路径 Flamegraph 分析（识别版本链热点）
+
 - [ ] 跨分片隐私验证性能剖析（CPU vs GPU 对比）
+
 - [ ] 创建 `consensus_1m_tps_bench` 基准测试
+
 - [ ] 创建 `cross_shard_privacy_bench` 基准测试
+
 - [ ] 分析 `perf stat` 硬件计数器（Consensus 路径）
 
 ### Week 2: 针对性优化
+
 - [ ] **Consensus 优化 1**: 引入 `smallvec` 内联版本链
+
 - [ ] **Consensus 优化 2**: 无锁版本链（`crossbeam::epoch`）
+
 - [ ] **Consensus 优化 3**: 批量提交优化（分组 flush）
+
 - [ ] **跨分片隐私优化 1**: Rayon 并行验证（8 核）
+
 - [ ] **跨分片隐私优化 2**: GPU 加速 PoC（cudarc）
+
 - [ ] **FastPath 优化**: 分区并行执行器（16/32 分区）
+
 - [ ] 每项优化后运行 micro-benchmark
 
 ### Week 3: 验证与文档
+
 - [ ] 完整基准测试矩阵（Consensus/隐私/FastPath 多核）
+
 - [ ] 延迟分布验证（P50/P90/P99）
+
 - [ ] 对比优化前后 Flamegraph
+
 - [ ] 编写 Phase C 性能优化报告
+
 - [ ] 更新 ROADMAP.md Phase C 进度
+
 - [ ] 归档 Flamegraph 和基准数据
 
 ---
@@ -550,24 +641,37 @@ cargo install flamegraph
 ## 🚀 未来扩展方向（更新）
 
 ### Phase C+: GPU 加速 ZK 验证（提前实施）
+
 - ✅ 已规划在 Phase 8，可提前 PoC
+
 - 使用 cudarc/CUDA 批量验证 Groth16 证明
+
 - 目标: 跨分片隐私验证达到 10K-20K TPS
+
 - 预期收益: GPU 并行验证 50-100× CPU
 
 ### Phase C++: 自适应批量大小调优
+
 - 根据负载动态调整 Consensus 批次大小（16/32/64/128）
+
 - A/B 测试不同批次对延迟/吞吐的影响
+
 - 实现自适应策略（低延迟 vs 高吞吐模式切换）
 
 ### Phase C+++: NUMA 优化与 CPU 亲和性
+
 - 多 NUMA 节点服务器分片绑定
+
 - CPU 核心亲和性绑定（减少上下文切换）
+
 - 本地内存访问优化（跨节点访问 penalty ~50%）
 
 ### Phase C++++: FastPath 极限挑战（100M TPS）
+
 - 当前 28.57M TPS 单核，8 核理论上限 ~200M
+
 - 实际目标: 50M-100M TPS（考虑多核扩展系数 ~1.8-3.5）
+
 - 技术路径: 分区 + NUMA + 零拷贝 + 内存预分配
 
 ---

@@ -1,4 +1,4 @@
-# curve25519-dalek 学习笔记
+﻿# curve25519-dalek 学习笔记
 
 开发者/作者：King Xujue
 
@@ -12,8 +12,11 @@
 ## 📋 学习清单
 
 - [ ] RistrettoPoint 基础操作
+
 - [ ] Scalar 运算
+
 - [ ] 示例代码运行
+
 - [ ] 性能基准测试
 
 ---
@@ -27,6 +30,7 @@
 curve25519-dalek = { version = "4.1", features = ["serde"] }
 sha2 = "0.10"
 rand = "0.8"
+
 ```
 
 **TODO**: 在 Week 9 实现阶段添加到 `vm-runtime/Cargo.toml`
@@ -38,13 +42,19 @@ rand = "0.8"
 ### 2.1 什么是 Ristretto?
 
 **Ristretto** 是 Curve25519 的"群抽象层":
+
 - 解决 Curve25519 cofactor = 8 的问题
+
 - 提供唯一编码 (每个点只有一种表示)
+
 - 防止小子群攻击
 
 **为什么不用 EdwardsPoint?**
+
 - EdwardsPoint 有 cofactor 问题
+
 - 同一个点可能有多种编码 (安全隐患)
+
 - Ristretto 保证唯一性 + 素数阶群
 
 ### 2.2 基础 API
@@ -70,6 +80,7 @@ let sum = point1 + point2;
 let compressed: CompressedRistretto = public.compress();
 let bytes: [u8; 32] = compressed.to_bytes();
 let decompressed: Option<RistrettoPoint> = compressed.decompress();
+
 ```
 
 ### 2.3 示例代码
@@ -101,6 +112,7 @@ fn main() {
     assert_eq!(lhs, rhs);
     println!("Homomorphism test passed!");
 }
+
 ```
 
 ---
@@ -133,6 +145,7 @@ let quot = a * inv;    // 除法 = a * b^(-1)
 // 4. 特殊值
 let zero = Scalar::zero();
 let one = Scalar::one();
+
 ```
 
 ### 3.2 应用场景
@@ -150,7 +163,9 @@ let one = Scalar::one();
 ### 4.1 为什么需要?
 
 **Key Image 生成**: I = x * Hp(P)
+
 - Hp(P) 必须是确定性的点 (从公钥 P 派生)
+
 - 不能简单哈希到字节 (需要是曲线上的点)
 
 ### 4.2 实现方法
@@ -169,6 +184,7 @@ fn hash_to_point(data: &[u8]) -> RistrettoPoint {
     // 将 64 字节哈希映射到点
     RistrettoPoint::from_uniform_bytes(&hash.into())
 }
+
 ```
 
 **方法 2: RistrettoPoint::hash_from_bytes()** (需要 `digest` feature)
@@ -180,6 +196,7 @@ use curve25519_dalek::ristretto::RistrettoPoint;
 fn hash_to_point(data: &[u8]) -> RistrettoPoint {
     RistrettoPoint::hash_from_bytes::<Sha512>(data)
 }
+
 ```
 
 ### 4.3 Key Image 生成示例
@@ -192,6 +209,7 @@ fn generate_key_image(secret_key: &Scalar, public_key: &RistrettoPoint) -> Ristr
 }
 
 // 验证: 知道 (x, P=xG) 可计算 I, 但从 (P, I) 无法推出 x
+
 ```
 
 ---
@@ -201,8 +219,11 @@ fn generate_key_image(secret_key: &Scalar, public_key: &RistrettoPoint) -> Ristr
 ### 5.1 理论
 
 **承诺方案**: C(a, r) = aH + rG
+
 - a: 金额 (secret)
+
 - r: 盲因子 (blinding factor)
+
 - G, H: 两个独立基点
 
 **同态性**: C(a1, r1) + C(a2, r2) = C(a1+a2, r1+r2)
@@ -235,6 +256,7 @@ fn verify_balance(
     let sum_outputs: RistrettoPoint = output_commitments.iter().sum();
     sum_inputs == sum_outputs
 }
+
 ```
 
 ### 5.3 应用到 SuperVM
@@ -250,15 +272,21 @@ fn verify_balance(
 **TODO**: 运行 `cargo bench` 测试
 
 预期性能 (Intel i7, 单核):
+
 - Scalar 乘法: ~50-60 μs
+
 - Point 加法: ~10 μs
+
 - Point 压缩: ~5 μs
+
 - Point 解压缩: ~60 μs
+
 - Hash-to-point: ~80 μs
 
 ### 6.2 优化技巧
 
 **批量操作**:
+
 ```rust
 // 慢: 逐个计算
 let mut sum = RistrettoPoint::identity();
@@ -272,15 +300,18 @@ let sum = RistrettoPoint::vartime_multiscalar_mul(
     &scalars,
     &points
 );
+
 ```
 
 **预计算表**:
+
 ```rust
 use curve25519_dalek::traits::MultiscalarMul;
 
 // 预计算基点表 (加速重复乘法)
 let precomputed = RISTRETTO_BASEPOINT_POINT.precompute();
 let result = precomputed.multiply(&scalar);
+
 ```
 
 ---
@@ -307,6 +338,7 @@ fn verify(message: &[u8], public_key: &RistrettoPoint, sig: &SchnorrSignature) -
     // TODO: 验证 sG = R + H(R||P||m)*P
     todo!()
 }
+
 ```
 
 ### 7.2 练习 2: 简单 Ring Signature
@@ -321,6 +353,7 @@ struct SimpleRingSignature {
 }
 
 // TODO: 实现 sign() 和 verify()
+
 ```
 
 ---
@@ -330,13 +363,16 @@ struct SimpleRingSignature {
 ### 8.1 官方文档
 
 - **curve25519-dalek docs**: https://docs.rs/curve25519-dalek/
+
 - **Ristretto 论文**: https://ristretto.group/
+
 - **Mike Hamburg's paper**: https://eprint.iacr.org/2015/673
 
 ### 8.2 示例项目
 
 - **bulletproofs**: https://github.com/dalek-cryptography/bulletproofs
   - 使用 curve25519-dalek 实现范围证明
+
 - **ed25519-dalek**: https://github.com/dalek-cryptography/ed25519-dalek
   - EdDSA 签名实现
 
@@ -356,35 +392,53 @@ struct SimpleRingSignature {
 ### Week 1 (2025-02-17 至 2025-02-23)
 
 **Day 1 (2025-02-17)**:
+
 - [x] 创建学习笔记
+
 - [ ] 添加依赖到测试项目
+
 - [ ] 运行基础示例 (RistrettoPoint, Scalar)
 
 **Day 2-3**:
+
 - [ ] 实现 Hash-to-Point
+
 - [ ] 实现 Pedersen Commitment
+
 - [ ] 性能基准测试
 
 **Day 4-5**:
+
 - [ ] 实现 Schnorr 签名
+
 - [ ] 实现简单 Ring Signature (2-of-3)
+
 - [ ] 单元测试
 
 **Day 6-7**:
+
 - [ ] 阅读 bulletproofs 源码
+
 - [ ] 总结学习成果
+
 - [ ] 准备 Week 2 高级主题
 
 ### Week 2 (2025-02-24 至 2025-03-02)
 
 **Day 8-10**:
+
 - [ ] 深入多标量乘法优化
+
 - [ ] 批量验证技术
+
 - [ ] 内存安全实践 (zeroize)
 
 **Day 11-14**:
+
 - [ ] 结合 Monero 源码理解应用
+
 - [ ] 设计 SuperVM Ring Signature API
+
 - [ ] 编写技术选型报告
 
 ---

@@ -1,4 +1,4 @@
-# Phase 4.3 Week 3-4 完成总结
+﻿# Phase 4.3 Week 3-4 完成总结
 
 **日期**: 2025-11-07  
 **阶段**: Phase 4.3 持久化存储集成  
@@ -30,6 +30,7 @@
 **文件**: `src/vm-runtime/src/storage/rocksdb_storage.rs`
 
 **实现内容**:
+
 ```rust
 // 1. Snapshot 配置
 pub struct SnapshotConfig {
@@ -38,6 +39,7 @@ pub struct SnapshotConfig {
 }
 
 // 2. 核心方法
+
 - create_checkpoint(name: &str) -> Result<PathBuf>
   创建 RocksDB checkpoint,返回快照路径
 
@@ -52,17 +54,23 @@ pub struct SnapshotConfig {
 
 - cleanup_old_snapshots(config: &SnapshotConfig) -> Result<()>
   清理旧快照,保留最新 N 个
+
 ```
 
 **测试覆盖**:
+
 - `test_rocksdb_snapshot_restore`: 快照创建和恢复数据完整性验证
+
 - `test_rocksdb_snapshot_management`: 自动快照和清理机制验证
 
 **测试结果**:
+
 ```
+
 test rocksdb_storage::tests::test_rocksdb_snapshot_restore ... ok (0.28s)
 test rocksdb_storage::tests::test_rocksdb_snapshot_management ... ok (0.26s)
 test result: ok. 2 passed; 0 failed; 0 ignored; finished in 0.54s
+
 ```
 
 ---
@@ -74,6 +82,7 @@ test result: ok. 2 passed; 0 failed; 0 ignored; finished in 0.54s
 **实现内容**:
 
 #### 1. 配置结构
+
 ```rust
 pub struct AutoFlushConfig {
     pub interval_secs: u64,          // 时间触发: 每 N 秒
@@ -89,9 +98,11 @@ pub struct FlushStats {
     pub last_flush_ts: u64,      // 最后刷新时间戳
     pub last_flush_block: u64,   // 最后刷新区块号
 }
+
 ```
 
 #### 2. 核心方法
+
 ```rust
 // 基础刷新方法
 flush_to_storage(storage: &mut dyn Storage, keep_recent: usize) 
@@ -127,9 +138,11 @@ get_current_block() -> u64
 
 // 统计获取
 get_flush_stats() -> FlushStats
+
 ```
 
 #### 3. 后台线程逻辑
+
 ```rust
 fn auto_flush_thread(
     store: Arc<MvccStore>,
@@ -157,6 +170,7 @@ fn auto_flush_thread(
         thread::sleep(500ms); // 检查间隔
     }
 }
+
 ```
 
 ---
@@ -166,12 +180,16 @@ fn auto_flush_thread(
 **功能**: 演示自动刷新在实际场景中的使用
 
 **运行**:
+
 ```bash
 cargo run --example mvcc_auto_flush_demo --release --features rocksdb-storage
+
 ```
 
 **输出示例**:
+
 ```
+
 === MVCC Auto-Flush Demo ===
 
 配置:
@@ -192,6 +210,7 @@ cargo run --example mvcc_auto_flush_demo --release --features rocksdb-storage
   刷新次数: 4
   刷新键数: 72
   刷新字节: 1890
+
 ```
 
 **验证**: 重启 MVCC Store 后成功加载持久化数据
@@ -207,6 +226,7 @@ cargo run --example mvcc_auto_flush_demo --release --features rocksdb-storage
 **实现内容**:
 
 #### 1. 延迟直方图
+
 ```rust
 pub struct LatencyHistogram {
     buckets: Vec<(f64, AtomicU64)>,  // 延迟桶: <1ms, <5ms, ..., >1s
@@ -219,9 +239,11 @@ impl LatencyHistogram {
     pub fn percentiles(&self) -> (f64, f64, f64) { ... }  // P50/P90/P99
     pub fn avg(&self) -> f64 { ... }
 }
+
 ```
 
 #### 2. 指标收集器
+
 ```rust
 pub struct MetricsCollector {
     // MVCC 事务指标
@@ -256,9 +278,11 @@ impl MetricsCollector {
     pub fn export_prometheus(&self) -> String { ... }
     pub fn print_summary(&self) { ... }
 }
+
 ```
 
 #### 3. MVCC 集成
+
 ```rust
 // 在 MvccStore 中添加
 pub struct MvccStore {
@@ -290,35 +314,51 @@ fn abort(self) {
         metrics.txn_aborted.fetch_add(1, Ordering::Relaxed);
     }
 }
+
 ```
 
 #### 4. Prometheus 导出格式
+
 ```prometheus
+
 # HELP mvcc_txn_started_total Total number of transactions started
+
 # TYPE mvcc_txn_started_total counter
+
 mvcc_txn_started_total 72
 
 # HELP mvcc_txn_committed_total Total number of transactions committed
+
 # TYPE mvcc_txn_committed_total counter
+
 mvcc_txn_committed_total 71
 
 # HELP mvcc_txn_aborted_total Total number of transactions aborted
+
 # TYPE mvcc_txn_aborted_total counter
+
 mvcc_txn_aborted_total 1
 
 # HELP mvcc_tps Current transactions per second
+
 # TYPE mvcc_tps gauge
+
 mvcc_tps 636.07
 
 # HELP mvcc_success_rate Transaction success rate percentage
+
 # TYPE mvcc_success_rate gauge
+
 mvcc_success_rate 98.61
 
 # HELP mvcc_txn_latency_ms Transaction latency percentiles in milliseconds
+
 # TYPE mvcc_txn_latency_ms summary
+
 mvcc_txn_latency_ms{quantile="0.5"} 1.00
 mvcc_txn_latency_ms{quantile="0.9"} 1.00
 mvcc_txn_latency_ms{quantile="0.99"} 1.00
+
 ```
 
 ---
@@ -326,12 +366,16 @@ mvcc_txn_latency_ms{quantile="0.99"} 1.00
 ### 示例程序: metrics_demo.rs
 
 **运行**:
+
 ```bash
 cargo run --example metrics_demo --release
+
 ```
 
 **输出**:
+
 ```
+
 === MVCC Store Metrics Collection Demo ===
 
 📝 执行测试事务...
@@ -358,6 +402,7 @@ cargo run --example metrics_demo --release
   
 === Prometheus 格式导出 ===
 (见上文 Prometheus 格式示例)
+
 ```
 
 ---
@@ -471,17 +516,25 @@ cargo run --example metrics_demo --release
 ### 性能指标
 
 #### RocksDB (Week 2 基准测试)
+
 - 批量写入: **754K-860K ops/s**
+
 - 自适应算法稳定性: RSD **0.26%-24.79%**
 
 #### MVCC (当前)
+
 - TPS: **669 TPS** (metrics_demo, 单线程)
+
 - 事务成功率: **98.61%** (1/72 冲突)
+
 - 延迟: P50/P90/P99 **均 <1ms**
 
 #### 自动刷新 (mvcc_auto_flush_demo)
+
 - 刷新次数: **4 次** (15 区块, 每 5 区块触发)
+
 - 刷新键数: **72 个**
+
 - 刷新字节: **1890 bytes**
 
 ---

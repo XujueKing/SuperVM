@@ -1,0 +1,44 @@
+name: RISC0 Performance (Dev Mode)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  run-risc0-perf:
+    runs-on: ubuntu-latest
+    env:
+      RISC0_DEV_MODE: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl pkg-config libssl-dev
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install RISC0 toolchain (rzup)
+        run: |
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.risc0/bin" >> $GITHUB_PATH
+          source "$HOME/.risc0/bin/env"
+          rzup --version
+          rzup install
+          echo "RISC0 toolchain installed successfully"
+
+      - name: Build & Run example
+        working-directory: src/l2-executor
+        run: |
+          set -euxo pipefail
+          source "$HOME/.risc0/bin/env"
+          cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee ../../risc0_ci_run.log
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: risc0-perf-logs
+          path: |
+            risc0_ci_run.log

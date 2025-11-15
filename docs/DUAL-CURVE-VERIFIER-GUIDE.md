@@ -1,9 +1,11 @@
-# 双曲线 Solidity 验证器指南
+﻿# 双曲线 Solidity 验证器指南
 
 ## 概述
 
 SuperVM 的 Groth16 验证器生成器支持双曲线后端:
+
 - **BLS12-381**: 128-bit 安全级别,面向未来 (EVM 2.0, zkEVM 2.0)
+
 - **BN254 (alt_bn128)**: 100-bit 安全级别,当前 EVM 链原生支持
 
 两条曲线完全并行,根据部署目标选择,不影响核心电路逻辑。
@@ -64,6 +66,7 @@ let gen = SolidityVerifierGenerator::new("MyVerifierBN254")
     .with_curve(CurveKind::BN254);
 
 gen.save_to_file_bn(&vk, 1, "contracts/MyVerifierBN254.sol").unwrap();
+
 ```
 
 **输出**: `contracts/MyVerifierBN254.sol` (~3.5KB, 使用 EVM 预编译 0x08)
@@ -90,6 +93,7 @@ let gen = SolidityVerifierGenerator::new("MyVerifierBLS")
     .with_curve(CurveKind::BLS12_381); // 默认值,可省略
 
 gen.save_to_file(&vk, 1, "contracts/MyVerifierBLS.sol").unwrap();
+
 ```
 
 **输出**: `contracts/MyVerifierBLS.sol` (~5.5KB, 需自定义预编译或链支持)
@@ -101,18 +105,25 @@ gen.save_to_file(&vk, 1, "contracts/MyVerifierBLS.sol").unwrap();
 ### `SolidityVerifierGenerator`
 
 **构造方法**:
+
 ```rust
 pub fn new(contract_name: &str) -> Self
+
 ```
 
 **曲线选择**:
+
 ```rust
 pub fn with_curve(self, curve: CurveKind) -> Self
+
 ```
+
 - `CurveKind::BLS12_381` (默认)
+
 - `CurveKind::BN254`
 
 **BLS12-381 合约生成**:
+
 ```rust
 pub fn generate_bls(
     &self,
@@ -126,9 +137,11 @@ pub fn save_to_file(
     num_public_inputs: usize,
     path: &str
 ) -> std::io::Result<()>
+
 ```
 
 **BN254 合约生成**:
+
 ```rust
 pub fn generate_bn254(
     &self,
@@ -142,6 +155,7 @@ pub fn save_to_file_bn(
     num_public_inputs: usize,
     path: &str
 ) -> std::io::Result<()>
+
 ```
 
 ---
@@ -160,29 +174,38 @@ pub fn save_to_file_bn(
 ### BN254 部署 (Ethereum / Polygon / Arbitrum / Optimism)
 
 **1. 使用 Foundry 编译合约**:
+
 ```bash
 forge build
+
 ```
 
 **2. 部署到测试网**:
+
 ```bash
+
 # 示例: Sepolia 测试网
+
 forge create \
   --rpc-url https://sepolia.infura.io/v3/YOUR_KEY \
   --private-key $PRIVATE_KEY \
   contracts/MyVerifierBN254.sol:MyVerifierBN254
+
 ```
 
 **3. 验证合约 (可选)**:
+
 ```bash
 forge verify-contract \
   --chain sepolia \
   --etherscan-api-key $ETHERSCAN_KEY \
   <CONTRACT_ADDRESS> \
   contracts/MyVerifierBN254.sol:MyVerifierBN254
+
 ```
 
 **4. 调用验证接口**:
+
 ```solidity
 // 准备证明数据 (从 Rust 生成的 JSON 格式化)
 uint256[2] memory a = [proofA_x, proofA_y];
@@ -191,6 +214,7 @@ uint256[2] memory c = [proofC_x, proofC_y];
 uint256[1] memory input = [public_input_0];
 
 bool valid = verifier.verifyProof(a, b, c, input);
+
 ```
 
 ### BLS12-381 部署 (zkEVM 2.0 / 自定义链)
@@ -201,8 +225,11 @@ bool valid = verifier.verifyProof(a, b, c, input);
 3. 自定义链部署并提供 0x0A-0x0E 预编译接口
 
 **适用场景**:
+
 - 长期安全性要求 (128-bit)
+
 - 与 Ethereum 2.0 验证器兼容
+
 - 研究与原型验证
 
 ---
@@ -210,25 +237,34 @@ bool valid = verifier.verifyProof(a, b, c, input);
 ## 🧪 测试验证
 
 ### 运行 BN254 示例
+
 ```bash
 cargo run -p vm-runtime --features groth16-verifier \
   --example generate_bn254_multiply_sol_verifier --release
+
 ```
 
 **输出**:
+
 ```
+
 === BN254 Solidity Verifier Generator (Multiply) ===
 saved: contracts/BN254MultiplyVerifier.sol (3474 bytes)
+
 ```
 
 ### 运行 BLS12-381 测试
+
 ```bash
 cargo test -p vm-runtime --features groth16-verifier \
   privacy::solidity_verifier --lib -- --nocapture
+
 ```
 
 **预期输出**:
+
 ```
+
 running 2 tests
 Generated Solidity verifier (5574 bytes):
 // SPDX-License-Identifier: MIT
@@ -236,6 +272,7 @@ pragma solidity ^0.8.0;
 contract MultiplyVerifier { ... }
 test test_generate_solidity_verifier ... ok
 test test_save_solidity_verifier ... ok
+
 ```
 
 ---
@@ -245,24 +282,35 @@ test test_save_solidity_verifier ... ok
 ### 选择 BN254 (推荐用于现阶段部署)
 
 ✅ **适用场景**:
+
 - 部署到现有 EVM 链 (Ethereum, Polygon, BSC, Arbitrum, Optimism)
+
 - 需要低 Gas 成本 (~150K-200K gas/验证)
+
 - 跨链桥接 (L1→L2 验证)
+
 - 生产环境上链
 
 ❌ **不适用**:
+
 - 极高安全性要求 (金融级应用建议使用 128-bit)
 
 ### 选择 BLS12-381 (面向未来)
 
 ✅ **适用场景**:
+
 - 长期归档与安全性要求 (128-bit)
+
 - EVM 2.0 / zkEVM 2.0 链
+
 - 研究原型与技术验证
+
 - 与 Ethereum 2.0 验证器互操作
 
 ❌ **不适用**:
+
 - 当前主流 EVM 链 (无预编译支持)
+
 - Gas 敏感型应用 (需自定义实现,成本高)
 
 ---
@@ -280,8 +328,11 @@ test test_save_solidity_verifier ... ok
 ### BLS12-381 (理论估算)
 
 ⚠️ **无 EVM 原生支持,需自定义实现**:
+
 - 预编译方式: ~150K-200K (需链支持)
+
 - 纯 Solidity 实现: ~5M-10M gas (不推荐)
+
 - Yul 优化实现: ~1M-2M gas (中等成本)
 
 ---
@@ -292,8 +343,11 @@ test test_save_solidity_verifier ... ok
   - 0x06: `ecAdd` (G1 点加法)
   - 0x07: `ecMul` (G1 标量乘法)
   - 0x08: `ecPairing` (配对检查) ← 验证器使用
+
 - **EIP-2537**: BLS12-381 预编译提案 (未正式激活)
+
 - **Foundry 部署文档**: https://book.getfoundry.sh/forge/deploying
+
 - **Arkworks Groth16**: https://docs.rs/ark-groth16/0.4.0/
 
 ---
@@ -320,6 +374,7 @@ A: 使用 `examples/format_ringct_proof_for_solidity.rs` (开发中) 导出 JSON
 ## 📝 版本记录
 
 - **v0.5.0** (2025-11-09): 双曲线后端实现,BLS12-381 + BN254 完整支持
+
 - **v0.4.0** (2025-11-08): 初版 BLS12-381 验证器生成器
 
 ---

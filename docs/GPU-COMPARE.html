@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html lang=\"en\">
+<head>
+<meta charset=\"utf-8\"/>
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>
+<title>GPU Backends Compare (Windows)</title>
+<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>
+<style>body{font-family:system-ui,Arial;margin:20px;} .note{color:#555}</style>
+</head>
+<body>
+<h2>GPU Backends Compare (Windows)</h2>
+<canvas id=\"c\" width=\"900\" height=\"420\"></canvas>
+<p class=\"note\">Data: data/gpu_threshold_scan/windows_compare_20251112.csv. Lower is better (ms).</p>
+<script>
+const sizes = @([string]::Join(',', 20000 50000 100000 250000 500000 1000000));
+const gles = @([string]::Join(',', 17 3 4 4 9 17));
+const dx12 = @([string]::Join(',', 17 6 2 3 4 6));
+const labels = sizes.split(',').map(Number);
+const dataGles = gles.split(',').map(Number);
+const dataDx12 = dx12.split(',').map(Number);
+new Chart(document.getElementById('c'), {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [
+      {label: 'GLES (ms)', data: dataGles, borderColor: '#ff6a00', fill:false},
+      {label: 'DX12 (ms)', data: dataDx12, borderColor: '#0066ff', fill:false}
+    ]
+  },
+  options: {
+    responsive: true,
+    scales: { x: { title: { display:true, text: 'size' } }, y: { title: { display:true, text: 'ms (lower is better)' }, beginAtZero: true } }
+  }
+});
+</script>
+</body>
+</html>

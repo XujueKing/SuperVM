@@ -1,4 +1,4 @@
-# FastPath Performance Analysis & Optimization Report
+﻿# FastPath Performance Analysis & Optimization Report
 
 **Date**: 2025-11-11  
 **Developer**: king  
@@ -11,8 +11,11 @@
 Based on Fast Path Benchmark results and code analysis, **FastPath has reached near-optimal performance** (28.57M TPS, 35ns latency). Further optimization should focus on **Consensus Path** and **Multi-Core Scaling**.
 
 **Key Findings**:
+
 - ✅ FastPath: **28.57M TPS** (zero-lock, zero-allocation)
+
 - ⚠️ Consensus: **377K TPS** (limited by MVCC overhead)
+
 - 🎯 **Optimization Target**: Consensus 377K → 500K TPS, Multi-Core 28.57M → 50M TPS
 
 ---
@@ -22,6 +25,7 @@ Based on Fast Path Benchmark results and code analysis, **FastPath has reached n
 ### FastPath Execution Flow
 
 ```
+
 1. Route Decision (should_use_fast_path)       ~5ns
 2. Ownership Validation (get_ownership_type)   ~8ns
 3. Business Logic Execution (closure)          ~4ns  
@@ -29,6 +33,7 @@ Based on Fast Path Benchmark results and code analysis, **FastPath has reached n
 5. Stats Update (atomic ops)                   ~15ns
 ────────────────────────────────────────────────────
 Total: ~35ns per transaction
+
 ```
 
 ### Bottleneck Analysis
@@ -54,8 +59,11 @@ Total: ~35ns per transaction
    - Branch prediction friendly
 
 **Optimization Potential**: ⚠️ **Limited (<10% improvement possible)**
+
 - Atomic ops are cache-friendly (single CAS)
+
 - HashMap lookup is optimal for this use case
+
 - Further optimization would require hardware-level changes (不现实)
 
 ---
@@ -92,11 +100,15 @@ use dashmap::DashMap;
 use smallvec::SmallVec;
 
 store: DashMap<Vec<u8>, SmallVec<[Version; 4]>>
+
 ```
 
 **Estimated Impact**:
+
 - `dashmap`: **+20%** (reduce lock contention)
+
 - `smallvec`: **+10%** (reduce heap allocations for typical 2-3 version chains)
+
 - Per-thread TS: **+3%** (reduce atomic CAS)
 
 ---
@@ -108,16 +120,20 @@ store: DashMap<Vec<u8>, SmallVec<[Version; 4]>>
 FastPath is **single-threaded** (28.57M TPS on 1 core). 
 
 **Scaling Plan**:
+
 ```
+
 1 core:  28.57M TPS
 2 cores: 50-55M TPS  (with partition executor)
 4 cores: 90-100M TPS
 8 cores: 150-180M TPS (目标 >150M)
+
 ```
 
 ### Partitioned Executor Architecture
 
 ```
+
 ┌─────────────────────────────────────────┐
 │        AdaptiveRouter                   │
 │   (决定 Fast/Consensus/Privacy)        │
@@ -133,6 +149,7 @@ FastPath is **single-threaded** (28.57M TPS on 1 core).
     │ Part 0  │ Part 1  │ Part 2  │ ... N │  (每个分区独立线程)
     │ Core 0  │ Core 1  │ Core 2  │       │
     └─────────┴─────────┴─────────┴───────┘
+
 ```
 
 **Implementation Sketch**:
@@ -161,14 +178,19 @@ impl PartitionedFastPath {
             .collect()
     }
 }
+
 ```
 
 **Expected Performance**:
+
 - **2 cores**: 50M TPS (1.75x scaling - overhead from coordination)
+
 - **4 cores**: 100M TPS (3.5x scaling)
+
 - **8 cores**: 180M TPS (6.3x scaling - diminishing returns from cache coherence)
 
 **NUMA-Aware Optimization**:
+
 ```rust
 // 绑定线程到特定CPU核心
 use core_affinity;
@@ -180,6 +202,7 @@ for (partition_id, executor) in partitions.iter().enumerate() {
         // 执行该分区任务
     });
 }
+
 ```
 
 ---
@@ -189,6 +212,7 @@ for (partition_id, executor) in partitions.iter().enumerate() {
 ### Phase 1: Replace RwLock with DashMap (Week 1)
 
 **Changes**:
+
 ```rust
 // src/vm-runtime/src/mvcc.rs
 
@@ -201,12 +225,15 @@ use dashmap::DashMap;
 use smallvec::SmallVec;
 
 store: DashMap<Vec<u8>, SmallVec<[Version; 4]>>
+
 ```
 
 **Testing**:
+
 ```bash
 cargo run --example mixed_path_bench --release --features rocksdb-storage \
   -- --owned-ratio:0.2  # 80% Consensus to stress-test
+
 ```
 
 **Expected Result**: 377K → **450K TPS** (+19%)
@@ -216,16 +243,20 @@ cargo run --example mixed_path_bench --release --features rocksdb-storage \
 ### Phase 2: Smallvec for Version Chains (Week 1)
 
 **Rationale**: 
+
 - 95%+ keys have ≤4 versions (observed in GC stats)
+
 - `SmallVec<[Version; 4]>` avoids heap allocation for typical cases
 
 **Implementation**:
+
 ```rust
 pub struct MvccStore {
     store: DashMap<Vec<u8>, SmallVec<[Version; 4]>>,
     ts: AtomicU64,
     gc_config: GcConfig,
 }
+
 ```
 
 **Expected Result**: 450K → **495K TPS** (+10%)
@@ -237,6 +268,7 @@ pub struct MvccStore {
 **Current**: Global `AtomicU64::fetch_add()` - contention on high thread count
 
 **Proposed**:
+
 ```rust
 thread_local! {
     static THREAD_TS_RANGE: Cell<(u64, u64)> = Cell::new((0, 0));
@@ -256,6 +288,7 @@ pub fn allocate_ts() -> u64 {
         }
     })
 }
+
 ```
 
 **Expected Result**: 495K → **510K TPS** (+3%)
@@ -267,19 +300,29 @@ pub fn allocate_ts() -> u64 {
 ### FastPath Multi-Core Scaling
 
 - [ ] 实现 `PartitionedFastPath` 结构
+
 - [ ] 对象ID哈希分区算法 (`hash_object_id`)
+
 - [ ] 并行批量执行 (`rayon::par_iter`)
+
 - [ ] NUMA-aware 线程绑定 (`core_affinity`)
+
 - [ ] Benchmark: 2/4/8 核心扩展测试
+
 - [ ] 文档: 多核使用指南
 
 ### Consensus Path Optimization
 
 - [ ] 添加 `dashmap` 依赖到 `Cargo.toml`
+
 - [ ] 添加 `smallvec` 依赖到 `Cargo.toml`
+
 - [ ] 重构 `MvccStore::store` 为 `DashMap<Vec<u8>, SmallVec<[Version; 4]>>`
+
 - [ ] 实现 `allocate_ts()` 线程本地批量分配
+
 - [ ] 运行 Consensus 基准测试 (目标 500K TPS)
+
 - [ ] 更新 `PHASE-C-PERFORMANCE-PLAN.md`
 
 ---
@@ -289,41 +332,61 @@ pub fn allocate_ts() -> u64 {
 ### FastPath Multi-Core
 
 ```bash
+
 # 单核基线 (当前)
+
 FAST_PATH_ITERS=2000000 cargo run --example fast_path_bench --release
+
 # Expected: 28.57M TPS
 
 # 2核分区执行器
+
 PARTITIONS=2 FAST_PATH_ITERS=2000000 cargo run --example partitioned_fast_path_bench --release
+
 # Target: 50M TPS
 
 # 4核
+
 PARTITIONS=4 FAST_PATH_ITERS=4000000 cargo run --example partitioned_fast_path_bench --release
+
 # Target: 100M TPS
 
 # 8核
+
 PARTITIONS=8 FAST_PATH_ITERS=8000000 cargo run --example partitioned_fast_path_bench --release
+
 # Target: 180M TPS
+
 ```
 
 ### Consensus Optimization
 
 ```bash
+
 # 基线 (当前)
+
 cargo run --example mixed_path_bench --release -- --owned-ratio:0.0
+
 # Expected: 377K TPS
 
 # Phase 1: DashMap
+
 cargo run --example mixed_path_bench --release --features dashmap-mvcc -- --owned-ratio:0.0
+
 # Target: 450K TPS
 
 # Phase 2: Smallvec
+
 cargo run --example mixed_path_bench --release --features dashmap-mvcc,smallvec-chains -- --owned-ratio:0.0
+
 # Target: 495K TPS
 
 # Phase 3: Per-Thread TS
+
 cargo run --example mixed_path_bench --release --features dashmap-mvcc,smallvec-chains,thread-local-ts -- --owned-ratio:0.0
+
 # Target: 510K TPS
+
 ```
 
 ---
@@ -349,18 +412,23 @@ dashmap = "5.5"
 smallvec = "1.11"
 core_affinity = "0.8"
 rayon = "1.8"
+
 ```
 
 ### src/vm-runtime/src/mvcc.rs
 
 - Replace `RwLock<HashMap>` with `DashMap`
+
 - Replace `Vec<Version>` with `SmallVec<[Version; 4]>`
+
 - Implement `allocate_ts()` with thread-local batching
 
 ### src/vm-runtime/src/parallel.rs
 
 - Add `PartitionedFastPath` struct
+
 - Implement parallel execution with `rayon`
+
 - Add NUMA-aware thread affinity
 
 ---
