@@ -73,6 +73,11 @@ jobs:
           docker --version
           docker info | sed -n '1,50p'
 
+      - name: Pull RISC0 dev image
+        run: |
+          set -euxo pipefail
+          docker pull ghcr.io/risc0/risc0:1.1.4
+
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
@@ -147,11 +152,10 @@ jobs:
           cargo fetch
           echo "Prefetch complete at $(date)"
 
-      - name: Build example (compile only / soft-skip RISC0 if missing)
+      - name: Build example in Docker (compile only)
         timeout-minutes: 40
         env:
           RISC0_DEV_MODE: "1"
-          RISC0_USE_DOCKER: "1"
           CARGO_BUILD_JOBS: "2"
           CARGO_NET_RETRY: "5"
           CARGO_HTTP_TIMEOUT: "600"
@@ -159,29 +163,22 @@ jobs:
           RUSTFLAGS: "-C codegen-units=8 -C inline-threshold=0"
         run: |
           set -euxo pipefail
-          cd "$RUNNER_TEMP/l2-executor-standalone"
-          
-          # Ensure RISC0 toolchain is in PATH for build.rs
-          export PATH="$HOME/.local/bin:$HOME/.risc0/bin:$HOME/.cargo/bin:$PATH"
-          
-          echo "PATH snapshot: $PATH" > "$GITHUB_WORKSPACE/ci_artifacts/path_snapshot.txt"
-          if [ -f "$GITHUB_WORKSPACE/ci_artifacts/risc0_install_missing.flag" ]; then
-            echo "::warning::Flag indicates missing RISC0 toolchain; export RISC0_SKIP_BUILD=1" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/build.log"
-            export RISC0_SKIP_BUILD=1
-          elif ! command -v cargo-risczero &> /dev/null; then
-            echo "::warning::cargo-risczero not found at build time; setting RISC0_SKIP_BUILD=1" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/build.log"
-            export RISC0_SKIP_BUILD=1
-          else
-            echo "✅ RISC0 toolchain detected; will attempt guest embedding" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/build.log"
-            cargo risczero --version | tee -a "$GITHUB_WORKSPACE/ci_artifacts/build.log" || true
-          fi
-          
+          WORKDIR_HOST="$RUNNER_TEMP/l2-executor-standalone"
           echo "[heartbeat] build start $(date)"
-          # Heartbeat loop (background) prints every 5 minutes so logs stay alive
-          ( while true; do sleep 300; echo "[heartbeat] still building at $(date)"; done ) &
-          HB_PID=$!
+          ( while true; do sleep 300; echo "[heartbeat] still building at $(date)"; done ) & HB_PID=$!
           date
-          cargo build --release -vv --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/build.log" || BUILD_ERR=$?
+          docker run --rm \
+            -e RISC0_DEV_MODE=1 \
+            -e CARGO_BUILD_JOBS=2 \
+            -e CARGO_NET_RETRY=5 \
+            -e CARGO_HTTP_TIMEOUT=600 \
+            -e CARGO_INCREMENTAL=0 \
+            -e RUSTFLAGS="-C codegen-units=8 -C inline-threshold=0" \
+            -v "$WORKDIR_HOST":/work \
+            -w /work \
+            ghcr.io/risc0/risc0:1.1.4 \
+            bash -lc 'cargo build --release -vv --features risc0-poc --example risc0_performance_comparison' \
+            2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/build.log" || BUILD_ERR=$?
           date
           kill $HB_PID || true
           if [ -n "${BUILD_ERR:-}" ]; then
@@ -192,12 +189,18 @@ jobs:
             exit $BUILD_ERR
           fi
 
-      - name: Run example (no build)
+      - name: Run example in Docker (no build)
         timeout-minutes: 15
         run: |
           set -euxo pipefail
-          cd "$RUNNER_TEMP/l2-executor-standalone"
-          ./target/release/examples/risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
+          WORKDIR_HOST="$RUNNER_TEMP/l2-executor-standalone"
+          docker run --rm \
+            -e RISC0_DEV_MODE=1 \
+            -v "$WORKDIR_HOST":/work \
+            -w /work \
+            ghcr.io/risc0/risc0:1.1.4 \
+            bash -lc './target/release/examples/risc0_performance_comparison' \
+            2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
 
       - name: Upload artifacts
         if: always()
