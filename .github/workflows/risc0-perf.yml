@@ -76,7 +76,11 @@ jobs:
           curl -L https://risczero.com/install | bash
           # Ensure rzup and cargo-risczero are discoverable
           echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.risc0/bin" >> $GITHUB_PATH
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          # Immediately export for current shell
+          export PATH="$HOME/.local/bin:$HOME/.risc0/bin:$HOME/.cargo/bin:$PATH"
+          
           rzup --help | head -n 5 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
           rzup --version | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
           # retry rzup install to mitigate transient network/TLS issues
@@ -90,8 +94,15 @@ jobs:
             echo "rzup install failed, retry $n..." | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
             sleep $((5*n))
           done
-          command -v cargo-risczero || true
-          cargo risczero --help || true
+          
+          # Verify cargo-risczero installation
+          if ! command -v cargo-risczero &> /dev/null; then
+            echo "::warning::cargo-risczero not found after rzup, installing via cargo"
+            cargo install cargo-risczero 2>&1 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
+          fi
+          
+          command -v cargo-risczero | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || echo "cargo-risczero still not found"
+          cargo risczero --version 2>&1 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || echo "cargo risczero not accessible"
           echo "RISC0 toolchain installed successfully" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
 
       - name: Diagnostics (env/rust/cargo/rzup)
@@ -120,9 +131,29 @@ jobs:
 
       - name: Build example (compile only)
         timeout-minutes: 40
+        env:
+          RISC0_DEV_MODE: "1"
+          CARGO_BUILD_JOBS: "2"
+          CARGO_NET_RETRY: "5"
+          CARGO_HTTP_TIMEOUT: "600"
+          CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-C codegen-units=8 -C inline-threshold=0"
         run: |
           set -euxo pipefail
           cd "$RUNNER_TEMP/l2-executor-standalone"
+          
+          # Ensure RISC0 toolchain is in PATH for build.rs
+          export PATH="$HOME/.local/bin:$HOME/.risc0/bin:$HOME/.cargo/bin:$PATH"
+          
+          # Verify toolchain before build
+          if command -v cargo-risczero &> /dev/null; then
+            echo "✅ cargo-risczero found: $(which cargo-risczero)"
+            cargo risczero --version || true
+          else
+            echo "::error::cargo-risczero not found, build.rs will fail"
+            exit 1
+          fi
+          
           echo "[heartbeat] build start $(date)"
           # Heartbeat loop (background) prints every 5 minutes so logs stay alive
           ( while true; do sleep 300; echo "[heartbeat] still building at $(date)"; done ) &
