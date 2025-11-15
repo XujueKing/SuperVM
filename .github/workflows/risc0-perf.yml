@@ -100,7 +100,7 @@ jobs:
         working-directory: .
         run: |
           set -euxo pipefail
-          cargo run --release -p l2-executor --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
+          cargo run --release --manifest-path src/l2-executor/Cargo.toml --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
 
       - name: Upload artifacts
         if: always()
