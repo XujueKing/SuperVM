@@ -1,29 +1,43 @@
 #[cfg(all(feature = "risc0-poc", not(windows)))]
 fn main() {
-    // Allow skipping RISC0 build if toolchain is not available
-    // Set RISC0_SKIP_BUILD=1 to bypass risc0_build::embed_methods()
+    // Soft-fail strategy: only embed RISC0 guest methods if toolchain is really present
+    // Control env vars:
+    //   RISC0_SKIP_BUILD=1       -> unconditional skip
+    //   RISC0_FORCE_EMBED=1      -> force embed even if detection fails (debug)
+    //   CI                       -> do NOT change behavior, still soft skip if missing
+
     if std::env::var("RISC0_SKIP_BUILD").is_ok() {
         println!("cargo:warning=RISC0_SKIP_BUILD is set, skipping risc0_build::embed_methods()");
         return;
     }
 
-    // Check if risc0 toolchain is available before attempting to build
-    let rzup_check = std::process::Command::new("sh")
+    let force = std::env::var("RISC0_FORCE_EMBED").is_ok();
+
+    // Multi-path detection: cargo-risczero in PATH and presence of ~/.risc0 directory
+    let has_cargo_risczero = std::process::Command::new("sh")
         .arg("-c")
         .arg("command -v cargo-risczero")
-        .output();
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
 
-    if let Ok(output) = rzup_check {
-        if !output.status.success() {
-            println!("cargo:warning=RISC0 toolchain not found. Set RISC0_SKIP_BUILD=1 to bypass, or install via: curl -L https://risczero.com/install | bash && rzup install");
-            // Only fail if we're not in a dev/local environment
-            if std::env::var("CI").is_err() {
-                println!("cargo:warning=Skipping RISC0 build in local environment without toolchain");
-                return;
-            }
+    let risczero_dir = std::env::var("HOME")
+        .map(|h| std::path::Path::new(&h).join(".risc0"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("/.risc0"));
+    let has_risc0_dir = risczero_dir.exists();
+
+    if !has_cargo_risczero || !has_risc0_dir {
+        if !force {
+            println!("cargo:warning=RISC0 toolchain not fully detected (cargo-risczero={}, .risc0 dir={}). Skipping guest embedding.", has_cargo_risczero, has_risc0_dir);
+            println!("cargo:warning=To force embedding set RISC0_FORCE_EMBED=1. To skip explicitly set RISC0_SKIP_BUILD=1.");
+            println!("cargo:warning=Install instructions: curl -L https://risczero.com/install | bash && rzup install");
+            return;
+        } else {
+            println!("cargo:warning=RISC0_FORCE_EMBED set; proceeding despite missing toolchain detection (cargo-risczero={}, .risc0 dir={}).", has_cargo_risczero, has_risc0_dir);
         }
     }
 
+    // Perform embedding; any failure inside risc0_build will become a hard error
     risc0_build::embed_methods();
 }
 
