@@ -29,6 +29,14 @@ jobs:
           : > "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
           : > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
 
+      - name: Prepare standalone l2-executor copy
+        run: |
+          set -euxo pipefail
+          rsync -a --delete \
+            --exclude 'target' \
+            "$GITHUB_WORKSPACE/src/l2-executor/" "$GITHUB_WORKSPACE/l2-executor-standalone/"
+          ls -la "$GITHUB_WORKSPACE/l2-executor-standalone"
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -96,11 +104,11 @@ jobs:
             command -v cargo-risczero || true;
           } > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
 
-      - name: Build & Run example
-        working-directory: .
+      - name: Build & Run example (standalone copy)
+        working-directory: l2-executor-standalone
         run: |
           set -euxo pipefail
-          cargo run --release --manifest-path src/l2-executor/Cargo.toml --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
+          cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
 
       - name: Upload artifacts
         if: always()
