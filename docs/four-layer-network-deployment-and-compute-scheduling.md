@@ -1,4 +1,4 @@
-# SuperVM 四层网络硬件部署与算力调度方案
+﻿# SuperVM 四层网络硬件部署与算力调度方案
 
 > **作者**: KING XU (CHINA) | **创建时间**: 2025-11-06
 
@@ -26,6 +26,7 @@
 ### SuperVM 分布式架构哲学
 
 ```
+
 传统区块链:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 所有节点运行相同软件,执行相同任务
@@ -40,6 +41,7 @@ SuperVM 四层网络:
 ✅ 水平扩展 (弱节点处理简单任务)
 ✅ 成本降低 (不需要所有节点都是高配)
 ✅ 全网协同 (任务自动路由到合适节点)
+
 ```
 
 ### 设计原则
@@ -81,6 +83,7 @@ SuperVM 四层网络:
   存储: 100 TB NVMe SSD
   网络: 100 Gbps
   GPU: 8× NVIDIA H200 (用于 ZK/AI)
+
 ```
 
 #### 工作负载
@@ -96,17 +99,20 @@ enum L1Task {
 	ArchiveStorage,         // 历史数据归档
 	ComplexQuery,           // 复杂查询 (聚合/分析)
 }
+
 ```
 
 #### 预期性能
 
 ```
+
 TPS: 10-20K (共识受限)
 存储: 10-100 TB 全量状态
 查询延迟: 10-50 ms
 区块时间: 1-3 秒
 网络带宽: 1-10 GB/s
 算力占用: 50-80% CPU
+
 ```
 
 ---
@@ -138,6 +144,7 @@ TPS: 10-20K (共识受限)
   存储: 5 TB NVMe SSD
   网络: 25 Gbps
   GPU: RTX 4090 × 2 (用于游戏渲染/AI)
+
 ```
 
 #### 工作负载
@@ -158,17 +165,20 @@ enum L2Task {
 	PhysicsSimulation,      // 物理模拟
 	AIComputation,          // AI 计算
 }
+
 ```
 
 #### 预期性能
 
 ```
+
 TPS: 100-200K (MVCC 并行)
 存储: 500 GB - 2 TB (最近状态)
 查询延迟: 1-5 ms
 区块打包: < 100 ms
 网络带宽: 100 MB - 1 GB/s
 算力占用: 70-90% CPU
+
 ```
 
 ---
@@ -200,6 +210,7 @@ TPS: 100-200K (MVCC 并行)
   存储: 1 TB SSD
   网络: 10 Gbps
   GPU: 无
+
 ```
 
 #### 工作负载
@@ -218,17 +229,20 @@ enum L3Task {
 	AssetCaching,           // 资产缓存 (NFT/图片)
 	ContentDelivery,        // 内容分发
 }
+
 ```
 
 #### 预期性能
 
 ```
+
 TPS: 1M+ (缓存命中)
 存储: 100 GB - 1 TB (热数据)
 查询延迟: < 10 ms
 缓存命中率: 80-95%
 网络带宽: 10-100 MB/s
 算力占用: 20-50% CPU
+
 ```
 
 ---
@@ -263,6 +277,7 @@ IoT 设备:
   网络: WiFi/有线
   GPU: 无
   路由缓存: 200-500 节点 (较好配置)
+
 ```
 
 #### 工作负载
@@ -290,11 +305,13 @@ enum L4Task {
 	LocalStatePredict,      // 本地状态预测
 	AssetRendering,         // 资产渲染
 }
+
 ```
 
 #### 预期性能
 
 ```
+
 TPS: 本地操作 (无限制)
 存储: 1-10 GB (用户数据)
 查询延迟: < 1 ms (本地)
@@ -302,6 +319,7 @@ TPS: 本地操作 (无限制)
 网络带宽: 1-10 MB/s
 算力占用: 5-20% CPU
 电池影响: 最小化
+
 ```
 
 ---
@@ -332,6 +350,7 @@ async fn main() -> anyhow::Result<()> {
     
 	Ok(())
 }
+
 ```
 
 ### 硬件检测
@@ -391,6 +410,7 @@ impl HardwareDetector {
 		}
 	}
 }
+
 ```
 
 ### 节点类型自动决策
@@ -431,11 +451,13 @@ impl NodeType {
 		}
 	}
 }
+
 ```
 
 ### 配置文件结构
 
 ```toml
+
 # config/l1_supernode.toml
 
 [node]
@@ -470,9 +492,11 @@ max_tps = 20000
 listen = "0.0.0.0:9000"
 peers_l1 = ["supernode-us-01:9000", "supernode-eu-01:9000"]
 peers_l2 = []  # 不直接连接 L2
+
 ```
 
 ```toml
+
 # config/l2_miner.toml
 
 [node]
@@ -505,9 +529,11 @@ listen = "0.0.0.0:9001"
 peers_l1 = ["supernode-asia-01:9000"]  # 连接到 L1
 peers_l2 = ["miner-02:9001", "miner-03:9001"]  # P2P 网络
 peers_l3 = []  # 监听 L3 连接
+
 ```
 
 ```toml
+
 # config/l3_edge.toml
 
 [node]
@@ -544,9 +570,11 @@ strategy = "LRU"
 max_entries = 100000
 ttl_seconds = 3600
 prefetch = true  # 预取热点数据
+
 ```
 
 ```toml
+
 # config/l4_mobile.toml
 
 [node]
@@ -578,23 +606,27 @@ batch_size = 100  # 批量操作
 [offline]
 enable_queue = true
 max_queue_size = 1000
+
 ```
 
 ### 一键安装脚本
 
 ```bash
 #!/bin/bash
+
 # install.sh - SuperVM 自动安装脚本
 
 echo "🚀 SuperVM 安装向导"
 echo "===================="
 
 # 1. 检测操作系统
+
 OS=$(uname -s)
 ARCH=$(uname -m)
 echo "检测到系统: $OS $ARCH"
 
 # 2. 检测硬件
+
 CPU_CORES=$(nproc)
 MEMORY_GB=$(($(free -g | awk '/^Mem:/{print $2}')))
 DISK_GB=$(($(df -BG / | tail -1 | awk '{print $4}' | tr -d 'G')))
@@ -605,6 +637,7 @@ echo "  内存: ${MEMORY_GB} GB"
 echo "  磁盘: ${DISK_GB} GB"
 
 # 3. 自动推荐节点类型
+
 if [ $CPU_CORES -ge 32 ] && [ $MEMORY_GB -ge 128 ]; then
 	RECOMMENDED="L1 超算节点"
 	NODE_TYPE="l1"
@@ -643,6 +676,7 @@ else
 fi
 
 # 4. 下载二进制
+
 echo ""
 echo "下载 SuperVM 二进制..."
 DOWNLOAD_URL="https://github.com/XujueKing/SuperVM/releases/latest/download/supervm-${OS}-${ARCH}"
@@ -650,17 +684,20 @@ wget -O /usr/local/bin/supervm "$DOWNLOAD_URL"
 chmod +x /usr/local/bin/supervm
 
 # 5. 下载配置文件
+
 echo "下载配置文件..."
 CONFIG_URL="https://github.com/XujueKing/SuperVM/releases/latest/download/config-${NODE_TYPE}.toml"
 mkdir -p ~/.supervm
 wget -O ~/.supervm/config.toml "$CONFIG_URL"
 
 # 6. 初始化数据目录
+
 echo "初始化数据目录..."
 mkdir -p ~/.supervm/data
 mkdir -p ~/.supervm/logs
 
 # 7. 创建 systemd 服务 (Linux)
+
 if [ "$OS" = "Linux" ]; then
 	echo "创建 systemd 服务..."
 	cat > /etc/systemd/system/supervm.service <<EOF
@@ -694,6 +731,7 @@ else
 	echo "✅ 安装完成!"
 	echo "启动节点: supervm --config ~/.supervm/config.toml"
 fi
+
 ```
 
 ---
@@ -754,6 +792,7 @@ impl TaskRouter {
 		}
 	}
 }
+
 ```
 
 ### 任务类型定义
@@ -810,6 +849,7 @@ impl Task {
 		}
 	}
 }
+
 ```
 
 ### 负载均衡
@@ -874,6 +914,7 @@ impl LoadBalancer {
 		capability - (load * 0.5) - (queue * 0.01)
 	}
 }
+
 ```
 
 ---
@@ -883,6 +924,7 @@ impl LoadBalancer {
 ### 四层存储策略
 
 ```
+
 L1: 完整状态 (100%)
 ├── RocksDB (10-100 TB)
 ├── 所有历史区块
@@ -906,6 +948,7 @@ L4: 本地缓存 (用户专属)
 ├── 用户账户
 ├── 最近交易
 └── 离线队列
+
 ```
 
 ### 状态同步协议
@@ -968,6 +1011,7 @@ impl StateSyncProtocol {
 		Ok(())
 	}
 }
+
 ```
 
 ### 智能缓存策略
@@ -1010,6 +1054,7 @@ impl SmartCache {
 		Ok(())
 	}
 }
+
 ```
 
 ---
@@ -1089,6 +1134,7 @@ impl ComputePool {
 		Ok(final_result)
 	}
 }
+
 ```
 
 ### ZK 证明的 GPU 加速调度
@@ -1152,6 +1198,7 @@ impl ZkProofScheduler {
 		Ok(proofs)
 	}
 }
+
 ```
 
 ### 动态负载调整
@@ -1206,6 +1253,7 @@ impl LoadAdjuster {
 		Ok(())
 	}
 }
+
 ```
 
 ---
@@ -1215,12 +1263,15 @@ impl LoadAdjuster {
 ### 核心问题
 
 传统 P2P 网络的痛点:
+
 ```
+
 ❌ 节点发现慢 (DHT 查询需要多跳,延迟高)
 ❌ NAT 穿透成功率低 (STUN/TURN 成功率 60-70%)
 ❌ 连接建立慢 (需要多次握手尝试)
 ❌ 无法感知节点能力 (不知道对方是 L1/L2/L3/L4)
 ❌ 无法智能路由 (无法根据任务类型选择最佳节点)
+
 ```
 
 **SuperVM 解决方案**: 类似 DNS 的分层寻址服务 + 智能路由
@@ -1228,6 +1279,7 @@ impl LoadAdjuster {
 ### 设计理念
 
 ```
+
 传统 DNS:
 用户 → 本地 DNS → 根 DNS → TLD DNS → 权威 DNS → IP地址
 
@@ -1240,6 +1292,7 @@ L4 客户端 → L3 边缘节点 (区域路由表) → L2 矿机 (全局路由�
 ✅ 能力感知 (每个节点记录自己的硬件能力和任务类型)
 ✅ 智能路由 (根据任务复杂度自动选择最佳节点)
 ✅ 快速穿透 (L3 节点充当 relay,成功率 95%+)
+
 ```
 
 ### 架构设计
@@ -1328,6 +1381,7 @@ impl Region {
 		}
 	}
 }
+
 ```
 
 #### 2. 四层路由表
@@ -1771,6 +1825,7 @@ pub enum NatAssistResult {
 	TargetNotFound,
 	NotSupported,
 }
+
 ```
 
 #### 3. 智能寻址协议
@@ -1986,6 +2041,7 @@ impl AddressingService {
 		l3_nodes.into_iter().next()
 	}
 }
+
 ```
 
 #### 4. NAT 穿透增强
@@ -2074,6 +2130,7 @@ pub enum Candidate {
 	ServerReflexive(SocketAddr),   // STUN 映射地址
 	Relay(SocketAddr),             // TURN 中继地址
 }
+
 ```
 
 #### 5. 实时寻址性能
@@ -2126,6 +2183,7 @@ pub struct AddressingMetrics {
 // 高内存设备 (>4GB): 50-70% 启用路由中继
 // 中等设备 (2-4GB): 20-30% 启用路由中继
 // 低内存设备 (<2GB): 5-10% 启用路由中继
+
 ```
 
 #### 6. L4 节点参与路由的创新设计 ⭐ **核心创新**
@@ -2133,6 +2191,7 @@ pub struct AddressingMetrics {
 ##### 设计理念: "人人为我,我为人人"
 
 ```
+
 传统 P2P 网络:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 轻节点 → 完全依赖强节点 (DHT/中继)
@@ -2147,6 +2206,7 @@ L4 轻节点 → 根据能力贡献路由服务
 ✅ L4 之间可以 P2P 互助 (减轻 L3 负载)
 ✅ 网络扩展性好 (节点越多,路由越快)
 ✅ 局域网优化 (WiFi/蓝牙发现,延迟 < 5ms)
+
 ```
 
 ##### 三级参与模式
@@ -2187,11 +2247,13 @@ pub enum L4ParticipationLevel {
 		preload: true,            // 预加载热门节点
 	},
 }
+
 ```
 
 ##### L4 本地网络协同
 
 ```
+
 场景 1: 同一 WiFi 网络下的多个 L4 设备
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2213,8 +2275,11 @@ pub enum L4ParticipationLevel {
 [手机A] <─── 蓝牙 (10米范围) ───> [手机B]
 
 适用场景:
+
 - 线下支付/转账 (面对面交易)
+
 - 游戏组队 (本地多人游戏)
+
 - 文件分享 (点对点传输)
 
 优势:
@@ -2234,9 +2299,13 @@ pub enum L4ParticipationLevel {
 [手机A] 直接连接 [手机X]
 
 效果:
+
 - [手机A] 不需要查询 L3 (节省 10ms + 流量)
+
 - [手机B] 缓存被利用 (资源不浪费)
+
 - 网络整体负载降低
+
 ```
 
 ##### L4 NAT 穿透互助
@@ -2270,6 +2339,7 @@ pub async fn l4_assisted_nat_traversal(
 // - 不需要 L3 参与 (减轻 L3 负载)
 // - 成功率提升: 70% → 85% (L4 协助)
 // - 延迟更低 (L4 通常在同区域)
+
 ```
 
 ##### 自动能力检测与升级
@@ -2317,15 +2387,20 @@ impl L4Node {
 #### 1. **类 DNS 的分层缓存**
 
 ```
+
 查询路径:
 L4 客户端 → L3 (缓存 80% 命中) → L2 (缓存 60% 命中) → L1 (权威)
 
 平均查询延迟:
+
 - 80% 请求在 L3 命中: < 10 ms
+
 - 15% 请求在 L2 命中: < 50 ms
+
 - 5% 请求在 L1 查询: < 100 ms
 
 加权平均: 0.8×10 + 0.15×50 + 0.05×100 = 20.5 ms
+
 ```
 
 #### 2. **能力感知路由**
@@ -2344,11 +2419,13 @@ Task::Query(_)
 Task::TxExecution(_)
   → 查询: node_type=L2, max_load=70, region=nearest
   → 返回: 负载最低的 L2 矿机节点
+
 ```
 
 #### 3. **智能 NAT 穿透 (多级协助)**
 
 ```
+
 传统 P2P (STUN/TURN):
 成功率: 60-70%
 延迟: 高 (需要多次尝试)
@@ -2379,15 +2456,20 @@ Level 3: L1 强制中继 (成功率 100%)
 ✅ 优先使用 L4 互助 (零成本)
 ✅ 失败自动升级到更强节点
 ✅ 连接建立后可升级为直连
+
 ```
 
 #### 4. **L4 全员参与,网络自愈** ⭐ **核心创新**
 
 ```
+
 传统模式:
 轻节点 (消费) ──→ 强节点 (提供)
+
 - 轻节点越多,强节点越累
+
 - 网络扩展性差
+
 - 单点瓶颈风险高
 
 SuperVM 模式:
@@ -2411,10 +2493,15 @@ SuperVM 模式:
 ✅ 成本分摊 (每个节点贡献一点,整体收益大)
 
 数据:
+
 - 1000 个 L4 节点,50% 启用中继
+
 - 平均每个 L4 缓存 200 节点
+
 - 理论路由容量: 1000 × 200 × 0.5 = 100K 节点信息
+
 - 实际可服务: 10M+ L4 节点 (考虑缓存重叠)
+
 ```
 
 #### 5. **实时负载感知**
@@ -2460,6 +2547,7 @@ impl RoutingTable {
 // - 过载节点自动从路由表降权
 // - 新节点快速加入路由表
 // - 下线节点快速清除
+
 ```
 
 ### 实施计划
@@ -2467,22 +2555,35 @@ impl RoutingTable {
 在 **Phase 6.4: P2P 网络与通信 (3 周)** 中实现:
 
 **Week 1: 基础寻址系统**
+
 - [ ] 实现 `NodeAddress` 和地址系统
+
 - [ ] 实现四层路由表 (L1/L2/L3/L4)
+
 - [ ] 实现 `AddressingService` 查询协议
+
 - [ ] NAT 类型检测 (STUN)
 
 **Week 2: 智能路由与穿透**
+
 - [ ] 实现智能节点选择算法
+
 - [ ] 实现 ICE 协议打洞
+
 - [ ] 实现 L3 中继服务
+
 - [ ] 实现连接提示生成
 
 **Week 3: 优化与测试**
+
 - [ ] 缓存优化 (LRU + 预取)
+
 - [ ] 心跳机制和负载更新
+
 - [ ] NAT 穿透成功率测试
+
 - [ ] 寻址延迟基准测试
+
 - [ ] 跨区域连接测试
 
 ### 技术栈
@@ -2505,6 +2606,7 @@ ice = "0.9"          // ICE 协议 (打洞)
 lru = "0.12"         // LRU 缓存
 dashmap = "5.5"      // 并发哈希表
 bincode = "1.3"      // 序列化
+
 ```
 
 ### 对比传统方案
@@ -2531,119 +2633,176 @@ bincode = "1.3"      // 序列化
 ### Phase 6.1: 四层网络基础框架 (4 周)
 
 **Week 1: 硬件检测与节点类型决策**
+
 - [ ] 实现 `HardwareDetector`
+
 - [ ] 实现 `NodeType::auto_detect()`
+
 - [ ] 创建配置文件模板 (L1/L2/L3/L4)
+
 - [ ] 实现命令行参数解析
 
 **Week 2: 任务路由与分发**
+
 - [ ] 实现 `TaskRouter`
+
 - [ ] 定义 `Task` 枚举和属性
+
 - [ ] 实现任务复杂度评估
+
 - [ ] 实现任务路由决策树
 
 **Week 3: 负载均衡与调度**
+
 - [ ] 实现 `LoadBalancer`
+
 - [ ] 实现节点得分算法
+
 - [ ] 实现心跳和健康检查
+
 - [ ] 实现动态负载调整
 
 **Week 4: 测试与文档**
+
 - [ ] 单元测试 (覆盖率 > 80%)
+
 - [ ] 集成测试 (4 层网络模拟)
+
 - [ ] 性能基准测试
+
 - [ ] 部署文档和用户指南
 
 ### Phase 6.2: 存储分层管理 (3 周)
 
 **Week 1: L1/L2 存储实现**
+
 - [ ] L1 RocksDB 完整状态
+
 - [ ] L2 RocksDB 裁剪策略
+
 - [ ] 状态同步协议 (L2→L1)
+
 - [ ] 区块归档机制
 
 **Week 2: L3/L4 缓存实现**
+
 - [ ] L3 LRU 缓存
+
 - [ ] L3 预取策略
+
 - [ ] L4 SQLite 轻量存储
+
 - [ ] 状态同步协议 (L4→L3, L3→L2)
 
 **Week 3: 测试与优化**
+
 - [ ] 存储性能测试
+
 - [ ] 缓存命中率测试
+
 - [ ] 数据一致性测试
+
 - [ ] 同步延迟测试
 
 ### Phase 6.3: 算力池与分布式计算 (4 周)
 
 **Week 1: 计算池框架**
+
 - [ ] 实现 `ComputePool`
+
 - [ ] 实现 `ComputeNode`
+
 - [ ] 任务队列管理
+
 - [ ] 节点注册与发现
 
 **Week 2: 任务调度**
+
 - [ ] 任务分配算法
+
 - [ ] 分布式 MapReduce
+
 - [ ] 任务失败重试
+
 - [ ] 结果汇总
 
 **Week 3: GPU 加速集成**
+
 - [ ] ZK 证明 GPU 调度
+
 - [ ] GPU 节点管理
+
 - [ ] CPU fallback 机制
+
 - [ ] 批量证明优化
 
 **Week 4: 测试与优化**
+
 - [ ] 算力池性能测试
+
 - [ ] 分布式计算测试
+
 - [ ] GPU 加速效果验证
+
 - [ ] 负载均衡测试
 
 ### Phase 6.4: P2P 网络与通信 (3 周)
 
 **Week 1: 神经网络寻址系统 (基础架构)** ⭐ **核心**
+
 - [ ] 实现 `NodeAddress` 和地址系统
   - [ ] `NodeAddress` 结构体 (PeerId + 硬件能力 + NAT类型 + 区域)
   - [ ] `Region` 枚举和延迟估计
   - [ ] `NatType` 检测 (STUN 协议集成)
+
 - [ ] 实现四层路由表
   - [ ] `L1RootRoutingTable` (RocksDB 持久化 + 完整索引)
   - [ ] `L2GlobalRoutingTable` (LRU 缓存 10万节点)
   - [ ] `L3RegionalRoutingTable` (区域缓存 1万节点)
   - [ ] `L4LocalRoutingTable` (本地缓存 100节点)
+
 - [ ] 实现 `RoutingTable` trait (注册/查询/心跳/删除)
+
 - [ ] 单元测试 (路由表基本操作)
 
 **Week 2: 智能路由与快速穿透** ⭐ **核心**
+
 - [ ] 实现 `AddressingService` 寻址协议
   - [ ] `AddressQuery` 查询请求 (支持过滤条件)
   - [ ] `AddressResponse` 响应 (返回节点 + 连接提示)
   - [ ] 智能节点选择算法 (延迟 + 负载 + 能力评分)
+
 - [ ] 实现 NAT 穿透增强
   - [ ] `NatTraversalService` (NAT 类型检测)
   - [ ] ICE 协议打洞 (候选地址收集 + 连接性检查)
   - [ ] L3 中继服务 (自动选择最近 L3 作为 relay)
+
 - [ ] 实现 `ConnectionHint` 生成
   - [ ] 直连提示 (公网 IP)
   - [ ] 打洞提示 (STUN 地址 + NAT 类型)
   - [ ] 中继提示 (L3 节点地址)
+
 - [ ] 集成测试 (不同 NAT 场景穿透测试)
 
 **Week 3: libp2p 集成与优化** 
+
 - [ ] libp2p 网络初始化 (transport + noise + yamux)
+
 - [ ] 节点发现优化
   - [ ] mDNS (本地网络快速发现)
   - [ ] Kademlia DHT (全局发现 + 备份)
   - [ ] 神经网络寻址 (主要方式,取代传统 DHT)
+
 - [ ] 连接管理
   - [ ] 连接池 (复用连接)
   - [ ] 心跳机制 (10秒一次,更新负载)
   - [ ] 自动重连 (连接断开自动恢复)
+
 - [ ] 消息协议
   - [ ] Protobuf 序列化 (寻址查询/响应)
   - [ ] 请求/响应模式 (RPC)
   - [ ] 发布/订阅模式 (心跳广播)
+
 - [ ] 性能测试与优化
   - [ ] 寻址延迟测试 (目标: L3 < 10ms, L2 < 50ms, L1 < 100ms)
   - [ ] 缓存命中率测试 (目标: L3 80%+, L2 60%+)
@@ -2655,15 +2814,23 @@ bincode = "1.3"      // 序列化
 ### Phase 6.5: 生产部署 (2 周)
 
 **Week 1: 部署工具**
+
 - [ ] 一键安装脚本
+
 - [ ] Docker 镜像
+
 - [ ] Kubernetes 配置
+
 - [ ] 监控 Dashboard
 
 **Week 2: 文档与培训**
+
 - [ ] 部署指南
+
 - [ ] 运维手册
+
 - [ ] 故障排查
+
 - [ ] 用户培训材料
 
 ---
@@ -2673,9 +2840,13 @@ bincode = "1.3"      // 序列化
 ### 性能提升
 
 ```
+
 单机 SuperVM (当前):
+
 - TPS: 187K (低竞争)
+
 - 扩展性: 受限于单机硬件
+
 - 成本: 高 (需高端服务器)
 
 四层网络 SuperVM (Phase 6 完成后):
@@ -2689,11 +2860,13 @@ L4 (无限):         本地操作无限制
 查询 QPS: 1M+
 全球延迟: < 100 ms (跨洲)
 		   < 10 ms (同区域)
+
 ```
 
 ### 成本优化
 
 ```
+
 传统方案 (所有节点高配):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 100 节点 × $5000/月 = $500K/月
@@ -2706,19 +2879,27 @@ L3 (1000 节点):  $100/月 × 1000 = $100K/月
 L4 (用户设备):   $0
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 总成本: $400K/月 (节省 20%)
+
 ```
 
 ### 算力利用率
 
 ```
+
 传统方案:
+
 - 平均算力利用率: 30-50%
+
 - 峰值浪费: 50-70% 算力闲置
 
 四层网络方案:
+
 - 平均算力利用率: 70-90%
+
 - 峰值调度: 动态借用全网算力
+
 - 算力共享: 95%+ 利用率
+
 ```
 
 ---
@@ -2726,15 +2907,23 @@ L4 (用户设备):   $0
 ## 📚 参考文档
 
 ### 相关设计文档
+
 - [docs/architecture-2.0.md](../architecture-2.0.md) - 完整架构设计
+
 - [docs/phase1-implementation.md](../phase1-implementation.md) - 实施计划
+
 - [docs/scenario-analysis-game-defi.md](../scenario-analysis-game-defi.md) - 场景分析
+
 - [ROADMAP.md Phase 6](../../ROADMAP.md#phase-6-四层神经网络) - 开发计划
 
 ### 技术参考
+
 - [Sui Network Architecture](https://docs.sui.io/learn/architecture)
+
 - [Solana Cluster Architecture](https://docs.solana.com/cluster/overview)
+
 - [IPFS Distributed Storage](https://docs.ipfs.io/concepts/)
+
 - [libp2p Networking](https://docs.libp2p.io/)
 
 ---
@@ -2760,17 +2949,23 @@ L4 (用户设备):   $0
 ### 下一步行动
 
 ```bash
+
 # 1. 硬件检测原型
+
 cargo run --bin hardware-detector
 
 # 2. 配置文件生成
+
 ./scripts/generate-config.sh --node-type l2
 
 # 3. 本地四层网络模拟
+
 docker-compose -f docker/4layer-network.yml up
 
 # 4. 性能基准测试
+
 cargo bench --bench network_bench
+
 ```
 
 ---

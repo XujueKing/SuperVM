@@ -1,20 +1,160 @@
 # SuperVM - Next-Generation Decentralized Virtual Machine
 
+> **潘多拉星核 (Pandora Core)**: Web3 基础设施操作系统  
+> 📄 **[白皮书 (中文)](./WHITEPAPER.md)** | 📄 **[Whitepaper (EN)](./WHITEPAPER_EN.md)** | 🗺️ **[路线图](./ROADMAP.md)** | 📚 **[开发文档](./DEVELOPER.md)**  
+> 🎨 **[资产生成指南](./ASSETS-README.md)** | 🚀 **[快速开始](./QUICK-START-ASSETS.md)**
+
 **开发者**: Rainbow Haruko(CHINA) / king(CHINA) / NoahX(CHINA) / Alan Tang(CHINA) / Xuxu(CHINA)
 
 ---
 
-## � 项目概述
+## 项目概述
 
 SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净与并行执行：
-- ⚡ 并行执行 + MVCC 并发控制：187K+ TPS（低竞争），85K+ TPS（高竞争）
+- ⚡ 并行执行 + MVCC 并发控制：单线程 242K TPS（Windows 本地），多线程高竞争 ~290K TPS（本地基准）；批量写入峰值 754K–860K ops/s（存储微基准，非 TPS）
 - 🧠 内核分级保护：L0（核心运行时/调度/MVCC），L1（内核扩展），L2+（接口/插件/应用）
 - 🔌 插件化兼容：EVM 通过适配器在插件层实现，零入侵内核
 - 🔒 隐私专项：ZK/环签等在独立模块推进（参见 ROADMAP-ZK-Privacy）
 
-当前工作区版本：0.1.0（PoC，活跃开发）
+**核心定位**: 不是"跨链桥"，而是**多链聚合器** + **Web3 操作系统**
 
-### � 快速入口
+当前工作区版本：0.5.0（活跃开发）
+
+## 🚩 最新进展亮点（2025-11-09）
+
+- 🆕 **双曲线 Solidity 验证器 (Phase 2.2)**：
+  - **BLS12-381** (128-bit 安全,未来 EVM 2.0) + **BN254** (100-bit,当前 EVM 原生支持)
+  - 统一架构 CurveKind 枚举,两条曲线完全并行,互不影响
+  - BN254 合约 3474 字节,使用 EVM 预编译 0x08 (低 Gas ~150K-200K)
+  - BLS12-381 合约 5574 字节,面向 zkEVM 2.0 与长期安全
+  - Gas 优化: external+calldata 签名,gamma_abc 内联展开,移除动态数组
+  - 示例: `generate_bn254_multiply_sol_verifier.rs` (BN254) + 测试 (BLS12-381)
+  - 详见: [DUAL-CURVE-VERIFIER-GUIDE.md](docs/DUAL-CURVE-VERIFIER-GUIDE.md)
+- 🆕 **RingCT 并行证明与批量验证 (Phase 2.3)**：
+  - 全局 ProvingKey 缓存(once_cell),消除重复setup开销(节省1-2秒/实例)
+  - RingCT 并行证明: 50.8 proofs/sec (批次32,延迟19.7ms,100%成功率)
+  - 批量验证: 104.6 verifications/sec (8倍提升vs逐个验证)
+  - HTTP基准测试: :9090/metrics (Prometheus), /summary (人类可读)
+  - Grafana监控: 7个面板,3条告警规则,完整部署指南
+  - Fast→Consensus回退: 环境变量配置,自动路由降级
+- 🆕 **快照管理/恢复/自动清理**：支持 create_checkpoint、restore_from_checkpoint、maybe_create_snapshot、cleanup_old_snapshots，3 个测试用例全部通过
+- 🆕 **MVCC 自动刷新机制**：flush_to_storage、load_from_storage，支持双触发器（时间+区块数），demo 稳定运行
+- 🆕 **Prometheus 指标集成**：metrics.rs 模块（MetricsCollector + LatencyHistogram），集成到 MVCC commit/commit_parallel，export_prometheus 导出，metrics_demo 运行成功（TPS≈669, 成功率≈98.61%，该 demo 仅用于健康检查，不代表性能上限）
+- 🆕 **HTTP /metrics 端点**：metrics_http_demo 提供 Prometheus 监控接口，支持 GET http://127.0.0.1:8080/metrics
+- 🆕 **状态裁剪功能**：prune_old_versions 批量清理历史版本，state_pruning_demo 成功清理 150 版本（10 键 × 15 旧版本）
+- 🆕 **文档/编码规范升级**：90 个 Markdown 文件批量转换为 UTF-8，.vscode/settings.json 强制 UTF-8 编码
+- 🆕 **新文档**：`docs/METRICS-COLLECTOR.md`（指标收集器）、`docs/PHASE-4.3-WEEK3-4-SUMMARY.md`（阶段总结）、`docs/ROCKSDB-ADAPTIVE-QUICK-START.md`（批量写入指南）
+ - 🆕 **Phase 5 三通道路由**：Fast/Consensus/Private 路径落地，新增基准与 E2E 示例（见下）
+
+### ⏳ 待补充/优化
+- [ ] Grafana Dashboard 配置（性能可视化）
+- [ ] 24小时稳定性测试（长期运行验证）
+- [ ] 单元测试/集成测试补充
+- [ ] API.md 文档补全（新 API 汇总）
+
+---
+
+## ⚡ Quick Start（跨平台一键引导）
+
+最快方式，一行命令完成构建与初始化：
+
+Windows（PowerShell）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
+```
+
+Linux / macOS（Bash）
+
+```bash
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh
+```
+
+可选参数/环境变量：
+- Windows: `-DbPath` 指定数据目录，`-Features`（默认 `rocksdb-storage`）
+- Linux/macOS: `DB_PATH=... FEATURES=rocksdb-storage YES=1 ./scripts/bootstrap.sh`
+
+部署与平台细节：
+- Windows: `docs/ROCKSDB-WINDOWS-DEPLOYMENT.md`
+- Linux: `docs/ROCKSDB-LINUX-DEPLOYMENT.md`
+- macOS: `docs/ROCKSDB-MACOS-DEPLOYMENT.md`
+
+---
+
+## 🚀 快速演示命令
+
+```powershell
+# 双曲线 Solidity 验证器生成 (Phase 2.2)
+# BN254 (当前 EVM 链,使用预编译 0x08,低 Gas ~150K-200K)
+cargo run -p vm-runtime --features groth16-verifier --example generate_bn254_multiply_sol_verifier --release
+# 输出: contracts/BN254MultiplyVerifier.sol (3474 bytes)
+
+# BLS12-381 测试 (未来 EVM 2.0,高安全 128-bit)
+cargo test -p vm-runtime --features groth16-verifier privacy::solidity_verifier --lib -- --nocapture
+# 输出: target/contracts/MultiplyVerifier.sol (5574 bytes)
+
+# RingCT 并行证明 HTTP 基准测试 (Phase 2.3)
+cargo run -p vm-runtime --features groth16-verifier --example zk_parallel_http_bench --release
+# 访问: http://localhost:9090/metrics (Prometheus) 和 /summary (摘要)
+
+# Phase 5：Fast Path 基准（可设置 FAST_PATH_ITERS/FAST_PATH_OBJECTS）
+cargo run -p vm-runtime --example fast_path_bench --release
+
+# Phase 5：混合负载基准（可设置 MIXED_ITERS/OWNED_RATIO/OWNED_OBJECTS/SHARED_OBJECTS）
+cargo run -p vm-runtime --example mixed_path_bench --release
+
+# Phase 5：混合负载 + /metrics（可选：边跑边抓路由/FastPath/Consensus 指标）
+cargo run -p vm-runtime --example mixed_path_bench --release -- --serve-metrics:8082
+
+# Phase 5：三通道 E2E 验证
+cargo run -p vm-runtime --example e2e_three_channel_test --release
+
+# 快照/恢复/自动清理功能演示
+cargo run -p vm-runtime --example mvcc_auto_flush_demo --release --features rocksdb-storage
+
+# Prometheus 指标采集演示
+cargo run -p vm-runtime --example metrics_demo --release
+
+# HTTP /metrics 端点演示 (监听 http://127.0.0.1:8080/metrics)
+cargo run -p vm-runtime --example metrics_http_demo --release
+
+# 状态裁剪演示 (清理历史版本)
+cargo run -p vm-runtime --example state_pruning_demo --release --features rocksdb-storage
+
+# RocksDB 批量写入基准测试
+cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --features rocksdb-storage
+```
+
+---
+
+## 📚 关键文档入口
+
+- [DUAL-CURVE-VERIFIER-GUIDE.md](docs/DUAL-CURVE-VERIFIER-GUIDE.md) - 双曲线 Solidity 验证器指南 (BLS12-381 + BN254) 🔐 **NEW**
+- [METRICS-COLLECTOR.md](docs/METRICS-COLLECTOR.md) - Prometheus 指标收集器文档
+- [PARALLEL-PROVER-GUIDE.md](docs/PARALLEL-PROVER-GUIDE.md) - RingCT 并行证明快速参考 🔐
+- [RINGCT-PERFORMANCE-BASELINE.md](docs/RINGCT-PERFORMANCE-BASELINE.md) - RingCT 性能基准数据 📊
+- [GRAFANA-RINGCT-PANELS.md](docs/GRAFANA-RINGCT-PANELS.md) - Grafana RingCT 面板配置 📈
+- [GRAFANA-QUICK-DEPLOY.md](docs/GRAFANA-QUICK-DEPLOY.md) - 监控系统快速部署 🚀
+- [PHASE-4.3-WEEK3-4-SUMMARY.md](docs/PHASE-4.3-WEEK3-4-SUMMARY.md) - Week 3-4 阶段总结
+- [ROCKSDB-ADAPTIVE-QUICK-START.md](docs/ROCKSDB-ADAPTIVE-QUICK-START.md) - RocksDB 批量写入快速指南
+- [sui-smart-contract-analysis.md](docs/sui-smart-contract-analysis.md) - Sui 对象模型与 SuperVM 三通道路由（Phase 5）
+- [ROADMAP.md](ROADMAP.md) - 项目进度与阶段目标
+- [docs/INDEX.md](docs/INDEX.md) - 全部文档导航
+
+---
+
+## 📝 阶段性总结（2025-11-09）
+
+1. **双曲线 Solidity 验证器完成 (Phase 2.2 Task 1)**：BLS12-381 (未来 EVM 2.0, 128-bit 安全) + BN254 (当前 EVM 原生,低 Gas) 双后端实现,合约生成测试通过,文档完整。
+2. **RingCT 并行证明与批量验证 (Phase 2.3)**：50.8 proofs/sec (并行),104.6 verifications/sec (批量),Grafana 监控完整部署,HTTP 基准测试稳定。
+3. 快照、自动刷新、Prometheus 指标、HTTP /metrics 端点、状态裁剪五大功能全部落地,demo 与测试用例均通过。
+4. 性能数据对齐：单线程事务提交 242K TPS；多线程高竞争 ~290K TPS；RocksDB 批量写入 754K–860K ops/s。
+5. 文档与编码规范同步升级，90+ 文档批量转换为 UTF-8，开发体验与可维护性提升。
+6. 剩余任务：Gas 成本测量 (BN254 testnet 部署)、批量验证集成 SuperVM、24h 稳定性测试、Grafana 生产配置。
+5. 详细进展、数据与代码示例见 `docs/PHASE-4.3-WEEK3-4-SUMMARY.md`、`docs/METRICS-COLLECTOR.md`。
+
+### 快速入口
 - 路线图与阶段规划：`ROADMAP.md`
 - 内核速用指南（含上帝分支）：`docs/KERNEL-QUICK-START.md`
 - 内核定义与保护机制：`docs/KERNEL-DEFINITION.md`
@@ -22,8 +162,72 @@ SuperVM 是一个高性能的 WASM-first 区块链虚拟机，聚焦内核纯净
 - EVM 适配器设计：`docs/evm-adapter-design.md`
 - 架构资料与对比：`docs/architecture-2.0.md`、`docs/tech-comparison.md`
 - 热键与 LFU 分层调优：`docs/LFU-HOTKEY-TUNING.md`
+- **自适应性能调优 (AutoTuner)**: `docs/AUTO-TUNER.md` ⭐ **NEW**
+- Bloom Filter 优化分析：`docs/bloom-filter-optimization-report.md`
+- **RocksDB 持久化存储**: `docs/PHASE-4.3-ROCKSDB-INTEGRATION.md` 🔥
+- **自适应批量写入快速开始**: `docs/ROCKSDB-ADAPTIVE-QUICK-START.md` 🚀 **NEW**
+- **性能指标收集 (Prometheus)**: `docs/METRICS-COLLECTOR.md` 📊 **NEW**
+- **Phase 4.3 Week 3-4 总结**: `docs/PHASE-4.3-WEEK3-4-SUMMARY.md` 📝 **NEW**
+- **后续性能优化清单**: `docs/PERF-OPTIMIZATION-NEXT.md` 🎯 **NEW**
+- **L0 性能优化总结**: `docs/L0-PERF-OPTIMIZATION-SUMMARY.md` ✅ **LATEST**
+  - FastPath 延迟分位强化 (P50/P99 指标)
+  - Parallel Prover 线程池复用 (100% 效率)
+  - ProvingKey 全局缓存 (144x/1312x 加速)
+  - 拥塞控制与热键检测 (15-20% TPS 提升) 🆕
 
-### 🔬 热点调优与基准脚本
+### 🔬 性能调优与基准测试
+
+#### 性能矩阵（当前验证）
+
+- 单线程 MVCC 提交: 242K TPS（Windows 本地）
+- 多线程高竞争（并行提交）: ~290K TPS（本地基准）
+- RocksDB 批量写入微基准: 754K–860K ops/s（存储吞吐，非 TPS）
+- 指标字段（Prometheus 导出）:
+  - mvcc_tps（总体 TPS，自启动以来）
+  - mvcc_tps_window（窗口 TPS，滚动计算）
+  - mvcc_tps_peak（峰值 TPS，以窗口为口径）
+  - mvcc_txn_latency_ms{quantile="0.5|0.9|0.99"}（事务延迟百分位，单位 ms）
+
+注：examples/metrics_demo 与 metrics_http_demo 输出仅用于健康检测，不代表性能上限。
+
+#### 自适应调优演示 (AutoTuner)
+
+```powershell
+# 运行自适应 vs 手动配置对比演示
+cargo run -p node-core --example auto_tuner_demo --release
+
+# 预期输出: Manual ~425K TPS, Auto ~487K TPS (+14.59%)
+```
+
+#### Bloom Filter 公平基准测试
+
+```powershell
+# 固定批次大小测试
+$env:BATCH_SIZE='200'; cargo run -p node-core --example bloom_fair_bench --release
+
+# 自动探测最优批次大小 (推荐)
+$env:AUTO_BATCH='1'; cargo run -p node-core --example bloom_fair_bench --release
+```
+
+#### RocksDB 持久化存储演示 (Phase 4.3)
+
+```powershell
+# RocksDB 自适应批量写入基准测试
+cargo run -p node-core --example rocksdb_adaptive_batch_bench --release --features rocksdb-storage
+
+# MVCC 自动刷新演示 (时间+区块双触发器)
+cargo run -p vm-runtime --example mvcc_auto_flush_demo --release --features rocksdb-storage
+
+# 性能指标收集演示 (Prometheus 格式)
+cargo run -p vm-runtime --example metrics_demo --release
+
+# 预期输出:
+# - 自适应批量写入: 754K-860K ops/s (远超 200K 目标)
+# - MVCC 自动刷新: 每 5 区块或 2 秒触发
+# - Metrics: TPS 669, 成功率 98.61%, P50/P90/P99 延迟 <1ms
+```
+
+#### 热点调优与基准脚本
 
 - 生成阈值对比报告(Markdown):
 

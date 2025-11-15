@@ -1,6 +1,6 @@
-use vm_runtime::MvccStore;
-use std::thread;
 use std::sync::Arc;
+use std::thread;
+use vm_runtime::MvccStore;
 
 fn main() {
     println!("=== Demo 9: MVCC 多版本并发控制 ===\n");
@@ -27,9 +27,11 @@ fn demo_basic_mvcc() {
     let mut t2 = store.begin();
     let alice_balance = t2.read(b"account_alice").unwrap();
     let bob_balance = t2.read(b"account_bob").unwrap();
-    println!("  📖 T2 读取: Alice={}, Bob={}", 
+    println!(
+        "  📖 T2 读取: Alice={}, Bob={}",
         String::from_utf8_lossy(&alice_balance),
-        String::from_utf8_lossy(&bob_balance));
+        String::from_utf8_lossy(&bob_balance)
+    );
     println!();
 }
 
@@ -40,7 +42,10 @@ fn demo_read_only_fast_path() {
     // 初始化数据
     let mut t0 = store.begin();
     for i in 0..10 {
-        t0.write(format!("product_{}", i).into_bytes(), format!("price_{}", i * 100).into_bytes());
+        t0.write(
+            format!("product_{}", i).into_bytes(),
+            format!("price_{}", i * 100).into_bytes(),
+        );
     }
     t0.commit().unwrap();
     println!("  💾 初始化 10 个产品");
@@ -48,7 +53,7 @@ fn demo_read_only_fast_path() {
     // 使用只读事务查询（快速路径）
     let mut ro_txn = store.begin_read_only();
     println!("  🔍 只读事务查询 (is_read_only={})", ro_txn.is_read_only());
-    
+
     for i in 0..5 {
         let key = format!("product_{}", i).into_bytes();
         if let Some(price) = ro_txn.read(&key) {
@@ -85,14 +90,18 @@ fn demo_snapshot_isolation() {
 
     // T1 仍然看到旧值（快照隔离）
     let v1_after = t1.read(b"counter").unwrap();
-    println!("  🔍 T1 读取（提交后）: counter={} (仍为旧值)", 
-        String::from_utf8_lossy(&v1_after));
+    println!(
+        "  🔍 T1 读取（提交后）: counter={} (仍为旧值)",
+        String::from_utf8_lossy(&v1_after)
+    );
 
     // 新事务 T3 看到新值
     let mut t3 = store.begin();
     let v3 = t3.read(b"counter").unwrap();
-    println!("  ✨ T3 读取（新快照）: counter={} (最新值)", 
-        String::from_utf8_lossy(&v3));
+    println!(
+        "  ✨ T3 读取（新快照）: counter={} (最新值)",
+        String::from_utf8_lossy(&v3)
+    );
     println!();
 }
 
@@ -166,12 +175,12 @@ fn demo_concurrent_performance() {
 
     let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
     let elapsed = start.elapsed();
-    
+
     println!("  ✅ 并发读取完成:");
     println!("     - 总耗时: {:?}", elapsed);
     println!("     - 每线程总额: {:?}", results);
     println!("     - 无锁竞争，性能优秀！");
-    
+
     // 并发写入不同账户
     println!("\n  🔄 启动 8 个线程并发写入不同账户...");
     let start = std::time::Instant::now();

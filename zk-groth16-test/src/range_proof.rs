@@ -1,5 +1,7 @@
 use ark_bls12_381::Fr;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable};
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable,
+};
 
 /// 简单位分解 Range 证明电路：
 /// 证明者持有私有值 v，公开输入 c，应满足：
@@ -15,7 +17,11 @@ pub struct RangeProofCircuit {
 impl RangeProofCircuit {
     pub fn new(value: Option<u64>, n_bits: usize) -> Self {
         let value_fr = value.map(|v| Fr::from(v as u64));
-        Self { value: value_fr, value_u64: value, n_bits }
+        Self {
+            value: value_fr,
+            value_u64: value,
+            n_bits,
+        }
     }
 }
 
@@ -75,7 +81,7 @@ impl ConstraintSynthesizer<Fr> for RangeProofCircuit {
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_groth16::{Groth16, prepare_verifying_key};
+    use ark_groth16::{prepare_verifying_key, Groth16};
     use ark_snark::SNARK;
     use rand::rngs::OsRng;
 
@@ -85,7 +91,8 @@ mod tests {
         let params = Groth16::<Bls12_381>::generate_random_parameters_with_reduction(
             RangeProofCircuit::new(None, 8),
             rng,
-        ).expect("setup failed");
+        )
+        .expect("setup failed");
 
         // v = 42 < 2^8
         let proof = Groth16::<Bls12_381>::prove(&params, RangeProofCircuit::new(Some(42), 8), rng)
@@ -104,23 +111,22 @@ mod tests {
     #[test]
     fn test_range_proof_64_bits() {
         let rng = &mut OsRng;
-        
+
         println!("\n=== 64-bit 范围证明测试 ===");
         println!("1. 执行 Trusted Setup (64 个约束)...");
         let params = Groth16::<Bls12_381>::generate_random_parameters_with_reduction(
             RangeProofCircuit::new(None, 64),
             rng,
-        ).expect("setup failed");
+        )
+        .expect("setup failed");
         println!("   ✓ Setup 完成");
 
         // v = 12345678901234 < 2^64
         let test_value = 12345678901234u64;
         println!("\n2. 生成证明 (v={} < 2^64)...", test_value);
-        let proof = Groth16::<Bls12_381>::prove(
-            &params,
-            RangeProofCircuit::new(Some(test_value), 64),
-            rng,
-        ).expect("proving failed");
+        let proof =
+            Groth16::<Bls12_381>::prove(&params, RangeProofCircuit::new(Some(test_value), 64), rng)
+                .expect("proving failed");
         println!("   ✓ 证明生成成功");
 
         // 验证证明

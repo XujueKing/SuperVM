@@ -5,8 +5,19 @@
 // Developer: king
 
 //! 存储接口与默认实现
+//! 
+//! Phase 4.3: 支持多种存储后端
+//! - MemoryStorage: 内存存储 (测试用)
+//! - RocksDBStorage: 持久化存储 (生产用)
 
 use anyhow::Result;
+
+// Phase 4.3: RocksDB 持久化存储
+#[cfg(feature = "rocksdb-storage")]
+pub mod rocksdb_storage;
+
+#[cfg(feature = "rocksdb-storage")]
+pub use rocksdb_storage::{RocksDBStorage, RocksDBConfig, AdaptiveBatchConfig, AdaptiveBatchResult, RocksDBMetrics};
 
 /// 存储接口，定义了虚拟机可以使用的存储操作
 pub trait Storage {
@@ -21,6 +32,9 @@ pub trait Storage {
 
     /// 根据前缀扫描键值对
     fn scan(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>>;
+
+    /// 可选批量写入支持：返回 true 表示底层已原子批量处理，false 表示不支持需调用者逐条写入
+    fn write_batch_if_supported(&mut self, _batch: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> Result<bool> { Ok(false) }
 }
 
 /// 内存存储实现，用于测试
@@ -56,6 +70,17 @@ impl Storage for MemoryStorage {
             .take_while(|(k, _)| k.starts_with(prefix))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
+    }
+
+    fn write_batch_if_supported(&mut self, batch: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> Result<bool> {
+        // MemoryStorage 直接逐条应用
+        for (k,v) in batch.into_iter() {
+            match v {
+                Some(val) => { self.data.insert(k, val); },
+                None => { self.data.remove(&k); },
+            }
+        }
+        Ok(true)
     }
 }
 

@@ -1,0 +1,23 @@
+[package]
+name = "l2-executor-methods-fibonacci"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[workspace]
+# Empty workspace table to prevent inheriting from parent
+
+[dependencies]
+# Align guest method crate with host/toolchain version to avoid Malformed ProgramBinary.
+# Use same 1.2.6 version; keep default-features disabled for no_std guest environment.
+risc0-zkvm = { version = "1.2.6", default-features = false }
+
+[profile.release]
+# Optimize for smaller image; avoid aggressive host-specific inlining flags.
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "symbols"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

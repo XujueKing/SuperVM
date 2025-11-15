@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TxIR (v0 for BTC+ETH)",
+  "type": "object",
+  "properties": {
+    "chainId": {"type": "string", "description": "bitcoin | ethereum"},
+    "txHash": {"type": "string"},
+    "timestamp": {"type": "integer"},
+    "type": {"type": "string", "enum": ["NATIVE", "ERC20", "UTXO"]},
+    "from": {"type": ["string", "null"], "description": "ETH 地址"},
+    "to": {"type": ["string", "null"], "description": "ETH 地址或合约"},
+    "value": {"type": ["string", "number", "null"], "description": "以最小单位计价 (wei/satoshi)"},
+    "contract": {"type": ["string", "null"], "description": "ERC20 合约地址"},
+    "logs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "address": {"type": "string"},
+          "topics": {"type": "array", "items": {"type": "string"}},
+          "data": {"type": "string"}
+        },
+        "required": ["address", "topics", "data"]
+      }
+    },
+    "inputs": {
+      "type": ["array", "null"],
+      "items": {"type": "string"},
+      "description": "BTC UTXO 前序 outpoints (txid:vout)"
+    },
+    "outputs": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "address": {"type": "string"},
+          "amount": {"type": "string"}
+        },
+        "required": ["address", "amount"]
+      },
+      "description": "BTC UTXO 输出集合"
+    }
+  },
+  "required": ["chainId", "txHash", "timestamp", "type"]
+}

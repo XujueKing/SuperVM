@@ -1,0 +1,40 @@
+﻿<!DOCTYPE html>
+<html lang=\"en\"><head>
+<meta charset=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>
+<title>GPU Backends Platform Compare</title>
+<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>
+<style>body{font-family:system-ui,Arial;margin:20px} .row{display:flex;gap:20px;flex-wrap:wrap} .card{flex:1;min-width:420px}</style>
+</head><body>
+<h2>GPU Backends Platform Compare</h2>
+<div class=\"row\">
+  <div class=\"card\">
+    <h3>Windows</h3>
+    <canvas id=\"win\" width=\"600\" height=\"360\"></canvas>
+    <p>Data: data/gpu_threshold_scan/windows_compare_20251112.csv</p>
+  </div>
+  <div class=\"card\">
+    <h3>Linux (Vulkan)</h3>
+    <canvas id=\"linux\" width=\"600\" height=\"360\"></canvas>
+    <p>Data: </p>
+  </div>
+</div>
+<script>
+const labels = [20000,50000,100000,250000,500000,1000000];
+const win_gles = [17,3,4,4,9,17];
+const win_dx12 = [17,6,2,3,4,6];
+const linux_gles = [];
+const linux_vk = [];
+function mkChart(id, series, yLabel){
+  const ctx = document.getElementById(id);
+  new Chart(ctx, {type:'line', data:{labels: labels, datasets: series}, options:{responsive:true, scales:{x:{title:{display:true,text:'size'}}, y:{title:{display:true,text:yLabel}, beginAtZero:true}}}});
+}
+mkChart('win', [
+  {label:'GLES (ms)', data: win_gles, borderColor:'#ff6a00', fill:false},
+  {label:'DX12 (ms)', data: win_dx12, borderColor:'#0066ff', fill:false}
+], 'ms (lower is better)');
+mkChart('linux', [
+  {label:'GLES (ms)', data: linux_gles, borderColor:'#ff6a00', fill:false},
+  {label:'Vulkan (ms)', data: linux_vk, borderColor:'#00a389', fill:false}
+], 'ms (lower is better)');
+</script>
+</body></html>

@@ -1,0 +1,23 @@
+﻿=== Quick MVCC Flush Batch Benchmark ===
+
+馃摑 Populating 1000 keys with 5 versions each...
+鉁?Store populated with 5000 total versions
+
+馃搳 MVCC Transaction Performance:
+  Total transactions: 2000
+  Committed: 2000
+  Duration: 5.74ms
+  Throughput: 348371 txn/sec
+  Avg latency: 2.87碌s
+
+馃搱 Flush Statistics:
+  Total flushes: 0
+  Total keys flushed: 0
+  Total bytes flushed: 0
+
+鉁?Benchmark completed successfully
+
+   Compiling vm-runtime v0.1.0 (D:\WEB3_AI寮€鍙慭铏氭嫙鏈哄紑鍙慭src\vm-runtime)
+    Finished `release` profile [optimized] target(s) in 2.47s
+     Running `target\release\examples\quick_flush_bench.exe`
+

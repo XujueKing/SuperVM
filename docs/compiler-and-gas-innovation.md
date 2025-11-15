@@ -1,4 +1,4 @@
-# SuperVM 跨链编译器与多币种 Gas 创新
+﻿# SuperVM 跨链编译器与多币种 Gas 创新
 
 > 本文档设计 SuperVM 的跨链编译器和多币种 Gas 支付机制，让开发者可以一键部署到多链，用户可以用任意资产支付 Gas。
 
@@ -7,11 +7,13 @@
 ## 🎯 核心愿景
 
 ```
+
 一次编写，随处部署
 任意资产，支付 Gas
 
 开发者：写一份智能合约 → 编译到 EVM/Move/WASM → 部署到任意链
 用户：用 USDT/ETH/BTC/游戏代币 → 支付 Gas → 无缝使用 DApp
+
 ```
 
 ---
@@ -21,6 +23,7 @@
 ### 1. 设计理念
 
 ```
+
 统一 IR（中间表示）→ 多目标编译
 
      Solidity ──┐
@@ -28,6 +31,7 @@
      Rust ──────┘                ├→ Move 字节码
                                  ├→ WASM 字节码
                                  └→ SuperVM 原生
+
 ```
 
 ### 2. 编译流程
@@ -90,6 +94,7 @@ impl SuperCompiler {
         Ok(artifacts)
     }
 }
+
 ```
 
 ### 3. IR 设计（简化版）
@@ -123,6 +128,7 @@ pub struct IRFunction {
     returns: Type,
     body: Vec<IRInstruction>,
 }
+
 ```
 
 ### 4. 实际案例：ERC20 一键多链部署
@@ -187,40 +193,50 @@ pub async fn deploy_multi_chain() -> Result<()> {
     println!("✅ 部署到 8 条链成功！");
     Ok(())
 }
+
 ```
 
 ### 5. 目标代码对比
 
 **EVM 字节码**（以太坊）：
+
 ```
+
 PUSH1 0x60 PUSH1 0x40 MSTORE ...
 （350 字节，Gas: 200K）
+
 ```
 
 **Move 字节码**（Sui）：
+
 ```move
 module SimpleToken {
     struct Balance has key { value: u64 }
     public fun transfer(to: address, amount: u64) { ... }
 }
 （150 行 Move 代码）
+
 ```
 
 **WASM 字节码**（Polkadot）：
+
 ```wasm
 (module
   (func $transfer (param $to i64) (param $amount i64) ...)
 )
 （280 字节，高性能）
+
 ```
 
 **SuperVM Native**（最优化）：
+
 ```rust
 // 直接编译为 SuperVM 原生代码
 // - 利用 MVCC 并行执行
 // - 利用对象所有权优化
 // - 利用 L4 本地缓存
 （100 字节，Gas: 10K，10x 节省）
+
 ```
 
 ---
@@ -230,11 +246,13 @@ module SimpleToken {
 ### 1. 设计理念
 
 ```
+
 用户可以用任意资产支付 Gas：
 ✓ 主流币：ETH、BTC、SOL、USDT、USDC
 ✓ 游戏币：游戏内代币（如 AXS、SAND）
 ✓ NFT：质押 NFT 抵扣 Gas
 ✓ 积分：DApp 积分/会员积分
+
 ```
 
 ### 2. Gas 支付流程
@@ -334,6 +352,7 @@ impl GasPayment {
         })
     }
 }
+
 ```
 
 ### 3. 实际案例：用户支付场景
@@ -365,6 +384,7 @@ pub async fn mint_nft_with_usdt() -> Result<()> {
     println!("✅ NFT minted, paid 10 USDT for Gas");
     Ok(())
 }
+
 ```
 
 #### 场景 B：游戏币支付 Gas（游戏方补贴）
@@ -403,6 +423,7 @@ pub async fn trade_item_with_game_token() -> Result<()> {
     println!("✅ Item traded, paid 50 game tokens (50% subsidized)");
     Ok(())
 }
+
 ```
 
 #### 场景 C：NFT 质押抵扣 Gas
@@ -434,6 +455,7 @@ pub async fn swap_with_nft_staking() -> Result<()> {
     println!("✅ Swap completed, Gas deducted from NFT staking rewards");
     Ok(())
 }
+
 ```
 
 #### 场景 D：DApp 积分支付 Gas
@@ -475,6 +497,7 @@ pub async fn use_dapp_with_points() -> Result<()> {
     
     Ok(())
 }
+
 ```
 
 ### 4. Gas 池与自动做市
@@ -517,6 +540,7 @@ impl GasPool {
         Ok(())
     }
 }
+
 ```
 
 ---
@@ -532,8 +556,11 @@ impl GasPool {
 | **SuperVM 编译器** | **8+ 链** | **1 周** | **低** | **统一** |
 
 **节省**：
+
 - 开发时间：**95%**（6 个月 → 1 周）
+
 - 维护成本：**80%**（统一 IR，一次修改多链同步）
+
 - 用户触达：**8x**（覆盖 8 条主流链）
 
 ### Gas 支付成本
@@ -544,8 +571,11 @@ impl GasPool {
 | **SuperVM 多币种** | **任意资产** | **$0.01**（统一）| **无缝** |
 
 **优势**：
+
 - ✅ 用户无需购买多种原生币
+
 - ✅ DApp 可补贴 Gas（游戏方/协议方）
+
 - ✅ 降低新用户门槛（用 USDT 即可）
 
 ---
@@ -577,6 +607,7 @@ impl AIOptimizer {
         Ok(optimized_ir)
     }
 }
+
 ```
 
 ### 2. 零知识证明自动生成
@@ -606,6 +637,7 @@ impl ZKCompiler {
         })
     }
 }
+
 ```
 
 ### 3. 跨链状态同步
@@ -641,6 +673,7 @@ impl CrossChainBridge {
         })
     }
 }
+
 ```
 
 ---
@@ -657,19 +690,27 @@ impl CrossChainBridge {
 ### 竞争优势
 
 ```
+
 vs 传统多链开发：
+
 - 开发时间：↓ 95%
+
 - 维护成本：↓ 80%
+
 - 用户触达：↑ 8x
 
 vs 单链锁定：
+
 - 用户灵活性：↑ 10x（任意资产支付 Gas）
+
 - 开发者自由：↑ 8x（覆盖 8 条链）
+
 ```
 
 ### 生态效应
 
 ```
+
 开发者友好 → 更多 DApp 开发
      ↓
 用户友好（多币种 Gas）→ 更多用户
@@ -677,6 +718,7 @@ vs 单链锁定：
 跨链互操作 → 流动性聚合
      ↓
 网络效应 → SuperVM 成为 Web3 基础设施
+
 ```
 
 ---

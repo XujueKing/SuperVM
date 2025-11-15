@@ -2,27 +2,70 @@
 // Copyright (c) 2025 XujueKing <leadbrand@me.com>
 
 //! 并行执行引擎
-//! 
 //! 提供交易并行执行、冲突检测、状态管理等功能
 
+use std::time::Duration;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use crossbeam_deque::{Injector, Stealer, Worker};
 use rayon::prelude::*;
 use crate::mvcc::{MvccStore, Txn};
 
+/// 重试分类
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryClass { Retryable, Fatal }
+
+/// 重试策略
+pub struct RetryPolicy {
+    pub max_retries: u32,
+    pub base_delay: Duration,
+    pub max_delay: Duration,
+    pub backoff_factor: f64,
+    pub jitter_factor: f64,
+    pub classifier: Box<dyn Fn(&str) -> RetryClass + Send + Sync>,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            base_delay: Duration::from_millis(5),
+            max_delay: Duration::from_millis(200),
+            backoff_factor: 2.0,
+            jitter_factor: 0.2,
+            classifier: Box::new(|e: &str| {
+                let lower = e.to_ascii_lowercase();
+                if lower.contains("conflict") || lower.contains("retryable") || lower.contains("busy") {
+                    RetryClass::Retryable
+                } else {
+                    RetryClass::Fatal
+                }
+            }),
+        }
+    }
+}
+
+impl RetryPolicy {
+    pub fn with_max_retries(mut self, n: u32) -> Self { self.max_retries = n; self }
+    pub fn with_base_delay(mut self, d: Duration) -> Self { self.base_delay = d; self }
+    pub fn with_max_delay(mut self, d: Duration) -> Self { self.max_delay = d; self }
+    pub fn with_backoff_factor(mut self, f: f64) -> Self { self.backoff_factor = f; self }
+    pub fn with_jitter(mut self, j: f64) -> Self { self.jitter_factor = j; self }
+    pub fn with_classifier<F>(mut self, f: F) -> Self where F: Fn(&str)->RetryClass + Send + Sync + 'static {
+        self.classifier = Box::new(f); self }
+}
+
 /// 交易标识符
 pub type TxId = u64;
-
-/// Type alias for batch read result (key-value pairs)
+/// Type alias for batch read result
 type KeyValuePairs = Vec<(Vec<u8>, Vec<u8>)>;
-
 /// 账户地址
 pub type Address = Vec<u8>;
-
 /// 存储键
 pub type StorageKey = Vec<u8>;
+
+ 
 
 /// 交易执行的读写集
 #[derive(Debug, Clone, Default)]
@@ -40,20 +83,20 @@ impl ReadWriteSet {
             write_set: HashSet::new(),
         }
     }
-    
+
     /// 记录读操作
     pub fn add_read(&mut self, key: StorageKey) {
         self.read_set.insert(key);
     }
-    
+
     /// 记录写操作
     pub fn add_write(&mut self, key: StorageKey) {
         self.write_set.insert(key);
     }
-    
+
     /// 检查与另一个读写集是否冲突
-    /// 
-    /// 冲突条件: 
+    ///
+    /// 冲突条件:
     /// - 一个事务写入的键,另一个事务读取或写入
     /// - WAW (Write-After-Write) 冲突
     /// - RAW (Read-After-Write) 冲突
@@ -63,17 +106,17 @@ impl ReadWriteSet {
         if !self.write_set.is_disjoint(&other.write_set) {
             return true;
         }
-        
+
         // RAW: self 读, other 写
         if !self.read_set.is_disjoint(&other.write_set) {
             return true;
         }
-        
+
         // WAR: self 写, other 读
         if !self.write_set.is_disjoint(&other.read_set) {
             return true;
         }
-        
+
         false
     }
 }
@@ -96,7 +139,7 @@ pub struct ExecutionResult {
 }
 
 /// 交易依赖图
-/// 
+///
 /// 用于分析交易之间的依赖关系,确定哪些交易可以并行执行
 #[derive(Debug)]
 pub struct DependencyGraph {
@@ -116,23 +159,17 @@ impl DependencyGraph {
             dependencies: HashMap::new(),
         }
     }
-    
+
     /// 添加依赖关系: tx_id 依赖 depends_on
     pub fn add_dependency(&mut self, tx_id: TxId, depends_on: TxId) {
-        self.dependencies
-            .entry(tx_id)
-            .or_default()
-            .push(depends_on);
+        self.dependencies.entry(tx_id).or_default().push(depends_on);
     }
-    
+
     /// 获取指定交易的所有依赖
     pub fn get_dependencies(&self, tx_id: TxId) -> Vec<TxId> {
-        self.dependencies
-            .get(&tx_id)
-            .cloned()
-            .unwrap_or_default()
+        self.dependencies.get(&tx_id).cloned().unwrap_or_default()
     }
-    
+
     /// 获取所有无依赖的交易(可以立即执行)
     pub fn get_ready_transactions(&self, all_txs: &[TxId], completed: &HashSet<TxId>) -> Vec<TxId> {
         all_txs
@@ -142,7 +179,7 @@ impl DependencyGraph {
                 if completed.contains(tx_id) {
                     return false;
                 }
-                
+
                 // 检查所有依赖是否已完成
                 let deps = self.get_dependencies(*tx_id);
                 deps.iter().all(|dep| completed.contains(dep))
@@ -153,7 +190,7 @@ impl DependencyGraph {
 }
 
 /// 冲突检测器
-/// 
+///
 /// 分析交易的读写集,构建依赖图
 pub struct ConflictDetector {
     /// 已分析的交易读写集
@@ -172,18 +209,18 @@ impl ConflictDetector {
             analyzed: HashMap::new(),
         }
     }
-    
+
     /// 记录交易的读写集
     pub fn record(&mut self, tx_id: TxId, rw_set: ReadWriteSet) {
         self.analyzed.insert(tx_id, rw_set);
     }
-    
+
     /// 构建依赖图
-    /// 
+    ///
     /// 对于每个交易,找出它依赖的其他交易(即与它冲突的先前交易)
     pub fn build_dependency_graph(&self, tx_order: &[TxId]) -> DependencyGraph {
         let mut graph = DependencyGraph::new();
-        
+
         for (i, &tx_id) in tx_order.iter().enumerate() {
             if let Some(rw_set) = self.analyzed.get(&tx_id) {
                 // 检查与之前所有交易的冲突
@@ -196,10 +233,10 @@ impl ConflictDetector {
                 }
             }
         }
-        
+
         graph
     }
-    
+
     /// 检测两个交易是否冲突
     pub fn has_conflict(&self, tx1: TxId, tx2: TxId) -> bool {
         if let (Some(rw1), Some(rw2)) = (self.analyzed.get(&tx1), self.analyzed.get(&tx2)) {
@@ -229,12 +266,12 @@ impl ExecutionStats {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// 获取总交易数
     pub fn total_txs(&self) -> u64 {
         self.successful_txs + self.failed_txs
     }
-    
+
     /// 计算成功率
     pub fn success_rate(&self) -> f64 {
         let total = self.total_txs();
@@ -244,7 +281,7 @@ impl ExecutionStats {
             self.successful_txs as f64 / total as f64
         }
     }
-    
+
     /// 计算回滚率
     pub fn rollback_rate(&self) -> f64 {
         let total = self.total_txs();
@@ -257,7 +294,7 @@ impl ExecutionStats {
 }
 
 /// 并行执行调度器
-/// 
+///
 /// 管理交易的并行执行,确保正确性
 pub struct ParallelScheduler {
     /// 冲突检测器
@@ -311,7 +348,7 @@ impl ParallelScheduler {
             mvcc_store: Some(store),
         }
     }
-    
+
     /// 获取执行统计信息
     pub fn get_stats(&self) -> ExecutionStats {
         ExecutionStats {
@@ -322,7 +359,7 @@ impl ParallelScheduler {
             conflict_count: self.stats_conflict.load(Ordering::Relaxed),
         }
     }
-    
+
     /// 重置统计信息
     pub fn reset_stats(&self) {
         self.stats_successful.store(0, Ordering::Relaxed);
@@ -331,42 +368,42 @@ impl ParallelScheduler {
         self.stats_retry.store(0, Ordering::Relaxed);
         self.stats_conflict.store(0, Ordering::Relaxed);
     }
-    
+
     /// 记录交易完成
     pub fn mark_completed(&self, tx_id: TxId) {
         self.completed.lock().unwrap().insert(tx_id);
     }
-    
+
     /// 记录交易的读写集
     pub fn record_rw_set(&self, tx_id: TxId, rw_set: ReadWriteSet) {
         self.detector.lock().unwrap().record(tx_id, rw_set);
     }
-    
+
     /// 获取可并行执行的交易
     pub fn get_parallel_batch(&self, all_txs: &[TxId]) -> Vec<TxId> {
         let detector = self.detector.lock().unwrap();
         let completed = self.completed.lock().unwrap();
-        
+
         let graph = detector.build_dependency_graph(all_txs);
         graph.get_ready_transactions(all_txs, &completed)
     }
-    
+
     /// 获取状态管理器的引用
     pub fn get_state_manager(&self) -> Arc<Mutex<StateManager>> {
         Arc::clone(&self.state_manager)
     }
-    
+
     /// 在快照保护下执行操作
-    /// 
+    ///
     /// 该方法会:
     /// 1. 创建状态快照
     /// 2. 执行提供的操作
     /// 3. 如果操作成功,提交快照并更新统计
     /// 4. 如果操作失败,回滚到快照并更新统计
-    /// 
+    ///
     /// # 参数
     /// - `operation`: 要执行的操作,返回 Result<T, String>
-    /// 
+    ///
     /// # 返回
     /// - `Ok(T)`: 操作成功的结果
     /// - `Err(String)`: 操作失败的错误信息
@@ -375,13 +412,13 @@ impl ParallelScheduler {
         F: FnOnce(&StateManager) -> Result<T, String>,
     {
         let mut manager = self.state_manager.lock().unwrap();
-        
+
         // 创建快照
         manager.create_snapshot()?;
-        
+
         // 执行操作
         let result = operation(&manager);
-        
+
         match result {
             Ok(value) => {
                 // 操作成功,提交快照
@@ -398,50 +435,81 @@ impl ParallelScheduler {
             }
         }
     }
-    
+
     /// 带重试机制的事务执行
-    /// 
+    ///
     /// 在交易失败时自动重试,最多重试 max_retries 次
-    /// 
+    ///
     /// # 参数
     /// - `operation`: 要执行的操作
     /// - `max_retries`: 最大重试次数
-    /// 
+    ///
     /// # 返回
     /// - `Ok(T)`: 操作成功的结果
     /// - `Err(String)`: 所有重试都失败后的错误信息
-    pub fn execute_with_retry<T, F>(&self, mut operation: F, max_retries: u32) -> Result<T, String>
+    pub fn execute_with_retry<T, F>(&self, operation: F, max_retries: u32) -> Result<T, String>
     where
         F: FnMut(&StateManager) -> Result<T, String>,
     {
-        let mut attempts = 0;
+        let policy = RetryPolicy::default().with_max_retries(max_retries);
+        self.execute_with_retry_policy(operation, &policy)
+    }
+
+    /// 带策略的重试执行（指数退避 + 可选抖动 + 错误分类）
+    pub fn execute_with_retry_policy<T, F>(&self, mut operation: F, policy: &RetryPolicy) -> Result<T, String>
+    where
+        F: FnMut(&StateManager) -> Result<T, String>,
+    {
+        let mut attempts: u32 = 0;
         let mut last_error = String::new();
-        
-        while attempts <= max_retries {
+        let mut delay = policy.base_delay;
+
+        while attempts <= policy.max_retries {
             if attempts > 0 {
                 self.stats_retry.fetch_add(1, Ordering::Relaxed);
             }
-            
-            let result = self.execute_with_snapshot(|manager| operation(manager));
-            
-            match result {
-                Ok(value) => return Ok(value),
+
+            match self.execute_with_snapshot(|manager| operation(manager)) {
+                Ok(v) => return Ok(v),
                 Err(err) => {
-                    last_error = err;
+                    let class = (policy.classifier)(&err);
+                    if attempts == policy.max_retries || matches!(class, RetryClass::Fatal) {
+                        last_error = err;
+                        break;
+                    }
+
+                    // 退避等待
+                    if delay > Duration::from_millis(0) {
+                        let jittered = if policy.jitter_factor > 0.0 {
+                            let nanos = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.subsec_nanos())
+                                .unwrap_or(0);
+                            let r = 0.8 + (nanos % 400_000_000) as f64 / 1_000_000_000.0; // ~[0.8,1.2)
+                            Duration::from_secs_f64((delay.as_secs_f64()) * (1.0 + (policy.jitter_factor * (r - 1.0))))
+                        } else {
+                            delay
+                        };
+                        std::thread::sleep(jittered);
+                    }
+
+                    // 指数退避（上限保护）
+                    let next = Duration::from_secs_f64(delay.as_secs_f64() * policy.backoff_factor);
+                    delay = if next > policy.max_delay { policy.max_delay } else { next };
                     attempts += 1;
+                    last_error = err;
                 }
             }
         }
-        
-        Err(format!("Failed after {} attempts: {}", attempts, last_error))
+
+        Err(format!("Failed after {} attempts: {}", attempts + 1, last_error))
     }
-    
     /// 获取当前存储状态
     pub fn get_storage(&self) -> Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>> {
         let manager = self.state_manager.lock().unwrap();
         manager.get_storage()
     }
-    
+
     /// 获取当前事件列表
     pub fn get_events(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
         let manager = self.state_manager.lock().unwrap();
@@ -500,14 +568,14 @@ impl ParallelScheduler {
             }
         }
     }
-    
+
     /// 批量执行交易
-    /// 
+    ///
     /// 将多个交易作为一个批次执行,减少快照创建/提交开销
-    /// 
+    ///
     /// # 参数
     /// - `operations`: 交易操作列表,每个返回 Result<T, String>
-    /// 
+    ///
     /// # 返回
     /// - `Ok(Vec<T>)`: 所有交易成功的结果列表
     /// - `Err(String)`: 如果任何交易失败,回滚整个批次
@@ -517,12 +585,12 @@ impl ParallelScheduler {
         T: Send,
     {
         let mut manager = self.state_manager.lock().unwrap();
-        
+
         // 创建批次快照
         manager.create_snapshot()?;
-        
+
         let mut results = Vec::new();
-        
+
         // 执行所有操作
         for operation in operations {
             match operation(&manager) {
@@ -538,14 +606,15 @@ impl ParallelScheduler {
                 }
             }
         }
-        
+
         // 所有操作成功,提交批次
         manager.commit()?;
-        self.stats_successful.fetch_add(results.len() as u64, Ordering::Relaxed);
-        
+        self.stats_successful
+            .fetch_add(results.len() as u64, Ordering::Relaxed);
+
         Ok(results)
     }
-    
+
     /// 批量写入存储
     pub fn batch_write(&self, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<usize, String> {
         if let Some(store) = &self.mvcc_store {
@@ -561,7 +630,7 @@ impl ParallelScheduler {
             manager.batch_write(writes)
         }
     }
-    
+
     /// 批量读取存储
     pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<KeyValuePairs, String> {
         if let Some(store) = &self.mvcc_store {
@@ -580,7 +649,7 @@ impl ParallelScheduler {
             manager.batch_read(keys)
         }
     }
-    
+
     /// 批量删除存储
     pub fn batch_delete(&self, keys: &[Vec<u8>]) -> Result<usize, String> {
         if let Some(store) = &self.mvcc_store {
@@ -602,7 +671,7 @@ impl ParallelScheduler {
 #[derive(Debug, Clone)]
 pub struct Task {
     pub tx_id: TxId,
-    pub priority: u8,  // 任务优先级 (0-255, 值越大优先级越高)
+    pub priority: u8, // 任务优先级 (0-255, 值越大优先级越高)
 }
 
 impl Task {
@@ -612,7 +681,7 @@ impl Task {
 }
 
 /// 工作窃取调度器
-/// 
+///
 /// 使用工作窃取算法进行负载均衡:
 /// - 每个工作线程有自己的本地队列 (Worker)
 /// - 空闲线程可以从其他线程的队列"窃取"任务 (Stealer)
@@ -628,33 +697,33 @@ pub struct WorkStealingScheduler {
 
 impl WorkStealingScheduler {
     /// 创建新的工作窃取调度器
-    /// 
+    ///
     /// # 参数
     /// - `num_workers`: 工作线程数量,默认使用 CPU 核心数
     pub fn new(num_workers: Option<usize>) -> Self {
         let num_workers = num_workers.unwrap_or_else(num_cpus::get);
-        
+
         Self {
             injector: Arc::new(Injector::new()),
             scheduler: Arc::new(ParallelScheduler::new()),
             num_workers,
         }
     }
-    
+
     /// 提交任务到全局队列
     pub fn submit_task(&self, task: Task) {
         self.injector.push(task);
     }
-    
+
     /// 批量提交任务
     pub fn submit_tasks(&self, tasks: Vec<Task>) {
         for task in tasks {
             self.injector.push(task);
         }
     }
-    
+
     /// 执行所有任务
-    /// 
+    ///
     /// 使用 rayon 线程池并行执行任务,每个线程:
     /// 1. 从自己的本地队列获取任务
     /// 2. 如果本地队列为空,尝试从全局队列获取
@@ -665,85 +734,84 @@ impl WorkStealingScheduler {
     {
         let executed = Arc::new(Mutex::new(Vec::new()));
         let errors = Arc::new(Mutex::new(Vec::new()));
-        
+
         // 创建工作线程和它们的本地队列
-        let workers: Vec<Worker<Task>> = (0..self.num_workers)
-            .map(|_| Worker::new_fifo())
-            .collect();
-        
+        let workers: Vec<Worker<Task>> =
+            (0..self.num_workers).map(|_| Worker::new_fifo()).collect();
+
         // 收集窃取器
-        let stealers: Vec<Stealer<Task>> = workers
-            .iter()
-            .map(|w| w.stealer())
-            .collect();
-        
+        let stealers: Vec<Stealer<Task>> = workers.iter().map(|w| w.stealer()).collect();
+
         let injector = Arc::clone(&self.injector);
         let executor = Arc::new(executor);
-        
+
         // 使用 rayon 并行执行
-        workers.into_par_iter().enumerate().for_each(|(worker_id, worker)| {
-            let executed = Arc::clone(&executed);
-            let errors = Arc::clone(&errors);
-            let executor = Arc::clone(&executor);
-            
-            loop {
-                // 尝试从本地队列获取任务
-                let task = worker.pop().or_else(|| {
-                    // 本地队列为空,尝试从全局队列获取
-                    loop {
-                        match injector.steal_batch_and_pop(&worker) {
-                            crossbeam_deque::Steal::Success(t) => return Some(t),
-                            crossbeam_deque::Steal::Empty => break,
-                            crossbeam_deque::Steal::Retry => continue,
+        workers
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(worker_id, worker)| {
+                let executed = Arc::clone(&executed);
+                let errors = Arc::clone(&errors);
+                let executor = Arc::clone(&executor);
+
+                loop {
+                    // 尝试从本地队列获取任务
+                    let task = worker.pop().or_else(|| {
+                        // 本地队列为空,尝试从全局队列获取
+                        loop {
+                            match injector.steal_batch_and_pop(&worker) {
+                                crossbeam_deque::Steal::Success(t) => return Some(t),
+                                crossbeam_deque::Steal::Empty => break,
+                                crossbeam_deque::Steal::Retry => continue,
+                            }
                         }
-                    }
-                    
-                    // 全局队列也为空,尝试从其他线程窃取
-                    stealers.iter().enumerate()
-                        .filter(|(id, _)| *id != worker_id)
-                        .find_map(|(_, stealer)| {
-                            loop {
+
+                        // 全局队列也为空,尝试从其他线程窃取
+                        stealers
+                            .iter()
+                            .enumerate()
+                            .filter(|(id, _)| *id != worker_id)
+                            .find_map(|(_, stealer)| loop {
                                 match stealer.steal_batch_and_pop(&worker) {
                                     crossbeam_deque::Steal::Success(t) => return Some(t),
                                     crossbeam_deque::Steal::Empty => return None,
                                     crossbeam_deque::Steal::Retry => continue,
                                 }
-                            }
-                        })
-                });
-                
-                match task {
-                    Some(task) => {
-                        // 执行任务
-                        match executor(task.tx_id) {
-                            Ok(()) => {
-                                executed.lock().unwrap().push(task.tx_id);
-                            }
-                            Err(e) => {
-                                errors.lock().unwrap().push((task.tx_id, e));
+                            })
+                    });
+
+                    match task {
+                        Some(task) => {
+                            // 执行任务
+                            match executor(task.tx_id) {
+                                Ok(()) => {
+                                    executed.lock().unwrap().push(task.tx_id);
+                                }
+                                Err(e) => {
+                                    errors.lock().unwrap().push((task.tx_id, e));
+                                }
                             }
                         }
+                        None => break, // 没有更多任务
                     }
-                    None => break, // 没有更多任务
                 }
-            }
-        });
-        
+            });
+
         // 检查是否有错误
         let error_list = errors.lock().unwrap();
         if !error_list.is_empty() {
             return Err(format!("Execution failed for {} tasks", error_list.len()));
         }
-        
+
         let result = executed.lock().unwrap().clone();
         Ok(result)
     }
-    
+
     /// 获取底层并行调度器
     pub fn get_scheduler(&self) -> Arc<ParallelScheduler> {
         Arc::clone(&self.scheduler)
     }
-    
+
     /// 获取执行统计
     pub fn get_stats(&self) -> ExecutionStats {
         self.scheduler.get_stats()
@@ -753,7 +821,7 @@ impl WorkStealingScheduler {
 // 添加 num_cpus 的简单实现 (如果没有依赖)
 mod num_cpus {
     use std::thread;
-    
+
     pub fn get() -> usize {
         thread::available_parallelism()
             .map(|n| n.get())
@@ -764,91 +832,91 @@ mod num_cpus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_read_write_set_conflicts() {
         let mut rw1 = ReadWriteSet::new();
         rw1.add_read(b"key1".to_vec());
         rw1.add_write(b"key2".to_vec());
-        
+
         let mut rw2 = ReadWriteSet::new();
         rw2.add_read(b"key2".to_vec()); // 读 key2,与 rw1 的写冲突
-        
+
         assert!(rw1.conflicts_with(&rw2));
         assert!(rw2.conflicts_with(&rw1));
     }
-    
+
     #[test]
     fn test_no_conflict() {
         let mut rw1 = ReadWriteSet::new();
         rw1.add_read(b"key1".to_vec());
         rw1.add_write(b"key1".to_vec());
-        
+
         let mut rw2 = ReadWriteSet::new();
         rw2.add_read(b"key2".to_vec());
         rw2.add_write(b"key2".to_vec());
-        
+
         assert!(!rw1.conflicts_with(&rw2));
     }
-    
+
     #[test]
     fn test_dependency_graph() {
         let mut graph = DependencyGraph::new();
         graph.add_dependency(2, 1); // tx2 依赖 tx1
         graph.add_dependency(3, 1); // tx3 依赖 tx1
         graph.add_dependency(4, 2); // tx4 依赖 tx2
-        
+
         let all_txs = vec![1, 2, 3, 4];
         let mut completed = HashSet::new();
-        
+
         // 初始只有 tx1 可以执行
         let ready = graph.get_ready_transactions(&all_txs, &completed);
         assert_eq!(ready, vec![1]);
-        
+
         // tx1 完成后,tx2 和 tx3 可以并行执行
         completed.insert(1);
         let ready = graph.get_ready_transactions(&all_txs, &completed);
         assert!(ready.contains(&2) && ready.contains(&3));
-        
+
         // tx2 完成后,tx4 可以执行
         completed.insert(2);
         completed.insert(3);
         let ready = graph.get_ready_transactions(&all_txs, &completed);
         assert_eq!(ready, vec![4]);
     }
-    
+
     #[test]
     fn test_conflict_detector() {
         let mut detector = ConflictDetector::new();
-        
+
         let mut rw1 = ReadWriteSet::new();
         rw1.add_write(b"balance_alice".to_vec());
         detector.record(1, rw1);
-        
+
         let mut rw2 = ReadWriteSet::new();
         rw2.add_write(b"balance_bob".to_vec());
         detector.record(2, rw2);
-        
+
         let mut rw3 = ReadWriteSet::new();
         rw3.add_read(b"balance_alice".to_vec()); // 与 tx1 冲突
         detector.record(3, rw3);
-        
+
         // 构建依赖图
         let tx_order = vec![1, 2, 3];
         let graph = detector.build_dependency_graph(&tx_order);
-        
+
         // tx1 和 tx2 无依赖,可并行
         assert_eq!(graph.get_dependencies(1).len(), 0);
         assert_eq!(graph.get_dependencies(2).len(), 0);
-        
+
         // tx3 依赖 tx1
         assert_eq!(graph.get_dependencies(3), vec![1]);
     }
-    
+
     #[test]
     fn test_scheduler_with_snapshot() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 成功的操作
         let result = scheduler.execute_with_snapshot(|manager| {
             let storage_arc = manager.get_storage();
@@ -856,56 +924,58 @@ mod tests {
             storage.insert(b"key".to_vec(), b"value".to_vec());
             Ok(42)
         });
-        
+
         assert_eq!(result, Ok(42));
-        
+
         // 验证状态已保存
         let storage_arc = scheduler.get_storage();
         let storage = storage_arc.lock().unwrap();
         assert_eq!(storage.get(&b"key".to_vec()), Some(&b"value".to_vec()));
     }
-    
+
     #[test]
     fn test_scheduler_rollback_on_error() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 先设置初始状态
         {
             let storage_arc = scheduler.get_storage();
             let mut storage = storage_arc.lock().unwrap();
             storage.insert(b"balance".to_vec(), b"100".to_vec());
         }
-        
+
         // 执行会失败的操作
         let result: Result<(), String> = scheduler.execute_with_snapshot(|manager| {
             let storage_arc = manager.get_storage();
             let mut storage = storage_arc.lock().unwrap();
             storage.insert(b"balance".to_vec(), b"50".to_vec());
-            
+
             // 模拟失败
             Err("Insufficient funds".to_string())
         });
-        
+
         assert!(result.is_err());
-        
+
         // 验证状态已回滚
         let storage_arc = scheduler.get_storage();
         let storage = storage_arc.lock().unwrap();
         assert_eq!(storage.get(&b"balance".to_vec()), Some(&b"100".to_vec()));
     }
-    
+
     #[test]
     fn test_scheduler_nested_transactions() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 第一个事务成功
-        scheduler.execute_with_snapshot(|manager| {
-            let storage_arc = manager.get_storage();
-            let mut storage = storage_arc.lock().unwrap();
-            storage.insert(b"user1".to_vec(), b"data1".to_vec());
-            Ok(())
-        }).unwrap();
-        
+        scheduler
+            .execute_with_snapshot(|manager| {
+                let storage_arc = manager.get_storage();
+                let mut storage = storage_arc.lock().unwrap();
+                storage.insert(b"user1".to_vec(), b"data1".to_vec());
+                Ok(())
+            })
+            .unwrap();
+
         // 第二个事务失败
         let result: Result<(), String> = scheduler.execute_with_snapshot(|manager| {
             let storage_arc = manager.get_storage();
@@ -913,37 +983,38 @@ mod tests {
             storage.insert(b"user2".to_vec(), b"data2".to_vec());
             Err("Transaction failed".to_string())
         });
-        
+
         assert!(result.is_err());
-        
+
         // 验证只有第一个事务的数据存在
         let storage_arc = scheduler.get_storage();
         let storage = storage_arc.lock().unwrap();
         assert_eq!(storage.get(&b"user1".to_vec()), Some(&b"data1".to_vec()));
         assert_eq!(storage.get(&b"user2".to_vec()), None);
     }
-    
+
     #[test]
     fn test_execution_stats() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 执行一些成功的交易
         for i in 0..3 {
-            scheduler.execute_with_snapshot(|manager| {
-                let storage_arc = manager.get_storage();
-                let mut storage = storage_arc.lock().unwrap();
-                storage.insert(format!("key{}", i).into_bytes(), b"value".to_vec());
-                Ok(())
-            }).unwrap();
+            scheduler
+                .execute_with_snapshot(|manager| {
+                    let storage_arc = manager.get_storage();
+                    let mut storage = storage_arc.lock().unwrap();
+                    storage.insert(format!("key{}", i).into_bytes(), b"value".to_vec());
+                    Ok(())
+                })
+                .unwrap();
         }
-        
+
         // 执行一些失败的交易
         for _ in 0..2 {
-            let _: Result<(), String> = scheduler.execute_with_snapshot(|_manager| {
-                Err("Test error".to_string())
-            });
+            let _: Result<(), String> =
+                scheduler.execute_with_snapshot(|_manager| Err("Test error".to_string()));
         }
-        
+
         let stats = scheduler.get_stats();
         assert_eq!(stats.successful_txs, 3);
         assert_eq!(stats.failed_txs, 2);
@@ -951,20 +1022,20 @@ mod tests {
         assert_eq!(stats.total_txs(), 5);
         assert_eq!(stats.success_rate(), 0.6);
     }
-    
+
     #[test]
     fn test_retry_mechanism() {
         let scheduler = ParallelScheduler::new();
-        
+
         let mut attempt_count = 0;
-        
+
         // 模拟前两次失败,第三次成功
         let result = scheduler.execute_with_retry(
             |manager| {
                 attempt_count += 1;
-                
+
                 if attempt_count < 3 {
-                    Err(format!("Attempt {} failed", attempt_count))
+                    Err(format!("Attempt {} failed (retryable)", attempt_count))
                 } else {
                     let storage_arc = manager.get_storage();
                     let mut storage = storage_arc.lock().unwrap();
@@ -974,29 +1045,29 @@ mod tests {
             },
             5, // max_retries
         );
-        
+
         assert_eq!(result, Ok(42));
         assert_eq!(attempt_count, 3);
-        
+
         let stats = scheduler.get_stats();
         assert_eq!(stats.retry_count, 2); // 重试了 2 次
         assert_eq!(stats.successful_txs, 1);
         assert_eq!(stats.rollback_count, 2); // 前两次失败回滚
     }
-    
+
     #[test]
     fn test_retry_exhausted() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 模拟总是失败
         let result: Result<i32, String> = scheduler.execute_with_retry(
-            |_manager| Err("Always fails".to_string()),
+            |_manager| Err("Always fails (retryable)".to_string()),
             3, // max_retries
         );
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed after 4 attempts"));
-        
+
         let stats = scheduler.get_stats();
         assert_eq!(stats.retry_count, 3);
         assert_eq!(stats.failed_txs, 4); // 初次 + 3 次重试
@@ -1009,7 +1080,7 @@ mod tests {
 // ============================================
 
 /// 存储状态快照
-/// 
+///
 /// 用于在交易执行失败时回滚到之前的状态
 #[derive(Debug, Clone)]
 pub struct StorageSnapshot {
@@ -1033,7 +1104,7 @@ impl StorageSnapshot {
             events: Vec::new(),
         }
     }
-    
+
     /// 从当前状态创建快照
     pub fn from_storage(storage: &HashMap<Vec<u8>, Vec<u8>>, events: &[Vec<u8>]) -> Self {
         Self {
@@ -1041,12 +1112,12 @@ impl StorageSnapshot {
             events: events.to_vec(),
         }
     }
-    
+
     /// 获取快照的存储状态
     pub fn get_storage_state(&self) -> &HashMap<Vec<u8>, Vec<u8>> {
         &self.storage_state
     }
-    
+
     /// 获取快照的事件列表
     pub fn get_events(&self) -> &[Vec<u8>] {
         &self.events
@@ -1054,7 +1125,7 @@ impl StorageSnapshot {
 }
 
 /// 状态管理器
-/// 
+///
 /// 管理存储状态的快照和回滚
 #[derive(Debug)]
 pub struct StateManager {
@@ -1081,7 +1152,7 @@ impl StateManager {
             snapshots: Vec::new(),
         }
     }
-    
+
     /// 从现有状态创建管理器
     pub fn from_storage(storage: HashMap<Vec<u8>, Vec<u8>>) -> Self {
         Self {
@@ -1090,39 +1161,47 @@ impl StateManager {
             snapshots: Vec::new(),
         }
     }
-    
+
     /// 创建当前状态的快照
     pub fn create_snapshot(&mut self) -> Result<(), String> {
-        let storage = self.current_storage.lock()
+        let storage = self
+            .current_storage
+            .lock()
             .map_err(|e| format!("Failed to lock storage: {}", e))?;
-        let events = self.current_events.lock()
+        let events = self
+            .current_events
+            .lock()
             .map_err(|e| format!("Failed to lock events: {}", e))?;
-        
+
         let snapshot = StorageSnapshot::from_storage(&storage, &events);
         self.snapshots.push(snapshot);
-        
+
         Ok(())
     }
-    
+
     /// 回滚到最近的快照
     pub fn rollback(&mut self) -> Result<(), String> {
         if let Some(snapshot) = self.snapshots.pop() {
             // 恢复存储状态
-            let mut storage = self.current_storage.lock()
+            let mut storage = self
+                .current_storage
+                .lock()
                 .map_err(|e| format!("Failed to lock storage: {}", e))?;
             *storage = snapshot.get_storage_state().clone();
-            
+
             // 恢复事件列表
-            let mut events = self.current_events.lock()
+            let mut events = self
+                .current_events
+                .lock()
                 .map_err(|e| format!("Failed to lock events: {}", e))?;
             *events = snapshot.get_events().to_vec();
-            
+
             Ok(())
         } else {
             Err("No snapshot available to rollback".to_string())
         }
     }
-    
+
     /// 提交当前状态 (丢弃最近的快照)
     pub fn commit(&mut self) -> Result<(), String> {
         if self.snapshots.pop().is_some() {
@@ -1131,95 +1210,103 @@ impl StateManager {
             Err("No snapshot available to commit".to_string())
         }
     }
-    
+
     /// 批量写入存储 (减少锁争用)
-    /// 
+    ///
     /// # 参数
     /// - `writes`: 要写入的键值对列表
-    /// 
+    ///
     /// # 返回
     /// 写入成功返回 Ok(写入数量)
     pub fn batch_write(&self, writes: Vec<(Vec<u8>, Vec<u8>)>) -> Result<usize, String> {
-        let mut storage = self.current_storage.lock()
+        let mut storage = self
+            .current_storage
+            .lock()
             .map_err(|e| format!("Failed to lock storage: {}", e))?;
-        
+
         let count = writes.len();
         for (key, value) in writes {
             storage.insert(key, value);
         }
-        
+
         Ok(count)
     }
-    
+
     /// 批量读取存储 (减少锁争用)
-    /// 
+    ///
     /// # 参数
     /// - `keys`: 要读取的键列表
-    /// 
+    ///
     /// # 返回
     /// 键值对列表,如果某个键不存在则不包含在结果中
     pub fn batch_read(&self, keys: &[Vec<u8>]) -> Result<KeyValuePairs, String> {
-        let storage = self.current_storage.lock()
+        let storage = self
+            .current_storage
+            .lock()
             .map_err(|e| format!("Failed to lock storage: {}", e))?;
-        
+
         let mut results = Vec::new();
         for key in keys {
             if let Some(value) = storage.get(key) {
                 results.push((key.clone(), value.clone()));
             }
         }
-        
+
         Ok(results)
     }
-    
+
     /// 批量删除存储 (减少锁争用)
-    /// 
+    ///
     /// # 参数
     /// - `keys`: 要删除的键列表
-    /// 
+    ///
     /// # 返回
     /// 删除的数量
     pub fn batch_delete(&self, keys: &[Vec<u8>]) -> Result<usize, String> {
-        let mut storage = self.current_storage.lock()
+        let mut storage = self
+            .current_storage
+            .lock()
             .map_err(|e| format!("Failed to lock storage: {}", e))?;
-        
+
         let mut count = 0;
         for key in keys {
             if storage.remove(key).is_some() {
                 count += 1;
             }
         }
-        
+
         Ok(count)
     }
-    
+
     /// 批量发送事件 (减少锁争用)
-    /// 
+    ///
     /// # 参数
     /// - `events`: 要发送的事件列表
-    /// 
+    ///
     /// # 返回
     /// 发送的事件数量
     pub fn batch_emit_events(&self, events: Vec<Vec<u8>>) -> Result<usize, String> {
-        let mut event_list = self.current_events.lock()
+        let mut event_list = self
+            .current_events
+            .lock()
             .map_err(|e| format!("Failed to lock events: {}", e))?;
-        
+
         let count = events.len();
         event_list.extend(events);
-        
+
         Ok(count)
     }
-    
+
     /// 获取当前存储状态的引用
     pub fn get_storage(&self) -> Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>> {
         Arc::clone(&self.current_storage)
     }
-    
+
     /// 获取当前事件列表的引用
     pub fn get_events(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
         Arc::clone(&self.current_events)
     }
-    
+
     /// 获取快照深度 (当前有多少个快照)
     pub fn snapshot_depth(&self) -> usize {
         self.snapshots.len()
@@ -1229,11 +1316,11 @@ impl StateManager {
 #[cfg(test)]
 mod snapshot_tests {
     use super::*;
-    
+
     #[test]
     fn test_snapshot_creation() {
         let mut manager = StateManager::new();
-        
+
         // 添加一些数据
         {
             let storage_arc = manager.get_storage();
@@ -1241,11 +1328,11 @@ mod snapshot_tests {
             storage.insert(b"key1".to_vec(), b"value1".to_vec());
             storage.insert(b"key2".to_vec(), b"value2".to_vec());
         }
-        
+
         // 创建快照
         manager.create_snapshot().unwrap();
         assert_eq!(manager.snapshot_depth(), 1);
-        
+
         // 修改数据
         {
             let storage_arc = manager.get_storage();
@@ -1253,7 +1340,7 @@ mod snapshot_tests {
             storage.insert(b"key1".to_vec(), b"new_value".to_vec());
             storage.insert(b"key3".to_vec(), b"value3".to_vec());
         }
-        
+
         // 验证修改生效
         {
             let storage_arc = manager.get_storage();
@@ -1262,21 +1349,21 @@ mod snapshot_tests {
             assert_eq!(storage.len(), 3);
         }
     }
-    
+
     #[test]
     fn test_rollback() {
         let mut manager = StateManager::new();
-        
+
         // 初始状态
         {
             let storage_arc = manager.get_storage();
             let mut storage = storage_arc.lock().unwrap();
             storage.insert(b"key1".to_vec(), b"value1".to_vec());
         }
-        
+
         // 创建快照
         manager.create_snapshot().unwrap();
-        
+
         // 修改数据
         {
             let storage_arc = manager.get_storage();
@@ -1284,10 +1371,10 @@ mod snapshot_tests {
             storage.insert(b"key1".to_vec(), b"modified".to_vec());
             storage.insert(b"key2".to_vec(), b"value2".to_vec());
         }
-        
+
         // 回滚
         manager.rollback().unwrap();
-        
+
         // 验证回滚成功
         {
             let storage_arc = manager.get_storage();
@@ -1298,11 +1385,11 @@ mod snapshot_tests {
         }
         assert_eq!(manager.snapshot_depth(), 0);
     }
-    
+
     #[test]
     fn test_nested_snapshots() {
         let mut manager = StateManager::new();
-        
+
         // 第一层状态
         {
             let storage_arc = manager.get_storage();
@@ -1310,7 +1397,7 @@ mod snapshot_tests {
             storage.insert(b"key".to_vec(), b"v1".to_vec());
         }
         manager.create_snapshot().unwrap();
-        
+
         // 第二层状态
         {
             let storage_arc = manager.get_storage();
@@ -1318,16 +1405,16 @@ mod snapshot_tests {
             storage.insert(b"key".to_vec(), b"v2".to_vec());
         }
         manager.create_snapshot().unwrap();
-        
+
         // 第三层状态
         {
             let storage_arc = manager.get_storage();
             let mut storage = storage_arc.lock().unwrap();
             storage.insert(b"key".to_vec(), b"v3".to_vec());
         }
-        
+
         assert_eq!(manager.snapshot_depth(), 2);
-        
+
         // 回滚到第二层
         manager.rollback().unwrap();
         {
@@ -1335,7 +1422,7 @@ mod snapshot_tests {
             let storage = storage_arc.lock().unwrap();
             assert_eq!(storage.get(&b"key".to_vec()), Some(&b"v2".to_vec()));
         }
-        
+
         // 回滚到第一层
         manager.rollback().unwrap();
         {
@@ -1343,55 +1430,55 @@ mod snapshot_tests {
             let storage = storage_arc.lock().unwrap();
             assert_eq!(storage.get(&b"key".to_vec()), Some(&b"v1".to_vec()));
         }
-        
+
         assert_eq!(manager.snapshot_depth(), 0);
     }
-    
+
     #[test]
     fn test_commit() {
         let mut manager = StateManager::new();
-        
+
         {
             let storage_arc = manager.get_storage();
             let mut storage = storage_arc.lock().unwrap();
             storage.insert(b"key".to_vec(), b"value1".to_vec());
         }
         manager.create_snapshot().unwrap();
-        
+
         {
             let storage_arc = manager.get_storage();
             let mut storage = storage_arc.lock().unwrap();
             storage.insert(b"key".to_vec(), b"value2".to_vec());
         }
-        
+
         // 提交 (丢弃快照但保留当前状态)
         manager.commit().unwrap();
         assert_eq!(manager.snapshot_depth(), 0);
-        
+
         // 当前状态应该保持 value2
         {
             let storage_arc = manager.get_storage();
             let storage = storage_arc.lock().unwrap();
             assert_eq!(storage.get(&b"key".to_vec()), Some(&b"value2".to_vec()));
         }
-        
+
         // 无法回滚
         assert!(manager.rollback().is_err());
     }
-    
+
     #[test]
     fn test_snapshot_with_events() {
         let mut manager = StateManager::new();
-        
+
         // 添加事件
         {
             let events_arc = manager.get_events();
             let mut events = events_arc.lock().unwrap();
             events.push(b"event1".to_vec());
         }
-        
+
         manager.create_snapshot().unwrap();
-        
+
         // 添加更多事件
         {
             let events_arc = manager.get_events();
@@ -1399,10 +1486,10 @@ mod snapshot_tests {
             events.push(b"event2".to_vec());
             events.push(b"event3".to_vec());
         }
-        
+
         // 回滚
         manager.rollback().unwrap();
-        
+
         // 验证只有 event1 存在
         {
             let events_arc = manager.get_events();
@@ -1411,21 +1498,21 @@ mod snapshot_tests {
             assert_eq!(events[0], b"event1");
         }
     }
-    
+
     #[test]
     fn test_batch_write() {
         let manager = StateManager::new();
-        
+
         // 批量写入
         let writes = vec![
             (b"key1".to_vec(), b"value1".to_vec()),
             (b"key2".to_vec(), b"value2".to_vec()),
             (b"key3".to_vec(), b"value3".to_vec()),
         ];
-        
+
         let count = manager.batch_write(writes).unwrap();
         assert_eq!(count, 3);
-        
+
         // 验证写入
         let storage = manager.get_storage();
         let storage = storage.lock().unwrap();
@@ -1433,11 +1520,11 @@ mod snapshot_tests {
         assert_eq!(storage.get(&b"key2".to_vec()), Some(&b"value2".to_vec()));
         assert_eq!(storage.get(&b"key3".to_vec()), Some(&b"value3".to_vec()));
     }
-    
+
     #[test]
     fn test_batch_read() {
         let manager = StateManager::new();
-        
+
         // 先写入数据
         {
             let storage = manager.get_storage();
@@ -1446,26 +1533,30 @@ mod snapshot_tests {
             storage.insert(b"key2".to_vec(), b"value2".to_vec());
             storage.insert(b"key3".to_vec(), b"value3".to_vec());
         }
-        
+
         // 批量读取
         let keys = vec![
             b"key1".to_vec(),
             b"key2".to_vec(),
             b"key_not_exist".to_vec(),
         ];
-        
+
         let results = manager.batch_read(&keys).unwrap();
         assert_eq!(results.len(), 2); // 只返回存在的键
-        
+
         // 验证结果
-        assert!(results.iter().any(|(k, v)| k == &b"key1".to_vec() && v == &b"value1".to_vec()));
-        assert!(results.iter().any(|(k, v)| k == &b"key2".to_vec() && v == &b"value2".to_vec()));
+        assert!(results
+            .iter()
+            .any(|(k, v)| k == &b"key1".to_vec() && v == &b"value1".to_vec()));
+        assert!(results
+            .iter()
+            .any(|(k, v)| k == &b"key2".to_vec() && v == &b"value2".to_vec()));
     }
-    
+
     #[test]
     fn test_batch_delete() {
         let manager = StateManager::new();
-        
+
         // 先写入数据
         {
             let storage = manager.get_storage();
@@ -1474,17 +1565,17 @@ mod snapshot_tests {
             storage.insert(b"key2".to_vec(), b"value2".to_vec());
             storage.insert(b"key3".to_vec(), b"value3".to_vec());
         }
-        
+
         // 批量删除
         let keys = vec![
             b"key1".to_vec(),
             b"key2".to_vec(),
             b"key_not_exist".to_vec(),
         ];
-        
+
         let count = manager.batch_delete(&keys).unwrap();
         assert_eq!(count, 2); // 只删除存在的键
-        
+
         // 验证删除
         let storage = manager.get_storage();
         let storage = storage.lock().unwrap();
@@ -1492,21 +1583,17 @@ mod snapshot_tests {
         assert!(!storage.contains_key(&b"key2".to_vec()));
         assert!(storage.contains_key(&b"key3".to_vec()));
     }
-    
+
     #[test]
     fn test_batch_emit_events() {
         let manager = StateManager::new();
-        
+
         // 批量发送事件
-        let events = vec![
-            b"event1".to_vec(),
-            b"event2".to_vec(),
-            b"event3".to_vec(),
-        ];
-        
+        let events = vec![b"event1".to_vec(), b"event2".to_vec(), b"event3".to_vec()];
+
         let count = manager.batch_emit_events(events).unwrap();
         assert_eq!(count, 3);
-        
+
         // 验证事件
         let event_list = manager.get_events();
         let event_list = event_list.lock().unwrap();
@@ -1515,11 +1602,11 @@ mod snapshot_tests {
         assert_eq!(event_list[1], b"event2");
         assert_eq!(event_list[2], b"event3");
     }
-    
+
     #[test]
     fn test_execute_batch() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 批量执行交易
         let operations = vec![
             Box::new(|manager: &StateManager| {
@@ -1541,26 +1628,26 @@ mod snapshot_tests {
                 Ok(3)
             }),
         ];
-        
+
         let results = scheduler.execute_batch(operations).unwrap();
         assert_eq!(results, vec![1, 2, 3]);
-        
+
         // 验证所有交易都已提交
         let storage = scheduler.get_storage();
         let storage = storage.lock().unwrap();
         assert_eq!(storage.get(&b"tx1".to_vec()), Some(&b"result1".to_vec()));
         assert_eq!(storage.get(&b"tx2".to_vec()), Some(&b"result2".to_vec()));
         assert_eq!(storage.get(&b"tx3".to_vec()), Some(&b"result3".to_vec()));
-        
+
         // 验证统计
         let stats = scheduler.get_stats();
         assert_eq!(stats.successful_txs, 3);
     }
-    
+
     #[test]
     fn test_execute_batch_rollback() {
         let scheduler = ParallelScheduler::new();
-        
+
         // 批量执行,其中一个失败
         let operations = vec![
             Box::new(|manager: &StateManager| {
@@ -1569,9 +1656,7 @@ mod snapshot_tests {
                 storage.insert(b"tx1".to_vec(), b"result1".to_vec());
                 Ok(1)
             }) as Box<dyn FnOnce(&StateManager) -> Result<i32, String>>,
-            Box::new(|_manager: &StateManager| {
-                Err("Simulated failure".to_string())
-            }),
+            Box::new(|_manager: &StateManager| Err("Simulated failure".to_string())),
             Box::new(|manager: &StateManager| {
                 let storage = manager.get_storage();
                 let mut storage = storage.lock().unwrap();
@@ -1579,76 +1664,74 @@ mod snapshot_tests {
                 Ok(3)
             }),
         ];
-        
+
         let result = scheduler.execute_batch(operations);
         assert!(result.is_err());
-        
+
         // 验证所有交易都已回滚
         let storage = scheduler.get_storage();
         let storage = storage.lock().unwrap();
         assert!(!storage.contains_key(&b"tx1".to_vec()));
         assert!(!storage.contains_key(&b"tx3".to_vec()));
-        
+
         // 验证统计
         let stats = scheduler.get_stats();
         assert_eq!(stats.failed_txs, 1);
         assert_eq!(stats.rollback_count, 1);
     }
-    
+
     #[test]
     fn test_work_stealing_basic() {
         let ws_scheduler = WorkStealingScheduler::new(Some(4));
-        
+
         // 提交 10 个任务
-        let tasks: Vec<Task> = (1..=10)
-            .map(|i| Task::new(i, 100))
-            .collect();
-        
+        let tasks: Vec<Task> = (1..=10).map(|i| Task::new(i, 100)).collect();
+
         ws_scheduler.submit_tasks(tasks);
-        
+
         // 执行所有任务
         let executed_count = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let executed_count_clone = Arc::clone(&executed_count);
-        
+
         let result = ws_scheduler.execute_all(move |tx_id| {
             executed_count_clone.fetch_add(1, Ordering::Relaxed);
             println!("Executing tx {}", tx_id);
             Ok(())
         });
-        
+
         assert!(result.is_ok());
         assert_eq!(executed_count.load(Ordering::Relaxed), 10);
     }
-    
+
     #[test]
     fn test_work_stealing_with_priorities() {
         let ws_scheduler = WorkStealingScheduler::new(Some(2));
-        
+
         // 提交不同优先级的任务
         ws_scheduler.submit_task(Task::new(1, 255)); // 高优先级
         ws_scheduler.submit_task(Task::new(2, 128)); // 中优先级
-        ws_scheduler.submit_task(Task::new(3, 50));  // 低优先级
-        
+        ws_scheduler.submit_task(Task::new(3, 50)); // 低优先级
+
         let executed = Arc::new(Mutex::new(Vec::new()));
         let executed_clone = Arc::clone(&executed);
-        
+
         let result = ws_scheduler.execute_all(move |tx_id| {
             executed_clone.lock().unwrap().push(tx_id);
             Ok(())
         });
-        
+
         assert!(result.is_ok());
         assert_eq!(executed.lock().unwrap().len(), 3);
     }
-    
+
     #[test]
     fn test_work_stealing_with_errors() {
         let ws_scheduler = WorkStealingScheduler::new(Some(2));
-        
+
         // 提交会失败的任务
         ws_scheduler.submit_task(Task::new(1, 100));
         ws_scheduler.submit_task(Task::new(2, 100));
-        
+
         let result = ws_scheduler.execute_all(|tx_id| {
             if tx_id == 2 {
                 Err("Simulated error".to_string())
@@ -1656,7 +1739,7 @@ mod snapshot_tests {
                 Ok(())
             }
         });
-        
+
         // 应该返回错误
         assert!(result.is_err());
     }
@@ -1669,7 +1752,7 @@ mod snapshot_tests {
     fn test_scheduler_mvcc_basic_commit() {
         use crate::mvcc::MvccStore;
         use std::sync::Arc;
-        
+
         let mvcc = Arc::new(MvccStore::new());
         let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc));
 
@@ -1689,7 +1772,7 @@ mod snapshot_tests {
     fn test_scheduler_mvcc_abort_on_error() {
         use crate::mvcc::MvccStore;
         use std::sync::Arc;
-        
+
         let mvcc = Arc::new(MvccStore::new());
         let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc));
 
@@ -1709,21 +1792,453 @@ mod snapshot_tests {
     fn test_scheduler_mvcc_read_only_fast_path() {
         use crate::mvcc::MvccStore;
         use std::sync::Arc;
-        
+
         let mvcc = Arc::new(MvccStore::new());
         let scheduler = ParallelScheduler::new_with_mvcc(Arc::clone(&mvcc));
 
         // 先写入
-        scheduler.execute_with_mvcc(|txn| {
-            txn.write(b"rk".to_vec(), b"rv".to_vec());
-            Ok(())
-        }).unwrap();
+        scheduler
+            .execute_with_mvcc(|txn| {
+                txn.write(b"rk".to_vec(), b"rv".to_vec());
+                Ok(())
+            })
+            .unwrap();
 
         // 只读查询
-        let r = scheduler.execute_with_mvcc_read_only(|txn: &mut Txn| {
-            Ok(txn.read(b"rk"))
-        }).unwrap();
+        let r = scheduler
+            .execute_with_mvcc_read_only(|txn: &mut Txn| Ok(txn.read(b"rk")))
+            .unwrap();
 
         assert_eq!(r.as_deref(), Some(b"rv".as_ref()));
+    }
+}
+
+// ============================================================================
+// FastPathExecutor - Phase 5: 快速通道执行器
+// ============================================================================
+
+use crate::metrics::LatencyHistogram;
+
+/// 快速通道执行器（用于独占对象，零冲突）
+///
+/// 特性：
+/// - 无需 MVCC 版本控制
+/// - 无锁直接执行
+/// - 目标 TPS: 500K+
+/// - 延迟: P50 < 1μs, P99 < 5μs
+/// - 增强可观测性: p50/p90/p95/p99 延迟分位、队列长度、重试统计
+/// - 拥塞控制: 动态退避策略,防止重试风暴
+pub struct FastPathExecutor {
+    /// 执行统计
+    executed_count: AtomicU64,
+    /// 失败计数
+    failed_count: AtomicU64,
+    /// 总延迟（纳秒）
+    total_latency_ns: AtomicU64,
+    /// 延迟直方图（用于分位统计）
+    latency_histogram: Arc<LatencyHistogram>,
+    /// 重试计数
+    retry_count: AtomicU64,
+    /// 当前队列长度（模拟值，实际使用时连接真实队列）
+    queue_length: AtomicU64,
+    /// 热键追踪（key -> 访问计数）
+    hot_keys: Arc<Mutex<HashMap<u64, u64>>>,
+    /// 拥塞控制阈值
+    congestion_threshold: AtomicU64,
+}
+
+impl FastPathExecutor {
+    pub fn new() -> Self {
+        Self {
+            executed_count: AtomicU64::new(0),
+            failed_count: AtomicU64::new(0),
+            total_latency_ns: AtomicU64::new(0),
+            latency_histogram: Arc::new(LatencyHistogram::new()),
+            retry_count: AtomicU64::new(0),
+            queue_length: AtomicU64::new(0),
+            hot_keys: Arc::new(Mutex::new(HashMap::new())),
+            congestion_threshold: AtomicU64::new(1000), // 默认阈值: 队列长度 1000
+        }
+    }
+
+    /// 使用自定义延迟直方图创建（用于外部指标集成）
+    pub fn with_histogram(histogram: Arc<LatencyHistogram>) -> Self {
+        Self {
+            executed_count: AtomicU64::new(0),
+            failed_count: AtomicU64::new(0),
+            total_latency_ns: AtomicU64::new(0),
+            latency_histogram: histogram,
+            retry_count: AtomicU64::new(0),
+            queue_length: AtomicU64::new(0),
+            hot_keys: Arc::new(Mutex::new(HashMap::new())),
+            congestion_threshold: AtomicU64::new(1000),
+        }
+    }
+
+    /// 执行独占对象事务（快速通道）
+    ///
+    /// # 参数
+    /// - `tx_id`: 事务 ID
+    /// - `operation`: 事务操作闭包
+    ///
+    /// # 返回
+    /// - `Ok(return_value)`: 执行成功，返回值
+    /// - `Err(msg)`: 执行失败，错误信息
+    pub fn execute<F>(&self, _tx_id: TxId, operation: F) -> Result<i32, String>
+    where
+        F: FnOnce() -> Result<i32, String>,
+    {
+        let start = std::time::Instant::now();
+
+        let result = operation();
+
+        let elapsed = start.elapsed();
+        let latency_ns = elapsed.as_nanos() as u64;
+        
+        // 记录到直方图（用于分位统计）
+        self.latency_histogram.observe(elapsed);
+        
+        self.total_latency_ns.fetch_add(latency_ns, Ordering::Relaxed);
+
+        match result {
+            Ok(val) => {
+                self.executed_count.fetch_add(1, Ordering::Relaxed);
+                Ok(val)
+            }
+            Err(e) => {
+                self.failed_count.fetch_add(1, Ordering::Relaxed);
+                Err(e)
+            }
+        }
+    }
+
+    /// 带重试的执行（指数退避）
+    pub fn execute_with_retry<F>(&self, tx_id: TxId, operation: F, max_retries: u32) -> Result<i32, String>
+    where
+        F: Fn() -> Result<i32, String>,
+    {
+        let mut attempts = 0;
+        let mut delay_ms = 1u64;
+
+        loop {
+            match self.execute(tx_id, &operation) {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if attempts >= max_retries {
+                        return Err(format!("Failed after {} retries: {}", attempts, e));
+                    }
+                    
+                    self.retry_count.fetch_add(1, Ordering::Relaxed);
+                    
+                    // 指数退避（带抖动）
+                    let jitter = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .subsec_nanos() % 100) as u64;
+                    let actual_delay = delay_ms + jitter / 1_000_000;
+                    
+                    std::thread::sleep(Duration::from_millis(actual_delay));
+                    
+                    delay_ms = (delay_ms * 2).min(1000); // 上限1秒
+                    attempts += 1;
+                }
+            }
+        }
+    }
+
+    /// 更新队列长度（由调度器调用）
+    pub fn set_queue_length(&self, length: u64) {
+        self.queue_length.store(length, Ordering::Relaxed);
+    }
+
+    /// 获取当前队列长度
+    pub fn get_queue_length(&self) -> u64 {
+        self.queue_length.load(Ordering::Relaxed)
+    }
+
+    /// 设置拥塞控制阈值（队列长度超过此值触发退避）
+    pub fn set_congestion_threshold(&self, threshold: u64) {
+        self.congestion_threshold.store(threshold, Ordering::Relaxed);
+    }
+
+    /// 检查是否拥塞
+    pub fn is_congested(&self) -> bool {
+        let queue_len = self.get_queue_length();
+        let threshold = self.congestion_threshold.load(Ordering::Relaxed);
+        queue_len > threshold
+    }
+
+    /// 记录 key 访问（用于热键检测）
+    pub fn track_key_access(&self, key: u64) {
+        if let Ok(mut hot_keys) = self.hot_keys.lock() {
+            *hot_keys.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    /// 获取 Top-K 热键
+    pub fn get_hot_keys(&self, top_k: usize) -> Vec<(u64, u64)> {
+        if let Ok(hot_keys) = self.hot_keys.lock() {
+            let mut entries: Vec<_> = hot_keys.iter()
+                .map(|(k, v)| (*k, *v))
+                .collect();
+            entries.sort_by(|a, b| b.1.cmp(&a.1)); // 降序排列
+            entries.truncate(top_k);
+            entries
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 清空热键统计（用于周期性重置）
+    pub fn reset_hot_keys(&self) {
+        if let Ok(mut hot_keys) = self.hot_keys.lock() {
+            hot_keys.clear();
+        }
+    }
+
+    /// 获取拥塞阈值
+    pub fn get_congestion_threshold(&self) -> u64 {
+        self.congestion_threshold.load(Ordering::Relaxed)
+    }
+
+    /// 获取重试计数
+    pub fn get_retry_count(&self) -> u64 {
+        self.retry_count.load(Ordering::Relaxed)
+    }
+
+    /// 带拥塞感知的智能重试
+    pub fn execute_with_congestion_control<F>(
+        &self,
+        tx_id: TxId,
+        operation: F,
+        max_retries: u32,
+    ) -> Result<i32, String>
+    where
+        F: Fn() -> Result<i32, String>,
+    {
+        let mut attempts = 0;
+        let mut delay_ms = 1u64;
+
+        loop {
+            // 拥塞检测: 如果队列拥塞,增加额外退避
+            let congestion_multiplier = if self.is_congested() {
+                let queue_len = self.get_queue_length();
+                let threshold = self.congestion_threshold.load(Ordering::Relaxed);
+                // 根据拥塞程度线性增加退避时间(最多 10x)
+                ((queue_len as f64 / threshold as f64).min(10.0)) as u64
+            } else {
+                1
+            };
+
+            match self.execute(tx_id, &operation) {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    if attempts >= max_retries {
+                        return Err(format!("Failed after {} retries (congestion: {}x): {}",
+                            attempts, congestion_multiplier, e));
+                    }
+
+                    self.retry_count.fetch_add(1, Ordering::Relaxed);
+
+                    // 指数退避 + 拥塞感知 + 抖动
+                    let jitter = (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .subsec_nanos() % 100) as u64;
+                    
+                    let base_delay = delay_ms * congestion_multiplier;
+                    let actual_delay = base_delay + jitter / 1_000_000;
+
+                    std::thread::sleep(Duration::from_millis(actual_delay));
+
+                    delay_ms = (delay_ms * 2).min(1000); // 上限 1 秒
+                    attempts += 1;
+                }
+            }
+        }
+    }
+
+    /// 批量执行（并行）
+    pub fn execute_batch<F>(&self, operations: Vec<(TxId, F)>) -> Vec<Result<i32, String>>
+    where
+        F: FnOnce() -> Result<i32, String> + Send,
+    {
+        operations
+            .into_par_iter()
+            .map(|(tx_id, op)| self.execute(tx_id, op))
+            .collect()
+    }
+
+    /// 获取执行统计
+    pub fn stats(&self) -> FastPathStats {
+        let executed = self.executed_count.load(Ordering::Relaxed);
+        let failed = self.failed_count.load(Ordering::Relaxed);
+        let total_latency = self.total_latency_ns.load(Ordering::Relaxed);
+        let retries = self.retry_count.load(Ordering::Relaxed);
+        let queue_len = self.queue_length.load(Ordering::Relaxed);
+
+        // 获取延迟分位
+        let (p50, p90, p99) = self.latency_histogram.percentiles();
+        let p95 = self.latency_histogram.percentile(0.95);
+
+        FastPathStats {
+            executed_count: executed,
+            failed_count: failed,
+            avg_latency_ns: if executed > 0 {
+                total_latency / executed
+            } else {
+                0
+            },
+            retry_count: retries,
+            queue_length: queue_len,
+            p50_latency_ms: p50,
+            p90_latency_ms: p90,
+            p95_latency_ms: p95,
+            p99_latency_ms: p99,
+        }
+    }
+
+    /// 重置统计
+    pub fn reset_stats(&self) {
+        self.executed_count.store(0, Ordering::Relaxed);
+        self.failed_count.store(0, Ordering::Relaxed);
+        self.total_latency_ns.store(0, Ordering::Relaxed);
+        self.retry_count.store(0, Ordering::Relaxed);
+        // 注意: latency_histogram 需要单独清空（如果需要）
+    }
+
+    /// 导出 Prometheus 格式指标
+    pub fn export_prometheus(&self, prefix: &str) -> String {
+        let stats = self.stats();
+        
+        format!(
+            "# HELP {}_txns_total Total number of FastPath transactions\n\
+             # TYPE {}_txns_total counter\n\
+             {}_txns_total{{status=\"success\"}} {}\n\
+             {}_txns_total{{status=\"failed\"}} {}\n\
+             \n\
+             # HELP {}_latency_ms FastPath transaction latency in milliseconds\n\
+             # TYPE {}_latency_ms summary\n\
+             {}_latency_ms{{quantile=\"0.5\"}} {}\n\
+             {}_latency_ms{{quantile=\"0.9\"}} {}\n\
+             {}_latency_ms{{quantile=\"0.95\"}} {}\n\
+             {}_latency_ms{{quantile=\"0.99\"}} {}\n\
+             {}_latency_ms_sum {}\n\
+             {}_latency_ms_count {}\n\
+             \n\
+             # HELP {}_retries_total Total number of retries\n\
+             # TYPE {}_retries_total counter\n\
+             {}_retries_total {}\n\
+             \n\
+             # HELP {}_queue_length Current queue length\n\
+             # TYPE {}_queue_length gauge\n\
+             {}_queue_length {}\n",
+            prefix, prefix,
+            prefix, stats.executed_count,
+            prefix, stats.failed_count,
+            
+            prefix, prefix,
+            prefix, stats.p50_latency_ms,
+            prefix, stats.p90_latency_ms,
+            prefix, stats.p95_latency_ms,
+            prefix, stats.p99_latency_ms,
+            prefix, (stats.avg_latency_ns as f64 / 1_000_000.0) * stats.executed_count as f64,
+            prefix, stats.executed_count,
+            
+            prefix, prefix,
+            prefix, stats.retry_count,
+            
+            prefix, prefix,
+            prefix, stats.queue_length,
+        )
+    }
+}
+
+impl Default for FastPathExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 快速通道统计信息
+#[derive(Debug, Clone, Copy)]
+pub struct FastPathStats {
+    /// 执行成功次数
+    pub executed_count: u64,
+    /// 执行失败次数
+    pub failed_count: u64,
+    /// 平均延迟（纳秒）
+    pub avg_latency_ns: u64,
+    /// 重试次数
+    pub retry_count: u64,
+    /// 当前队列长度
+    pub queue_length: u64,
+    /// P50 延迟（毫秒）
+    pub p50_latency_ms: f64,
+    /// P90 延迟（毫秒）
+    pub p90_latency_ms: f64,
+    /// P95 延迟（毫秒）
+    pub p95_latency_ms: f64,
+    /// P99 延迟（毫秒）
+    pub p99_latency_ms: f64,
+}
+
+impl FastPathStats {
+    /// 计算 TPS（基于平均延迟）
+    pub fn estimated_tps(&self) -> f64 {
+        if self.avg_latency_ns > 0 {
+            1_000_000_000.0 / self.avg_latency_ns as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// 成功率
+    pub fn success_rate(&self) -> f64 {
+        let total = self.executed_count + self.failed_count;
+        if total > 0 {
+            self.executed_count as f64 / total as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// 重试率
+    pub fn retry_rate(&self) -> f64 {
+        let total = self.executed_count + self.failed_count;
+        if total > 0 {
+            self.retry_count as f64 / total as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// 格式化为人类可读的摘要
+    pub fn summary(&self) -> String {
+        format!(
+            "FastPath Stats:\n\
+             - Executed: {} (success rate: {:.2}%)\n\
+             - Failed: {}\n\
+             - Retries: {} (retry rate: {:.2}%)\n\
+             - Queue Length: {}\n\
+             - Estimated TPS: {:.0}\n\
+             - Latency (avg): {:.3}ms\n\
+             - Latency (p50): {:.3}ms\n\
+             - Latency (p90): {:.3}ms\n\
+             - Latency (p95): {:.3}ms\n\
+             - Latency (p99): {:.3}ms",
+            self.executed_count,
+            self.success_rate() * 100.0,
+            self.failed_count,
+            self.retry_count,
+            self.retry_rate() * 100.0,
+            self.queue_length,
+            self.estimated_tps(),
+            self.avg_latency_ns as f64 / 1_000_000.0,
+            self.p50_latency_ms,
+            self.p90_latency_ms,
+            self.p95_latency_ms,
+            self.p99_latency_ms,
+        )
     }
 }

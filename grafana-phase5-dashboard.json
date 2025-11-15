@@ -1,0 +1,646 @@
+{
+  "dashboard": {
+    "title": "SuperVM Phase 5 - Three-Channel Routing Performance",
+    "tags": ["supervm", "phase5", "routing", "performance"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "5s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "三通道吞吐量 (TPS)",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 0,
+          "w": 12,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "rate(vm_routing_fast_total[1m])",
+            "legendFormat": "FastPath TPS",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(vm_routing_consensus_total[1m])",
+            "legendFormat": "Consensus TPS",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(vm_routing_privacy_total[1m])",
+            "legendFormat": "Privacy TPS",
+            "refId": "C"
+          },
+          {
+            "expr": "rate(vm_routing_fast_total[1m]) + rate(vm_routing_consensus_total[1m]) + rate(vm_routing_privacy_total[1m])",
+            "legendFormat": "Total TPS",
+            "refId": "D"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "TPS",
+            "logBase": 1,
+            "min": 0
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true,
+          "min": false,
+          "values": true
+        },
+        "lines": true,
+        "fill": 2,
+        "linewidth": 2,
+        "pointradius": 5,
+        "points": false,
+        "stack": false
+      },
+      {
+        "id": 2,
+        "title": "路由比例分布",
+        "type": "piechart",
+        "gridPos": {
+          "x": 12,
+          "y": 0,
+          "w": 6,
+          "h": 8
+        },
+        "targets": [
+          {
+            "expr": "vm_routing_fast_total",
+            "legendFormat": "FastPath",
+            "refId": "A"
+          },
+          {
+            "expr": "vm_routing_consensus_total",
+            "legendFormat": "Consensus",
+            "refId": "B"
+          },
+          {
+            "expr": "vm_routing_privacy_total",
+            "legendFormat": "Privacy",
+            "refId": "C"
+          }
+        ],
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "values": ["value", "percent"]
+          },
+          "pieType": "pie",
+          "displayLabels": ["name", "percent"]
+        }
+      },
+      {
+        "id": 3,
+        "title": "FastPath 成功率",
+        "type": "stat",
+        "gridPos": {
+          "x": 18,
+          "y": 0,
+          "w": 6,
+          "h": 4
+        },
+        "targets": [
+          {
+            "expr": "(sum(vm_fast_path_success_total) / sum(vm_fast_path_attempts_total)) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "red"
+                },
+                {
+                  "value": 95,
+                  "color": "yellow"
+                },
+                {
+                  "value": 99,
+                  "color": "green"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Fast→Consensus 回退统计",
+        "type": "stat",
+        "gridPos": {
+          "x": 18,
+          "y": 4,
+          "w": 6,
+          "h": 4
+        },
+        "targets": [
+          {
+            "expr": "vm_fast_fallback_total",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "value": null,
+                  "color": "green"
+                },
+                {
+                  "value": 1000,
+                  "color": "yellow"
+                },
+                {
+                  "value": 10000,
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "FastPath 平均延迟",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 8,
+          "w": 12,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "vm_fast_path_avg_latency_ns",
+            "legendFormat": "Avg Latency (ns)",
+            "refId": "A"
+          },
+          {
+            "expr": "vm_fast_path_last_latency_ns",
+            "legendFormat": "Last Latency (ns)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ns",
+            "label": "Latency",
+            "logBase": 1,
+            "min": 0
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 1,
+        "linewidth": 2
+      },
+      {
+        "id": 6,
+        "title": "ZK 验证延迟分布 (Privacy 路径)",
+        "type": "graph",
+        "gridPos": {
+          "x": 12,
+          "y": 8,
+          "w": 12,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "vm_zk_verify_latency_avg_ms",
+            "legendFormat": "Avg",
+            "refId": "A"
+          },
+          {
+            "expr": "vm_zk_verify_latency_p50_ms",
+            "legendFormat": "P50",
+            "refId": "B"
+          },
+          {
+            "expr": "vm_zk_verify_latency_p90_ms",
+            "legendFormat": "P90",
+            "refId": "C"
+          },
+          {
+            "expr": "vm_zk_verify_latency_p99_ms",
+            "legendFormat": "P99",
+            "refId": "D"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ms",
+            "label": "Latency",
+            "logBase": 1,
+            "min": 0
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 1,
+        "linewidth": 2
+      },
+      {
+        "id": 7,
+        "title": "MVCC 事务成功率",
+        "type": "graph",
+        "gridPos": {
+          "x": 0,
+          "y": 14,
+          "w": 8,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "(mvcc_txn_committed_total / (mvcc_txn_committed_total + mvcc_txn_aborted_total)) * 100",
+            "legendFormat": "Success Rate",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "Success Rate",
+            "logBase": 1,
+            "min": 0,
+            "max": 100
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 2,
+        "linewidth": 2,
+        "thresholds": [
+          {
+            "value": 95,
+            "colorMode": "critical",
+            "fill": true,
+            "line": true,
+            "op": "lt"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "回退率 (Fast→Consensus)",
+        "type": "graph",
+        "gridPos": {
+          "x": 8,
+          "y": 14,
+          "w": 8,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "vm_fast_fallback_ratio",
+            "legendFormat": "Fallback Ratio",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percentunit",
+            "label": "Fallback Ratio",
+            "logBase": 1,
+            "min": 0,
+            "max": 1
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 1,
+        "linewidth": 2,
+        "alert": {
+          "name": "High Fallback Rate",
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.1],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "message": "FastPath 回退率超过 10%，可能存在路由配置问题",
+          "noDataState": "no_data"
+        }
+      },
+      {
+        "id": 9,
+        "title": "ZK 验证失败率",
+        "type": "graph",
+        "gridPos": {
+          "x": 16,
+          "y": 14,
+          "w": 8,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "vm_zk_verify_failure_rate",
+            "legendFormat": "Failure Rate",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percentunit",
+            "label": "Failure Rate",
+            "logBase": 1,
+            "min": 0
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "max": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 1,
+        "linewidth": 2,
+        "thresholds": [
+          {
+            "value": 0.05,
+            "colorMode": "critical",
+            "fill": true,
+            "line": true,
+            "op": "gt"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "ZK 后端类型分布",
+        "type": "piechart",
+        "gridPos": {
+          "x": 0,
+          "y": 20,
+          "w": 8,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "vm_zk_backend_count{backend=\"groth16-bls12-381\"}",
+            "legendFormat": "Groth16 (BLS12-381)",
+            "refId": "A"
+          },
+          {
+            "expr": "vm_zk_backend_count{backend=\"plonk\"}",
+            "legendFormat": "Plonk",
+            "refId": "B"
+          },
+          {
+            "expr": "vm_zk_backend_count{backend=\"mock\"}",
+            "legendFormat": "Mock",
+            "refId": "C"
+          }
+        ],
+        "options": {
+          "legend": {
+            "displayMode": "table",
+            "placement": "right",
+            "values": ["value", "percent"]
+          },
+          "pieType": "donut",
+          "displayLabels": ["name", "percent"]
+        }
+      },
+      {
+        "id": 11,
+        "title": "GC 运行频率",
+        "type": "graph",
+        "gridPos": {
+          "x": 8,
+          "y": 20,
+          "w": 8,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "rate(vm_gc_runs_total[1m])",
+            "legendFormat": "GC Runs/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(vm_gc_versions_cleaned_total[1m])",
+            "legendFormat": "Versions Cleaned/sec",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Rate",
+            "logBase": 1,
+            "min": 0
+          },
+          {
+            "format": "short",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 1,
+        "linewidth": 2
+      },
+      {
+        "id": 12,
+        "title": "Flush 统计",
+        "type": "graph",
+        "gridPos": {
+          "x": 16,
+          "y": 20,
+          "w": 8,
+          "h": 6
+        },
+        "targets": [
+          {
+            "expr": "rate(vm_flush_keys_total[1m])",
+            "legendFormat": "Keys Flushed/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(vm_flush_bytes_total[1m])",
+            "legendFormat": "Bytes Flushed/sec",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "Bps",
+            "label": "Rate",
+            "logBase": 1,
+            "min": 0
+          },
+          {
+            "format": "ops",
+            "logBase": 1
+          }
+        ],
+        "xaxis": {
+          "mode": "time"
+        },
+        "legend": {
+          "show": true,
+          "alignAsTable": true,
+          "avg": true,
+          "current": true,
+          "values": true
+        },
+        "lines": true,
+        "fill": 1,
+        "linewidth": 2
+      }
+    ],
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    }
+  },
+  "overwrite": false
+}

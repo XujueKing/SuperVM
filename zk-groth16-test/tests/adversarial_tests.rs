@@ -7,21 +7,21 @@
 
 #[cfg(test)]
 mod adversarial_tests {
-    use zk_groth16_test::ringct_multi_utxo::{
-        UTXO, MultiUTXORingCTCircuit, MultiUTXOPedersenWindow, MerkleProof, RingAuth,
-    };
-    use zk_groth16_test::ring_signature::RingMember as RSMember;
     use ark_bls12_381::Fr;
     use ark_crypto_primitives::commitment::pedersen as pedersen_commit;
     use ark_crypto_primitives::commitment::CommitmentScheme;
-    use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective as PedersenCurve;
-    use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
-    use ark_crypto_primitives::crh::{TwoToOneCRHScheme, CRHScheme};
     use ark_crypto_primitives::crh::poseidon as poseidon_crh;
-    use ark_relations::r1cs::{ConstraintSystem, ConstraintSynthesizer};
+    use ark_crypto_primitives::crh::{CRHScheme, TwoToOneCRHScheme};
+    use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
+    use ark_ed_on_bls12_381_bandersnatch::EdwardsProjective as PedersenCurve;
+    use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
     use ark_std::UniformRand;
     use rand::rngs::OsRng;
     use rand::RngCore;
+    use zk_groth16_test::ring_signature::RingMember as RSMember;
+    use zk_groth16_test::ringct_multi_utxo::{
+        MerkleProof, MultiUTXOPedersenWindow, MultiUTXORingCTCircuit, RingAuth, UTXO,
+    };
 
     fn setup_poseidon_config() -> PoseidonConfig<Fr> {
         let full_rounds: usize = 8;
@@ -32,7 +32,9 @@ mod adversarial_tests {
         let capacity: usize = 1;
 
         let mut mds = vec![vec![Fr::from(0u64); width]; width];
-        for i in 0..width { mds[i][i] = Fr::from(1u64); }
+        for i in 0..width {
+            mds[i][i] = Fr::from(1u64);
+        }
 
         let rounds = full_rounds + partial_rounds;
         let ark = vec![vec![Fr::from(0u64); width]; rounds];
@@ -47,8 +49,9 @@ mod adversarial_tests {
         let mut rng = OsRng;
         let poseidon_cfg = setup_poseidon_config();
 
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         // 创建 2 个输入 UTXO
         let values_in = [1000u64, 500u64];
@@ -74,12 +77,25 @@ mod adversarial_tests {
 
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right)
-                    .expect("poseidon evaluate");
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .expect("poseidon evaluate");
             }
 
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         // 恶意：两个输入使用相同的 Key Image（即相同私钥和公钥）
@@ -89,11 +105,19 @@ mod adversarial_tests {
 
         let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
         for j in 0..ring_size {
-            let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
-            ring_members.push(RSMember { public_key: pk, merkle_root: None });
+            let pk = if j == real_index {
+                secret_key
+            } else {
+                Fr::rand(&mut rng)
+            };
+            ring_members.push(RSMember {
+                public_key: pk,
+                merkle_root: None,
+            });
         }
         let public_key = ring_members[real_index].public_key;
-        let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
+        let key_image =
+            poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
 
         // 两个输入都用同样的 key_image
         let ring_auths: [RingAuth; 2] = std::array::from_fn(|_| RingAuth {
@@ -124,8 +148,9 @@ mod adversarial_tests {
         let mut rng = OsRng;
         let poseidon_cfg = setup_poseidon_config();
 
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         let values_in = [1000u64, 500u64];
         let inputs: [UTXO; 2] = std::array::from_fn(|i| {
@@ -147,10 +172,24 @@ mod adversarial_tests {
             let directions = vec![false];
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right).unwrap();
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .unwrap();
             }
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         // 构造伪造签名：正确的 Key Image，但私钥是错误的
@@ -162,12 +201,23 @@ mod adversarial_tests {
 
             let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
             for j in 0..ring_size {
-                let pk = if j == real_index { correct_secret_key } else { Fr::rand(&mut rng) };
-                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+                let pk = if j == real_index {
+                    correct_secret_key
+                } else {
+                    Fr::rand(&mut rng)
+                };
+                ring_members.push(RSMember {
+                    public_key: pk,
+                    merkle_root: None,
+                });
             }
             let public_key = ring_members[real_index].public_key;
             // 用正确的 sk 生成 Key Image
-            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![correct_secret_key, public_key]).unwrap();
+            let key_image = poseidon_crh::CRH::<Fr>::evaluate(
+                &poseidon_cfg,
+                vec![correct_secret_key, public_key],
+            )
+            .unwrap();
 
             // 但电路内用错误的 sk
             RingAuth {
@@ -200,8 +250,9 @@ mod adversarial_tests {
         let mut rng = OsRng;
         let poseidon_cfg = setup_poseidon_config();
 
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         let values_in = [1000u64, 500u64];
         let inputs: [UTXO; 2] = std::array::from_fn(|i| {
@@ -223,10 +274,24 @@ mod adversarial_tests {
             let directions = vec![false];
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right).unwrap();
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .unwrap();
             }
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         // 正常构造：公钥在环中，环成员验证应该通过
@@ -234,14 +299,23 @@ mod adversarial_tests {
             let ring_size = 3usize;
             let real_index = 1usize;
             let secret_key = Fr::rand(&mut rng);
-            
+
             let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
             for j in 0..ring_size {
-                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
-                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+                let pk = if j == real_index {
+                    secret_key
+                } else {
+                    Fr::rand(&mut rng)
+                };
+                ring_members.push(RSMember {
+                    public_key: pk,
+                    merkle_root: None,
+                });
             }
             let public_key = ring_members[real_index].public_key;
-            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
+            let key_image =
+                poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
+                    .unwrap();
 
             RingAuth {
                 ring_members,
@@ -263,7 +337,10 @@ mod adversarial_tests {
         circuit.generate_constraints(cs.clone()).unwrap();
 
         // 环成员验证应该成功
-        assert!(cs.is_satisfied().unwrap(), "Ring membership validation should pass");
+        assert!(
+            cs.is_satisfied().unwrap(),
+            "Ring membership validation should pass"
+        );
         println!("✅ 环成员验证测试通过：公钥在环中时约束满足");
     }
 
@@ -273,8 +350,9 @@ mod adversarial_tests {
         let mut rng = OsRng;
         let poseidon_cfg = setup_poseidon_config();
 
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         let values_in = [1000u64, 500u64];
         let inputs: [UTXO; 2] = std::array::from_fn(|i| {
@@ -296,10 +374,24 @@ mod adversarial_tests {
             let directions = vec![false];
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right).unwrap();
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .unwrap();
             }
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         // 构造 ring_size=10
@@ -310,11 +402,20 @@ mod adversarial_tests {
 
             let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
             for j in 0..ring_size {
-                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
-                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+                let pk = if j == real_index {
+                    secret_key
+                } else {
+                    Fr::rand(&mut rng)
+                };
+                ring_members.push(RSMember {
+                    public_key: pk,
+                    merkle_root: None,
+                });
             }
             let public_key = ring_members[real_index].public_key;
-            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
+            let key_image =
+                poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
+                    .unwrap();
 
             RingAuth {
                 ring_members,
@@ -337,7 +438,10 @@ mod adversarial_tests {
 
         assert!(cs.is_satisfied().unwrap(), "Max ring size should work");
         let num_constraints = cs.num_constraints();
-        println!("✅ 最大环大小测试通过：ring_size=10, 约束数={}", num_constraints);
+        println!(
+            "✅ 最大环大小测试通过：ring_size=10, 约束数={}",
+            num_constraints
+        );
     }
 
     #[test]
@@ -346,8 +450,9 @@ mod adversarial_tests {
         let mut rng = OsRng;
         let poseidon_cfg = setup_poseidon_config();
 
-        let pedersen_params = pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
-            .expect("pedersen setup");
+        let pedersen_params =
+            pedersen_commit::Commitment::<PedersenCurve, MultiUTXOPedersenWindow>::setup(&mut rng)
+                .expect("pedersen setup");
 
         // 所有金额为 0
         let values_in = [0u64, 0u64];
@@ -370,10 +475,24 @@ mod adversarial_tests {
             let directions = vec![false];
             let mut root = leaf;
             for (sibling, &direction) in path.iter().zip(&directions) {
-                let (left, right) = if direction { (root, *sibling) } else { (*sibling, root) };
-                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(&poseidon_cfg, &left, &right).unwrap();
+                let (left, right) = if direction {
+                    (root, *sibling)
+                } else {
+                    (*sibling, root)
+                };
+                root = <poseidon_crh::TwoToOneCRH<Fr> as TwoToOneCRHScheme>::evaluate(
+                    &poseidon_cfg,
+                    &left,
+                    &right,
+                )
+                .unwrap();
             }
-            MerkleProof { leaf, path, directions, root }
+            MerkleProof {
+                leaf,
+                path,
+                directions,
+                root,
+            }
         });
 
         let ring_auths: [RingAuth; 2] = std::array::from_fn(|_| {
@@ -382,12 +501,26 @@ mod adversarial_tests {
             let secret_key = Fr::rand(&mut rng);
             let mut ring_members: Vec<RSMember> = Vec::with_capacity(ring_size);
             for j in 0..ring_size {
-                let pk = if j == real_index { secret_key } else { Fr::rand(&mut rng) };
-                ring_members.push(RSMember { public_key: pk, merkle_root: None });
+                let pk = if j == real_index {
+                    secret_key
+                } else {
+                    Fr::rand(&mut rng)
+                };
+                ring_members.push(RSMember {
+                    public_key: pk,
+                    merkle_root: None,
+                });
             }
             let public_key = ring_members[real_index].public_key;
-            let key_image = poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key]).unwrap();
-            RingAuth { ring_members, real_index, secret_key, key_image }
+            let key_image =
+                poseidon_crh::CRH::<Fr>::evaluate(&poseidon_cfg, vec![secret_key, public_key])
+                    .unwrap();
+            RingAuth {
+                ring_members,
+                real_index,
+                secret_key,
+                key_image,
+            }
         });
 
         let circuit = MultiUTXORingCTCircuit {
@@ -401,7 +534,10 @@ mod adversarial_tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         circuit.generate_constraints(cs.clone()).unwrap();
 
-        assert!(cs.is_satisfied().unwrap(), "Zero value transaction should work");
+        assert!(
+            cs.is_satisfied().unwrap(),
+            "Zero value transaction should work"
+        );
         println!("✅ 零值交易测试通过");
     }
 }

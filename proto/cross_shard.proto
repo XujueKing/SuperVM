@@ -1,0 +1,122 @@
+syntax = "proto3";
+package supervm.crossshard.v1;
+
+// ============= 基础类型定义 =============
+message ObjectVersion {
+  bytes object_id = 1;          // 对象标识 (序列化形式)
+  uint64 version = 2;           // MVCC 版本号
+}
+
+message KeyWrite {
+  bytes object_id = 1;
+  bytes new_value = 2;          // 写入值 (opaque / 序列化二进制)
+}
+
+enum Decision {
+  DECISION_COMMIT = 0;
+  DECISION_ABORT  = 1;
+}
+
+enum CommitStatus {
+  COMMIT_SUCCESS = 0;
+  COMMIT_FAILED  = 1;
+}
+
+// ============= 隐私证明 =============
+message PrivacyProof {
+  enum ZkSystem { ZK_GROTH16_BLS12_381 = 0; ZK_GROTH16_BN254 = 1; }
+  ZkSystem system = 1;
+  bytes proof_bytes = 2;                // Groth16 证明压缩字节
+  repeated bytes public_inputs = 3;     // 公共输入（字段元素序列化）
+  repeated bytes commitments = 4;       // 承诺或额外输入 (可选)
+}
+
+// ============= Phase 1: Prepare =============
+message PrepareRequest {
+  uint64 txn_id = 1;
+  uint32 shard_id = 2;                  // 目标分片
+  repeated ObjectVersion read_set = 3;  // 读取集 (版本一致性校验)
+  repeated KeyWrite write_set = 4;      // 写入集
+  uint64 timestamp = 5;                 // 逻辑时间戳 / 提交顺序参考
+
+  // 分布式追踪 & 协调信息
+  uint64 trace_id_high = 6;             // trace_id 拆分高64位
+  uint64 trace_id_low  = 7;             // trace_id 拆分低64位
+  uint64 coordinator_epoch = 8;         // 协调器任期（故障恢复用）
+  uint32 retry_count = 9;               // 重试次数
+
+  // 隐私扩展（可选）
+  PrivacyProof privacy = 200;           // 可选隐私证明, absent 则为公开事务
+}
+
+message PrepareResponse {
+  uint64 txn_id = 1;
+  oneof vote {
+    VoteYes yes = 2;
+    VoteNo  no  = 3;
+  }
+}
+
+message VoteYes { uint64 txn_id = 1; }
+message VoteNo  { uint64 txn_id = 1; string reason = 2; }
+
+// ============= Phase 2: Commit/Abort =============
+message CommitRequest {
+  uint64 txn_id = 1;
+  Decision decision = 2;                // 协调器最终决议
+  uint64 coordinator_epoch = 3;         // 再次携带任期保证幂等
+}
+
+message CommitResponse {
+  uint64 txn_id = 1;
+  CommitStatus status = 2;
+}
+
+// ============= Abort (显式中止) =============
+message AbortRequest {
+  uint64 txn_id = 1;
+  string reason = 2;
+}
+
+message AbortResponse {
+  uint64 txn_id = 1;
+  bool acknowledged = 2;                // 分片确认已释放锁/清理状态
+}
+
+// ============= 版本查询 (远程读验证) =============
+message VersionRequest {
+  repeated bytes object_ids = 1;        // 请求一组对象的版本
+}
+
+message VersionResponse {
+  repeated ObjectVersion versions = 1;
+}
+
+// ============= 事件流 (未来扩展) =============
+message ShardEventRequest {
+  uint32 shard_id = 1;
+}
+
+message ShardEvent {
+  enum EventType {
+    EVENT_TXN_PREPARED = 0;
+    EVENT_TXN_COMMITTED = 1;
+    EVENT_TXN_ABORTED = 2;
+    EVENT_TXN_RECOVERING = 3;
+    EVENT_DEADLOCK_DETECTED = 4;
+  }
+  EventType type = 1;
+  uint64 txn_id = 2;
+  string detail = 3;
+  uint64 ts = 4;                        // 事件时间戳
+}
+
+// ============= 服务定义 =============
+service ShardService {
+  rpc PrepareTxn(PrepareRequest) returns (PrepareResponse);
+  rpc CommitTxn(CommitRequest) returns (CommitResponse);
+  rpc AbortTxn(AbortRequest) returns (AbortResponse);
+  rpc GetObjectVersions(VersionRequest) returns (VersionResponse);
+  // 事件流 (双向或单向流, 当前单向流)
+  rpc StreamShardEvents(ShardEventRequest) returns (stream ShardEvent);
+}

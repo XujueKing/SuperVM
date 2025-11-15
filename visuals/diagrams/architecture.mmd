@@ -1,0 +1,33 @@
+﻿graph TB
+    subgraph L1["L1 瓒呯畻鑺傜偣 (澶ц剳鐨眰)"]
+        L1N1[鍏ㄧ姸鎬佽妭鐐?br/>AWS/Azure]
+        L1N2[ZK 璇佹槑鐢熸垚<br/>Groth16/RingCT]
+        L1N3[鍏ㄥ眬鍏辫瘑鍗忚皟<br/>PoS/BFT]
+    end
+    
+    subgraph L2["L2 鐭挎満鑺傜偣 (鑴婇珦)"]
+        L2N1[MVCC 骞惰鎵ц<br/>242K TPS]
+        L2N2[浜ゆ槗楠岃瘉<br/>Work-Stealing]
+        L2N3[鐘舵€佸悓姝?br/>Merkle Tree]
+    end
+    
+    subgraph L3["L3 杈圭紭鑺傜偣 (绁炵粡鑺?"]
+        L3N1[Mesh 涓户<br/>WiFi/Bluetooth]
+        L3N2[鏈湴缂撳瓨<br/>RocksDB]
+        L3N3[鍖哄煙鍗忚皟<br/>P2P Discovery]
+    end
+    
+    subgraph L4["L4 绉诲姩缁堢 (鎰熻绁炵粡鍏?"]
+        L4N1[SPV 杞诲鎴风<br/>Merkle Proof]
+        L4N2[鐜鎰熺煡<br/>Network/Battery]
+        L4N3[鐢ㄦ埛浜や簰<br/>Wallet/DApp]
+    end
+    
+    L1 <-->|Internet/Starlink<br/>10-50ms| L2
+    L2 <-->|WiFi Mesh<br/>5-10ms| L3
+    L3 <-->|Bluetooth/LoRa<br/>2-200ms| L4
+    
+    style L1 fill:#e74c3c,stroke:#c0392b,stroke-width:3px,color:#fff
+    style L2 fill:#3498db,stroke:#2980b9,stroke-width:3px,color:#fff
+    style L3 fill:#2ecc71,stroke:#27ae60,stroke-width:3px,color:#fff
+    style L4 fill:#f39c12,stroke:#e67e22,stroke-width:3px,color:#fff

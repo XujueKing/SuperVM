@@ -1,0 +1,210 @@
+name: RISC0 Performance (Dev Mode)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - king/l0-mvcc-privacy-verification
+    paths:
+      - '.github/workflows/risc0-perf.yml'
+      - 'src/l2-executor/**'
+
+jobs:
+  run-risc0-perf:
+    runs-on: ubuntu-latest
+    env:
+      RISC0_DEV_MODE: "1"
+      CARGO_TERM_VERBOSE: "true"
+      CARGO_NET_RETRY: "5"
+      CARGO_HTTP_MULTIPLEXING: "true"
+      CARGO_HTTP_TIMEOUT: "600"
+      CARGO_BUILD_JOBS: "2"
+      RUSTFLAGS: "-C codegen-units=8 -C inline-threshold=0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare artifacts directory
+        run: |
+          set -euxo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/ci_artifacts"
+          : > "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+          : > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
+
+      - name: Prepare standalone l2-executor copy (outside workspace)
+        run: |
+          set -euxo pipefail
+          echo "Runner temp: $RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/l2-executor-standalone"
+          rsync -a --delete \
+            --exclude 'target' \
+            "$GITHUB_WORKSPACE/src/l2-executor/" "$RUNNER_TEMP/l2-executor-standalone/"
+          ls -la "$RUNNER_TEMP/l2-executor-standalone"
+          # Pre-create target dir to encourage incremental artifacts reuse across retries
+          mkdir -p "$RUNNER_TEMP/l2-executor-standalone/target"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache build target
+        uses: actions/cache@v4
+        with:
+          path: |
+            target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl pkg-config libssl-dev clang cmake ninja-build
+
+      - name: Verify Docker availability
+        run: |
+          set -euxo pipefail
+          docker --version
+          docker info | sed -n '1,50p'
+
+      - name: Pull RISC0 dev image
+        run: |
+          set -euxo pipefail
+          docker pull ghcr.io/risc0/risc0:1.1.4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install RISC0 toolchain (rzup)
+        run: |
+          set -euxo pipefail
+          curl -L https://risczero.com/install | bash
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.risc0/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/bin:$HOME/.risc0/bin:$HOME/.cargo/bin:$PATH"
+
+          {
+            echo "=== rzup preflight ===";
+            date;
+            rzup --help | head -n 5 || true;
+            rzup --version || true;
+          } | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+
+          n=0
+          install_ok=0
+          until [ $n -ge 5 ]; do
+            if rzup install 2>&1 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"; then
+              install_ok=1
+              break
+            fi
+            n=$((n+1))
+            echo "rzup install failed, retry $n" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+            sleep $((5*n))
+          done
+
+          if [ $install_ok -ne 1 ]; then
+            echo "::warning::rzup install retries exhausted" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+          fi
+
+          if ! command -v cargo-risczero &> /dev/null; then
+            echo "::warning::cargo-risczero not found after rzup, attempting cargo install" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+            cargo install cargo-risczero 2>&1 | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
+          fi
+
+          if command -v cargo-risczero &> /dev/null; then
+            echo "cargo-risczero detected: $(which cargo-risczero)" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+            cargo risczero --version | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log" || true
+          else
+            echo "RISC0 toolchain missing -> creating flag" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+            touch "$GITHUB_WORKSPACE/ci_artifacts/risc0_install_missing.flag"
+          fi
+
+          echo "=== rzup install step complete ===" | tee -a "$GITHUB_WORKSPACE/ci_artifacts/rzup_install.log"
+
+      - name: Diagnostics (env/rust/cargo/rzup)
+        run: |
+          set -euxo pipefail
+          {
+            echo "=== env ===";
+            env | sort;
+            echo "\n=== rustup show ===";
+            rustup show;
+            echo "\n=== rustc/cargo versions ===";
+            rustc -Vv || true; cargo -Vv || true;
+            echo "\n=== rzup toolchain list ===";
+            rzup toolchain list || true;
+            echo "\n=== which cargo-risczero ===";
+            command -v cargo-risczero || true;
+          } > "$GITHUB_WORKSPACE/ci_artifacts/ci_diagnostics.txt"
+
+      - name: Prefetch dependencies
+        timeout-minutes: 10
+        run: |
+          set -euxo pipefail
+          cd "$RUNNER_TEMP/l2-executor-standalone"
+          cargo fetch
+          echo "Prefetch complete at $(date)"
+
+      - name: Build example in Docker (compile only)
+        timeout-minutes: 40
+        env:
+          RISC0_DEV_MODE: "1"
+          CARGO_BUILD_JOBS: "2"
+          CARGO_NET_RETRY: "5"
+          CARGO_HTTP_TIMEOUT: "600"
+          CARGO_INCREMENTAL: "0"
+          RUSTFLAGS: "-C codegen-units=8 -C inline-threshold=0"
+        run: |
+          set -euxo pipefail
+          WORKDIR_HOST="$RUNNER_TEMP/l2-executor-standalone"
+          echo "[heartbeat] build start $(date)"
+          ( while true; do sleep 300; echo "[heartbeat] still building at $(date)"; done ) & HB_PID=$!
+          date
+          docker run --rm \
+            -e RISC0_DEV_MODE=1 \
+            -e CARGO_BUILD_JOBS=2 \
+            -e CARGO_NET_RETRY=5 \
+            -e CARGO_HTTP_TIMEOUT=600 \
+            -e CARGO_INCREMENTAL=0 \
+            -e RUSTFLAGS="-C codegen-units=8 -C inline-threshold=0" \
+            -v "$WORKDIR_HOST":/work \
+            -w /work \
+            ghcr.io/risc0/risc0:1.1.4 \
+            bash -lc 'cargo build --release -vv --features risc0-poc --example risc0_performance_comparison' \
+            2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/build.log" || BUILD_ERR=$?
+          date
+          kill $HB_PID || true
+          if [ -n "${BUILD_ERR:-}" ]; then
+            echo "Build failed with code $BUILD_ERR" >> "$GITHUB_WORKSPACE/ci_artifacts/build.log"
+            # Create a concise tail summary for quick inspection
+            tail -n 400 "$GITHUB_WORKSPACE/ci_artifacts/build.log" > "$GITHUB_WORKSPACE/ci_artifacts/build_summary.txt" || true
+            echo "=== Captured last 400 lines to build_summary.txt ===" >> "$GITHUB_WORKSPACE/ci_artifacts/build.log"
+            exit $BUILD_ERR
+          fi
+
+      - name: Run example in Docker (no build)
+        timeout-minutes: 15
+        run: |
+          set -euxo pipefail
+          WORKDIR_HOST="$RUNNER_TEMP/l2-executor-standalone"
+          docker run --rm \
+            -e RISC0_DEV_MODE=1 \
+            -v "$WORKDIR_HOST":/work \
+            -w /work \
+            ghcr.io/risc0/risc0:1.1.4 \
+            bash -lc './target/release/examples/risc0_performance_comparison' \
+            2>&1 | tee "$GITHUB_WORKSPACE/ci_artifacts/risc0_ci_run.log"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: risc0-perf-logs
+          path: ci_artifacts

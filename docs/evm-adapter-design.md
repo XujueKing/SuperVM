@@ -1,4 +1,4 @@
-# EVM 适配器架构设计
+﻿# EVM 适配器架构设计
 
 开发者/作者：King Xujue
 
@@ -16,6 +16,7 @@
 ### 1. 模块划分
 
 ```
+
 SuperVM/
 ├── src/
 │   ├── vm-runtime/              # 核心运行时 (纯净)
@@ -39,6 +40,7 @@ SuperVM/
 │       └── config.rs            # 配置管理
 │
 └── Cargo.toml                   # Workspace 配置
+
 ```
 
 ### 2. 接口设计
@@ -92,6 +94,7 @@ pub trait ExecutionEngine: Send + Sync {
     /// 验证代码格式
     fn validate_code(&self, code: &[u8]) -> Result<()>;
 }
+
 ```
 
 #### 2.2 WASM 执行器实现 (最小修改)
@@ -142,6 +145,7 @@ impl ExecutionEngine for WasmExecutor {
         Ok(())
     }
 }
+
 ```
 
 #### 2.3 EVM 适配器实现 (完全独立)
@@ -190,6 +194,7 @@ impl ExecutionEngine for EvmExecutor {
         Ok(())
     }
 }
+
 ```
 
 #### 2.4 引擎选择器
@@ -249,6 +254,7 @@ fn is_evm_bytecode(code: &[u8]) -> bool {
     // 简单启发式判断: EVM 字节码通常以 PUSH/DUP 等操作码开始
     !code.is_empty() && code[0] >= 0x60 && code[0] <= 0x7f
 }
+
 ```
 
 ### 3. 依赖管理
@@ -266,6 +272,7 @@ members = [
 [workspace.dependencies]
 anyhow = "1.0"
 thiserror = "1.0"
+
 ```
 
 #### 3.2 vm-runtime/Cargo.toml (核心保持纯净)
@@ -276,12 +283,16 @@ name = "vm-runtime"
 version = "0.10.0"
 
 [dependencies]
+
 # 核心依赖 (不变)
+
 wasmtime = "17.0"
 anyhow.workspace = true
+
 # ... 其他现有依赖
 
 # 注意: 没有 revm 依赖!
+
 ```
 
 #### 3.3 evm-adapter/Cargo.toml (独立依赖)
@@ -295,6 +306,7 @@ version = "0.1.0"
 vm-runtime = { path = "../vm-runtime" }  # 仅依赖 trait 定义
 revm = { version = "3.5", default-features = false }
 anyhow.workspace = true
+
 ```
 
 #### 3.4 node-core/Cargo.toml (可选集成)
@@ -311,6 +323,7 @@ evm-compat = ["evm-adapter"]  # 可选 EVM 功能
 [dependencies]
 vm-runtime = { path = "../vm-runtime" }
 evm-adapter = { path = "../evm-adapter", optional = true }
+
 ```
 
 ### 4. Feature Flag 控制
@@ -318,34 +331,48 @@ evm-adapter = { path = "../evm-adapter", optional = true }
 #### 4.1 编译选项
 
 ```bash
+
 # 纯净内核 (无 EVM,推荐用于生产)
+
 cargo build --release
 
 # 完整功能 (含 EVM 兼容)
+
 cargo build --release --features evm-compat
 
 # 仅测试核心功能
+
 cargo test -p vm-runtime
 
 # 测试 EVM 适配器
+
 cargo test -p evm-adapter
+
 ```
 
 #### 4.2 运行时配置
 
 ```toml
+
 # config.toml
+
 [execution]
+
 # 启用的引擎
+
 enabled_engines = ["wasm"]  # 默认仅 WASM
 
 # 如果需要 EVM 兼容
+
 # enabled_engines = ["wasm", "evm"]
 
 [evm]
+
 # EVM 相关配置 (仅在启用时有效)
+
 chain_id = 1
 london_enabled = true
+
 ```
 
 ## 🔒 核心纯净性保证
@@ -362,11 +389,15 @@ london_enabled = true
 ### 2. 依赖树验证
 
 ```bash
+
 # 检查 vm-runtime 依赖树 (应该不包含 revm)
+
 cargo tree -p vm-runtime --no-default-features
 
 # 检查 evm-adapter 依赖树 (应该包含 revm)
+
 cargo tree -p evm-adapter
+
 ```
 
 ### 3. 性能基准测试
@@ -389,55 +420,128 @@ fn bench_wasm_execution_with_trait(b: &mut Bencher) {
 }
 
 // 预期结果: 两者性能应相同 (编译器内联优化)
+
 ```
 
 ### 4. 编译产物大小对比
 
 ```bash
+
 # 纯净版本
+
 cargo build --release
 ls -lh target/release/node-core  # 记录大小
 
 # EVM 版本
+
 cargo clean
 cargo build --release --features evm-compat
 ls -lh target/release/node-core  # 对比大小
 
 # 预期: EVM 版本仅增加 ~2-3MB (revm 库大小)
+
 ```
 
-## 🚀 实施路线图
+## � 子模块化升级：EVM Adapter → Geth 子模块（MVP 定稿）
+
+为对齐“热插拔子模块 = 原链节点”的总体路线，本文件在保持现有适配器设计不变的前提下，新增首选实现路径：优先以“Geth 子模块”对接真实以太坊节点能力，原基于 revm 的适配器作为纯兼容/测试路径保留。
+
+### 子模块接口（SubmoduleAdapter）最小契约
+
+```rust
+pub trait SubmoduleAdapter {
+    fn start(&self) -> anyhow::Result<()>;                 // 启动/连接原链
+    fn stop(&self) -> anyhow::Result<()>;                  // 平滑停止
+    fn process_native_transaction(&self, tx: NativeTx) -> anyhow::Result<TxHash>; // 提交原生交易
+    fn execute_smart_contract(&self, tx: NativeTx) -> anyhow::Result<Receipt>;     // 合约执行（账户链）
+    fn query_native_state(&self, q: StateQuery) -> anyhow::Result<StateResult>;    // 原生状态查询
+    fn sync_to_unified_mirror(&self, mirror: &mut UnifiedStateMirror) -> anyhow::Result<()>; // 写入统一镜像
+}
+
+```
+
+### Geth 子模块（优先）
+
+- 集成方式：Engine API（首选）或 FFI 桥接
+
+- 能力范围：区块/交易同步、EVM 执行、账户与 ERC20 事件监听
+
+- 与统一层衔接：将 Receipt/Logs 转为 TxIR/StateIR，写入镜像层
+
+### 与原“EVM 适配器（revm）”的关系
+
+- 保留：作为无外部进程依赖的轻量兼容路径
+
+- 优先级：Geth 子模块 > revm 适配器
+
+- 选择逻辑：运行时由配置/探测决定（优先启用子模块）
+
+### MVP 范围（Phase 10 M1）
+
+- 定义 SubmoduleAdapter 契约
+
+- 实现 Geth 子模块最小骨架（同步 + 执行 + 事件→IR 写镜像）
+
+- ERC20 Indexer v0（Transfer 事件 → IR）
+
+- 与 go-ethereum 节点互联验证
+
+---
+
+## �🚀 实施路线图
 
 ### Phase 1: 接口定义 ✅ **已完成** (2025-11-05)
+
 - [x] 创建 `execution_trait.rs` ✅
+
 - [x] 定义 `ExecutionEngine` trait ✅
+
 - [x] 定义 `ExecutionContext`, `ContractResult` 等数据结构 ✅
+
 - [x] 编写单元测试 `test_execution_trait` ✅
+
 - [x] 集成到 `lib.rs` 并导出公共 API ✅
 
 **完成详情**:
+
 - 文件: `src/vm-runtime/src/execution_trait.rs` (76 行)
+
 - 层级: L1 扩展层 (连接 L0 核心与 L2 适配器)
+
 - 测试: ✅ 通过
+
 - 编译: ✅ 通过
 
 ### Phase 2: EVM 适配器开发 (Week 2-3)
+
 - [ ] 创建 `evm-adapter` crate
+
 - [ ] 集成 revm
+
 - [ ] 实现 `ExecutionEngine` trait
+
 - [ ] Gas 映射实现
+
 - [ ] Precompiles 支持
 
 ### Phase 3: 引擎选择器 (Week 4)
+
 - [ ] 实现 `EngineSelector`
+
 - [ ] 代码类型检测逻辑
+
 - [ ] Feature flag 配置
+
 - [ ] 端到端测试
 
 ### Phase 4: 测试与优化 (Week 5-6)
+
 - [ ] 以太坊测试套件
+
 - [ ] 性能基准测试
+
 - [ ] 文档完善
+
 - [ ] 发布 v0.11.0
 
 ## 📊 成功标准
@@ -451,18 +555,27 @@ ls -lh target/release/node-core  # 对比大小
 ## 🔧 维护策略
 
 ### 独立开发
+
 - EVM 适配器由专门团队维护
+
 - 核心团队专注于 WASM 性能优化
+
 - 两个模块独立发版
 
 ### 升级隔离
+
 - SuperVM 核心升级不影响 EVM 适配器
+
 - EVM 适配器升级 (如 revm 新版本) 不影响核心
+
 - 通过 trait 接口保持兼容性
 
 ### 未来扩展
+
 - 同样的模式可用于其他 VM (如 Move VM)
+
 - 保持核心的纯净性和高性能
+
 - 通过插件生态支持多种执行环境
 
 ---

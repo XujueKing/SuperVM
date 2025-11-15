@@ -32,3 +32,6 @@ bench_output.txt
 # 临时文件
 *.tmp
 *.log
+
+# Local-only prototype (do not sync)
+/Truly-friendly/

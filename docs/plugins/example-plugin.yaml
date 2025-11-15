@@ -1,0 +1,22 @@
+# 示例插件清单（example-plugin.yaml）
+id: org.example.bitcoind
+name: example-bitcoind-submodule
+version: "0.1.0"
+chain: bitcoin
+capabilities:
+  - block_stream
+  - submit_tx
+  - rpc_proxy
+runMode: native
+binary: ./bin/example-bitcoind
+resources:
+  cpu: 2
+  memory: 4096 # MB
+  storage: 20GB
+security:
+  sandbox: true
+  seccomp_profile: baseline
+signature: "sha256:..." # 可选：插件二进制签名指纹
+notes: |
+  - This is a sample manifest for a Bitcoin submodule plugin.
+  - When runMode is 'native', Host will attempt to load the binary with the C ABI.

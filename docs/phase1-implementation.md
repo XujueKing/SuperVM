@@ -11,6 +11,7 @@
 ### ✅ Completed
 
 ```
+
 核心能力：
 ✅ MVCC 存储引擎（多版本并发控制）
 ✅ Write Skew 修复（读集合跟踪 + 三阶段提交）
@@ -28,11 +29,13 @@
 ✅ architecture-2.0.md（完整设计）
 ✅ quick-reference-2.0.md（快速参考）
 ✅ stress-testing-guide.md（压力测试指南）
+
 ```
 
 ### 🎯 Vision (v2.0)
 
 ```
+
 SuperVM 2.0 = Sui 性能 + Monero 隐私 + 4层神经网络
 
 目标：
@@ -40,6 +43,7 @@ SuperVM 2.0 = Sui 性能 + Monero 隐私 + 4层神经网络
 🔒 可选隐私保护（Monero 级别）
 🌐 全球分层网络（L1-L4）
 🎮 游戏级分布式存储
+
 ```
 
 ---
@@ -53,11 +57,13 @@ SuperVM 2.0 = Sui 性能 + Monero 隐私 + 4层神经网络
 #### 文件创建
 
 ```
+
 src/vm-runtime/src/
 ├── ownership.rs          [NEW] - 所有权管理
 ├── object.rs             [NEW] - 对象定义
 ├── transaction_type.rs   [NEW] - 交易类型（Simple/Complex）
 └── public_vm.rs          [NEW] - 公开模式虚拟机
+
 ```
 
 #### 核心实现
@@ -174,6 +180,7 @@ fn current_timestamp() -> u64 {
         .unwrap()
         .as_secs()
 }
+
 ```
 
 #### 交易类型定义
@@ -230,6 +237,7 @@ impl TransactionType {
         }
     }
 }
+
 ```
 
 #### 公开模式虚拟机
@@ -378,6 +386,7 @@ fn generate_tx_id(tx: &TransactionType) -> [u8; 32] {
     hasher.update(format!("{:?}", tx));
     hasher.finalize().into()
 }
+
 ```
 
 #### 测试
@@ -431,25 +440,37 @@ fn test_consensus_path_shared_objects() {
     
     assert!(receipt.consensus);  // Needs consensus
 }
+
 ```
 
 #### 性能目标
 
 ```
+
 Fast Path (独占对象):
+
 - TPS: 200K+
+
 - 延迟: < 1ms
+
 - Gas: 1000
 
 Consensus Path (共享对象):
+
 - TPS: 10-20K
+
 - 延迟: 2-5s
+
 - Gas: 5000
 
 预期分布:
+
 - 70% Fast Path
+
 - 30% Consensus Path
+
 - 平均 TPS: ~150K
+
 ```
 
 ---
@@ -461,10 +482,12 @@ Consensus Path (共享对象):
 #### 文件创建
 
 ```
+
 src/vm-runtime/src/
 ├── supervm.rs       [NEW] - 统一入口
 ├── private_vm.rs    [NEW] - 隐私模式虚拟机（桩实现）
 └── privacy.rs       [NEW] - 隐私模式枚举
+
 ```
 
 #### SuperVM 统一接口
@@ -530,6 +553,7 @@ impl SuperVM {
         )
     }
 }
+
 ```
 
 #### 隐私模式桩实现
@@ -560,6 +584,7 @@ impl PrivateVM {
         Err(anyhow::anyhow!("Private mode not yet implemented. Coming in Phase 2 (6-9 months)."))
     }
 }
+
 ```
 
 ---
@@ -571,6 +596,7 @@ impl PrivateVM {
 #### 目录结构
 
 ```
+
 src/network/
 ├── src/
 │   ├── lib.rs
@@ -581,6 +607,7 @@ src/network/
 │   └── protocol.rs        [NEW]
 ├── Cargo.toml             [NEW]
 └── README.md              [NEW]
+
 ```
 
 #### L1 接口定义
@@ -612,6 +639,7 @@ impl SuperNode {
         Ok(vec![])
     }
 }
+
 ```
 
 #### L2 接口定义
@@ -633,6 +661,7 @@ impl MinerNode {
         Ok(vec![])
     }
 }
+
 ```
 
 #### 通信协议定义
@@ -652,6 +681,7 @@ pub enum NetworkMessage {
 pub struct NetworkProtocol {
     // TODO: Implement in Phase 3
 }
+
 ```
 
 ---
@@ -675,15 +705,21 @@ pub struct NetworkProtocol {
 ### Phase 1.2 - 生产级性能验证 ✅
 
 - ✅ Fast→Consensus 自动回退机制（高竞争场景验证：18 fallbacks）
+
 - ✅ 大规模 TPS 基准（5K/10K，Release 构建）
+
 - ✅ **生产级 TPS: 225K-367K** （超目标 13%-84%）
 
 ### Phase 1.3 - 核心集成 ✅
 
 - ✅ 路由集成到 Runtime 核心（`Runtime::execute_with_routing` 等 API）
+
 - ✅ 隐私路径占位与统计（`Privacy::Private` 复用 Consensus，标注路径）
+
 - ✅ 混合工作负载测试（70% Fast + 30% Consensus）
+
 - ✅ 所有权统计集成到 Runtime 监控
+
 - ✅ **混合 TPS: 245K**（Release, 10K 交易）
 
 ### 示例列表
@@ -712,6 +748,7 @@ pub struct NetworkProtocol {
 
 - Fast Path（Owned-only）
   - txs=200, ok=200, conflicts=0, time=5.38 ms, TPS≈37144
+
 - Consensus Path（Shared）
   - txs=200, ok=178, conflicts=186, time=7.43 ms, TPS≈26934
 
@@ -722,15 +759,23 @@ pub struct NetworkProtocol {
 结果（开发机，Debug 构建，n=200+200）：
 
 - Fast:       routed=200, ok=200, conflicts=0, TPS≈17541
+
 - Consensus:  routed=200, ok=188, conflicts=146, TPS≈17541
+
 - **Fallbacks:  fast→consensus=0**
+
 - Total time: 11.40 ms
 
 说明与备注：
+
 - 基础对比使用 `execute_batch_routed()` 分别执行两组；统一批量使用 `execute_batch()` 并行执行所有交易，Fast 失败时自动回退到 Consensus。
+
 - 本次为最小规模基准（便于快速回归）；后续将扩展到 5K/10K 级别并切换 Release 构建。
+
 - Fast/Consensus 目前复用同一执行引擎，Fast TPS 将在独立快速通道落地后显著提升。
+
 - 冲突统计来自调度器回报，ok 与 conflicts 非一一对应计数（用于不同维度统计）。
+
 - **fast_fallbacks=0 说明在当前低竞争场景下，Fast Path 全部直接成功，无需回退。**
 
 #### 单笔回退演示
@@ -749,9 +794,13 @@ pub struct NetworkProtocol {
 运行命令：`cargo run -p vm-runtime --example high_contention_fallback_demo`
 
 结果（Debug 构建，n=100，所有交易写同一 key）：
+
 - Fast: routed=100, ok=82, failed=18, conflicts=125
+
 - Consensus: ok=16, failed=2, conflicts=151
+
 - **Fallbacks: fast→consensus=18** ✅
+
 - 最终计数器值: 98/100
 
 说明：高竞争场景下，18 笔 Fast 交易因冲突失败，自动回退到 Consensus 重试。回退机制验证成功。
@@ -763,31 +812,49 @@ pub struct NetworkProtocol {
 #### 5K + 5K 配置
 
 - Fast Path: 5000 笔（1000 个独占对象，分散 key，低竞争）
+
 - Consensus Path: 5000 笔（10 个共享对象，每个 pool 高竞争）
 
 **Debug 构建结果**：
+
 - Fast: 成功=5000, 失败=0, 冲突=0
+
 - Consensus: 成功=4831, 失败=169, 冲突=2501
+
 - Fallbacks: 0
+
 - 总耗时: 273.37 ms
+
 - **总 TPS: 35,962**
 
 **Release 构建结果**：
+
 - Fast: 成功=5000, 失败=0, 冲突=0
+
 - Consensus: 成功=4999, 失败=1, 冲突=432
+
 - Fallbacks: 0
+
 - 总耗时: 27.25 ms
+
 - **总 TPS: 366,887** ✅ (10x 提升)
+
 - 成功率: 99.99%
 
 #### 10K + 10K 配置
 
 **Release 构建结果**：
+
 - Fast: 成功=10000, 失败=0, 冲突=0
+
 - Consensus: 成功=9964, 失败=36, 冲突=2001
+
 - Fallbacks: 0
+
 - 总耗时: 88.67 ms
+
 - **总 TPS: 225,155** ✅
+
 - 成功率: 99.82%
 
 #### 性能总结
@@ -801,10 +868,15 @@ pub struct NetworkProtocol {
 | 7K+3K | **Release** | 混合70/30 | 10,000 | 9,999 | **245K** | 99.99% |
 
 **关键发现**：
+
 - Fast Path 零冲突，100% 成功率（分散 key 访问）
+
 - Consensus Path 在高竞争下（500-1000 笔/pool）冲突率 ~5-20%，但重试后成功率 >99.8%
+
 - Release 优化带来 10x 性能提升
+
 - 当前未触发 Fast→Consensus 回退（Fast 交易设计为低竞争）
+
 - **生产级 TPS 目标达成：225K-367K TPS**
 
 ### 📊 混合工作负载测试（Phase 1.3）
@@ -812,50 +884,75 @@ pub struct NetworkProtocol {
 运行命令：`cargo run --release -p vm-runtime --example mixed_workload_test`
 
 #### 配置
+
 - **70% Fast Path**: 7000 笔交易（700 个独占对象，分散 key）
+
 - **30% Consensus Path**: 3000 笔交易（30 个共享对象，高竞争）
 
 #### Debug 构建结果
+
 - Fast: 7000 成功/7000, 冲突=0, 成功率=100%
+
 - Consensus: 2993 成功/3000, 冲突=629, 成功率=99.77%
+
 - 总耗时: 163.32 ms
+
 - **总 TPS: 61,187**
+
 - 总成功率: 99.93%
 
 #### Release 构建结果
+
 - Fast: 7000 成功/7000, 冲突=0, 成功率=100%
+
 - Consensus: 2999 成功/3000, 冲突=470, 成功率=99.97%
+
 - 总耗时: 40.74 ms
+
 - **总 TPS: 245,427** ✅
+
 - 总成功率: 99.99%
+
 - Fast→Consensus 回退: 0
 
 #### 所有权统计
+
 - 独占对象: 700
+
 - 共享对象: 30
+
 - 不可变对象: 0
+
 - 路由比例: 70% Fast / 30% Consensus（符合预期）### 下一步（短期）
 
 #### Phase 1.2 已完成 ✅
+
 - ✅ 标准入口路由集成：`execute_transaction_with()` 和 `execute_batch()` 
+
 - ✅ Fast→Consensus 自动回退机制（验证通过，high_contention_fallback_demo）
+
 - ✅ 大规模 TPS 基准（5K/10K，Release 构建）
+
 - ✅ 生产级性能验证：**225K-367K TPS**
 
 #### Phase 1.3 已完成 ✅
+
 - ✅ 路由集成到 Runtime 核心入口：
   - `Runtime::new_with_routing()` 创建带路由能力的运行时
   - `Runtime::execute_with_routing(tx_id, &tx, func)` 单笔路由执行
   - `Runtime::execute_batch_with_routing(txs)` 批量路由执行
   - `Runtime::get_routing_stats()` 获取所有权统计
+
 - ✅ 隐私路径占位与统计：
   - `Privacy::Private` 当前复用 Consensus 执行器
   - 调用 `ownership.record_transaction_path(false)` 记录统计
   - 标注 `ExecutionPath::PrivatePath` 用于未来独立执行引擎
+
 - ✅ 混合工作负载测试（70% Fast + 30% Consensus）：
   - 新增 `mixed_workload_test` 示例
   - Debug: 61K TPS, 99.93% 成功率
   - **Release: 245K TPS, 99.99% 成功率** ✅
+
 - ✅ 所有权统计集成到 Runtime 监控
 
 详见方案：`docs/plans/scheduler-routing-integration.md`
@@ -867,6 +964,7 @@ pub struct NetworkProtocol {
 ### Code
 
 ```
+
 新增文件（~2000 行代码）:
 ✅ src/vm-runtime/src/ownership.rs (300 lines)
 ✅ src/vm-runtime/src/object.rs (100 lines)
@@ -875,11 +973,13 @@ pub struct NetworkProtocol {
 ✅ src/vm-runtime/src/supervm.rs (200 lines)
 ✅ src/vm-runtime/src/private_vm.rs (50 lines stub)
 ✅ src/network/src/*.rs (800 lines stubs)
+
 ```
 
 ### Tests
 
 ```
+
 测试覆盖:
 ✅ test_ownership.rs (15 tests)
 ✅ test_fast_path.rs (10 tests)
@@ -889,25 +989,30 @@ pub struct NetworkProtocol {
 性能基准:
 ✅ bench_fast_vs_slow_path.rs
 ✅ bench_mode_switching.rs
+
 ```
 
 ### Documentation
 
 ```
+
 文档更新:
 ✅ docs/phase1-implementation.md (本文档)
 ✅ README.md (添加 SuperVM 2.0 介绍)
 ✅ CHANGELOG.md (v1.0.0-alpha)
+
 ```
 
 ### Performance Validation
 
 ```
+
 目标验证:
 ✅ Fast path: > 200K TPS
 ✅ Consensus path: > 10K TPS
 ✅ Mixed workload (70/30): > 150K TPS
 ✅ Mode switching overhead: < 1%
+
 ```
 
 ---
@@ -919,21 +1024,33 @@ pub struct NetworkProtocol {
 **不阻塞 Phase 3/4，可并行开发**
 
 ```
+
 技术研究 (Month 2-3):
+
 - 学习 Monero 源码
+
 - zkSNARK 库评估（bellman vs plonky2）
+
 - 性能测试（Groth16 vs PLONK）
 
 实现 (Month 4-8):
+
 - 环签名（curve25519-dalek）
+
 - 隐形地址
+
 - RingCT（bulletproofs）
+
 - zkProof 集成
 
 测试 & 审计 (Month 9):
+
 - 安全审计
+
 - 性能优化
+
 - 匿名性验证
+
 ```
 
 ### Phase 3: Neural Network (Month 4-12)
@@ -941,20 +1058,31 @@ pub struct NetworkProtocol {
 **可与 Phase 2 并行**
 
 ```
+
 L1 实现 (Month 4-6):
+
 - Tendermint BFT
+
 - RocksDB 全状态
+
 - WASM 执行引擎
 
 L2 实现 (Month 7-9):
+
 - Mempool
+
 - 轻量状态
+
 - 区块生产
 
 L3 & L4 (Month 10-12):
+
 - LRU 缓存
+
 - libp2p 路由
+
 - 移动客户端
+
 ```
 
 ### Phase 4: Game Optimization (Month 10-18)
@@ -962,9 +1090,11 @@ L3 & L4 (Month 10-12):
 **依赖 Phase 3**
 
 ```
+
 游戏状态管理 (Month 10-12)
 高频操作优化 (Month 13-15)
 大规模测试 (Month 16-18)
+
 ```
 
 ---
@@ -1046,21 +1176,33 @@ L3 & L4 (Month 10-12):
 ### 核心成就
 
 #### 1. 对象所有权模型（Sui-Inspired）
+
 - ✅ Owned/Shared/Immutable 三类对象
+
 - ✅ 自动路径路由（Fast/Consensus）
+
 - ✅ 权限验证与所有权转移
+
 - ✅ 统计与监控集成
 
 #### 2. SuperVM 统一入口与路由
+
 - ✅ 隐私模式路由（Public/Private）
+
 - ✅ 对象所有权路由（Fast/Consensus/Private）
+
 - ✅ Fast→Consensus 自动回退
+
 - ✅ 批量执行带回退统计
 
 #### 3. Runtime 核心集成
+
 - ✅ `Runtime::new_with_routing()` 带路由能力
+
 - ✅ `Runtime::execute_with_routing()` 单笔路由执行
+
 - ✅ `Runtime::execute_batch_with_routing()` 批量路由
+
 - ✅ `Runtime::get_routing_stats()` 统计查询
 
 #### 4. 生产级性能验证
@@ -1084,29 +1226,43 @@ L3 & L4 (Month 10-12):
 ### 示例与工具
 
 创建 9 个完整示例，覆盖所有核心功能：
+
 - 所有权模型、路由演示、回退验证
+
 - TPS 基准测试（基础/带回退/高竞争/大规模/混合）
+
 - 支持自定义参数（如规模、比例）
 
 ### 文档完整性
 
 - ✅ 完整设计文档（architecture-2.0.md）
+
 - ✅ 实施计划（phase1-implementation.md）
+
 - ✅ 快速参考（quick-reference-2.0.md）
+
 - ✅ 集成方案（plans/scheduler-routing-integration.md）
+
 - ✅ 性能数据与统计（本文档）
 
 ### 下一步建议
 
 **Phase 2: Privacy Layer (预计 2-9 个月)**
+
 - 环签名（Ed25519 + curve25519-dalek）
+
 - 隐形地址（ECDH 密钥交换）
+
 - RingCT（Bulletproofs 范围证明）
+
 - zkProof 集成（Groth16/PLONK）
 
 **Phase 3: Neural Network (预计 4-12 个月，可与 Phase 2 并行)**
+
 - L1: Tendermint BFT + RocksDB 全状态
+
 - L2: Mempool + 轻量状态 + 区块生产
+
 - L3 & L4: LRU 缓存 + libp2p 路由 + 移动客户端
 
 ---

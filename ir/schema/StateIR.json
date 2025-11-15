@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StateIR (v0 for BTC+ETH)",
+  "type": "object",
+  "properties": {
+    "chainId": {"type": "string"},
+    "address": {"type": "string", "description": "账户地址或脚本公钥哈希"},
+    "assetType": {"type": "string", "enum": ["BTC", "ETH", "ERC20"]},
+    "balance": {"type": "string"},
+    "nonce": {"type": ["integer", "null"], "description": "ETH 账户 nonce"},
+    "codeHash": {"type": ["string", "null"], "description": "合约代码哈希"},
+    "slotRoot": {"type": ["string", "null"], "description": "合约存储根"},
+    "utxoCount": {"type": ["integer", "null"], "description": "BTC 地址下的 UTXO 数"}
+  },
+  "required": ["chainId", "address", "assetType", "balance"]
+}

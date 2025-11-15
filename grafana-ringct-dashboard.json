@@ -1,0 +1,213 @@
+{
+  "dashboard": {
+    "title": "RingCT Parallel Proof Monitoring",
+    "tags": ["ringct", "zk-proof", "privacy", "groth16"],
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "RingCT Proof Throughput (TPS)",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "vm_privacy_zk_parallel_tps",
+            "legendFormat": "Current TPS",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(vm_privacy_zk_parallel_proof_total[1m])",
+            "legendFormat": "1min Rate",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Proofs per Second",
+            "format": "short",
+            "logBase": 1,
+            "min": 0
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [30],
+                "type": "lt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "Low RingCT TPS",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 2,
+        "title": "RingCT Proof Latency",
+        "type": "graph",
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "vm_privacy_zk_parallel_avg_latency_ms",
+            "legendFormat": "Avg Per-Proof (ms)",
+            "refId": "A"
+          },
+          {
+            "expr": "vm_privacy_zk_parallel_batch_latency_ms",
+            "legendFormat": "Total Batch (ms)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Milliseconds",
+            "format": "ms",
+            "logBase": 1,
+            "min": 0
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "RingCT Success Rate",
+        "type": "singlestat",
+        "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "100 * (1 - (rate(vm_privacy_zk_parallel_proof_failed_total[5m]) / rate(vm_privacy_zk_parallel_proof_total[5m])))",
+            "refId": "A"
+          }
+        ],
+        "format": "percent",
+        "valueName": "current",
+        "thresholds": "95,99",
+        "colors": ["#d44a3a", "#e0b400", "#299c46"],
+        "colorBackground": true
+      },
+      {
+        "id": 4,
+        "title": "Total Proofs Generated",
+        "type": "singlestat",
+        "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "vm_privacy_zk_parallel_proof_total",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "valueName": "current",
+        "sparkline": {
+          "show": true,
+          "lineColor": "rgb(31, 120, 193)",
+          "fillColor": "rgba(31, 118, 189, 0.18)"
+        }
+      },
+      {
+        "id": 5,
+        "title": "Failed Proofs",
+        "type": "singlestat",
+        "gridPos": { "x": 12, "y": 8, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "vm_privacy_zk_parallel_proof_failed_total",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "valueName": "current",
+        "thresholds": "1,10",
+        "colors": ["#299c46", "#e0b400", "#d44a3a"],
+        "colorBackground": true
+      },
+      {
+        "id": 6,
+        "title": "Batches Processed",
+        "type": "singlestat",
+        "gridPos": { "x": 18, "y": 8, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "vm_privacy_zk_parallel_batches_total",
+            "refId": "A"
+          }
+        ],
+        "format": "short",
+        "valueName": "current",
+        "sparkline": {
+          "show": true
+        }
+      },
+      {
+        "id": 7,
+        "title": "Proof Generation Rate (5m avg)",
+        "type": "graph",
+        "gridPos": { "x": 0, "y": 12, "w": 24, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(vm_privacy_zk_parallel_proof_total[5m])",
+            "legendFormat": "Success Rate (5m)",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(vm_privacy_zk_parallel_proof_failed_total[5m])",
+            "legendFormat": "Failure Rate (5m)",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "label": "Proofs/sec",
+            "format": "short",
+            "logBase": 1,
+            "min": 0
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(vm_privacy_zk_parallel_proof_total, instance)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "datasource": "Prometheus",
+          "enable": true,
+          "expr": "ALERTS{alertname=\"HighRingCTFailureRate\"}",
+          "iconColor": "red",
+          "name": "RingCT Alerts",
+          "titleFormat": "Alert"
+        }
+      ]
+    }
+  }
+}

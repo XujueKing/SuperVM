@@ -1,4 +1,5 @@
-# Monero 源码学习笔记
+﻿# Monero 源码学习笔记
+
 开发者/作者：King Xujue
 
 **研究周期**: 2025-03-03 开始（持续更新）  
@@ -11,8 +12,11 @@
 ## 📋 学习清单
 
 - [x] Ring Signature 基本原理（已应用于 zk-groth16-test）
+
 - [x] Key Image 防双花机制（已实现）
+
 - [ ] Stealth Address 生成机制（进行中）
+
 - [ ] RingCT 完整交易流程（计划中）
 
 ---
@@ -22,9 +26,13 @@
 ### 1.1 核心文件定位
 
 **关键文件**:
+
 - `src/ringct/rctSigs.cpp` - RingCT 签名实现
+
 - `src/ringct/rctTypes.h` - RingCT 类型定义
+
 - `src/cryptonote_core/cryptonote_tx_utils.cpp` - 交易构造
+
 - `src/crypto/crypto.cpp` - 基础加密原语
 
 ### 1.2 Ring Signature 类型
@@ -49,15 +57,21 @@ struct clsag {
     rct::key I;  // signing key image (prevents double-spend)
     rct::key D;  // commitment key image (binds to commitment relation)
 };
+
 ```
 
 字段解释:
+
 - s: 响应标量向量，长度等于环大小 N。对应每个环成员的响应值，用于闭合挑战环。
+
 - c1: 第一个挑战标量，作为整个 Fiat-Shamir 挑战链的起点。
+
 - I: 密钥镜像 (Key Image)，由真实私钥 x 和其公钥 P 经 Hp(P) 生成，确保同一输出被花费时可检测重复，且不暴露真实输入。
+
 - D: 承诺镜像 (Commitment Key Image)，将承诺关系绑定进签名，抵御“Janus/组合”类攻击，确保签名同时链接到承诺的盲因子关系。
 
 注意:
+
 - I 在 prunable 序列化中不保存，可依据输入与环成员重建；D 会被序列化以供验证。
 
 ### 1.4 CLSAG 签名算法流程
@@ -65,7 +79,9 @@ struct clsag {
 #### 签名生成 (`CLSAG_Gen` + `proveRctCLSAGSimple`)
 
 **函数定位**: `src/ringct/rctSigs.cpp`
+
 - 核心函数: `CLSAG_Gen()` (L1100-1300)
+
 - 简化接口: `proveRctCLSAGSimple()` (L1800+)
 
 **算法步骤**:
@@ -194,6 +210,7 @@ clsag CLSAG_Gen(...) {
     
     return sig;  // 返回 (s, c1, I, D)
 }
+
 ```
 
 #### 签名验证 (`verRctCLSAGSimple`)
@@ -285,6 +302,7 @@ bool verRctCLSAGSimple(const key &message, const clsag &sig,
     sc_sub(c_new.bytes, c.bytes, sig.c1.bytes);
     return sc_isnonzero(c_new.bytes) == 0;  // c == c1 则通过
 }
+
 ```
 
 #### 关键数学关系
@@ -292,12 +310,17 @@ bool verRctCLSAGSimple(const key &message, const clsag &sig,
 **签名正确性证明**:
 
 对于真实索引 l, 响应 s[l] 的计算:
+
 ```
+
 s[l] = a - c[l]*(p*mu_P + z*mu_C) mod l
+
 ```
 
 验证时重建:
+
 ```
+
 L[l] = s[l]*G + c_p[l]*P[l] + c_c[l]*C[l]
      = (a - c[l]*(p*mu_P + z*mu_C))*G + c[l]*mu_P*P[l] + c[l]*mu_C*C[l]
      = a*G + c[l]*mu_P*(P[l] - p*G) + c[l]*mu_C*(C[l] - z*G)
@@ -307,13 +330,17 @@ L[l] = s[l]*G + c_p[l]*P[l] + c_c[l]*C[l]
 R[l] = s[l]*Hp(P[l]) + c_p[l]*I + c_c[l]*D
      = ... (类似推导)
      = aH (初始值)
+
 ```
 
 因此验证时会重建出 (L[l], R[l]) = (aG, aH), 从而重建出 c[l+1], 最终闭合环回到 c1.
 
 **关键问题解答**:
+
 - ✅ **Ring members 选择**: 由钱包通过 `get_outs` RPC 从区块链获取, 使用 gamma 分布选择 decoys
+
 - ✅ **Key Image 生成**: I = p * Hp(P), 其中 Hp(P) = hash_to_p3(P) 将公钥哈希到曲线点
+
 - ✅ **验证有效性**: 重建挑战环, 检查 c_final == c1 (环闭合)
 
 ### 1.5 代码片段分析
@@ -331,11 +358,15 @@ ge_p3_tobytes(H.bytes, &H_p3);
 // 硬件设备计算 I = p * H, D = z * H
 key a, aG, aH;
 hwdev.clsag_prepare(p, z, sig.I, D, H, a, aG, aH);
+
 ```
 
 **原理**: 
+
 - `hash_to_p3(P)` 将 32 字节公钥 P 确定性映射到椭圆曲线点 Hp(P)
+
 - Key Image I = x * Hp(P) 绑定到私钥 x, 但不暴露 x
+
 - 同一输出再次花费会产生相同的 I (全网可检测双花)
 
 #### 片段 2: 聚合哈希计算 (Aggregation Hashes)
@@ -360,11 +391,15 @@ mu_P_to_hash[2*n+3] = C_offset;
 
 key mu_P = hash_to_scalar(mu_P_to_hash);
 key mu_C = hash_to_scalar(mu_C_to_hash); // 类似
+
 ```
 
 **作用**:
+
 - mu_P, mu_C 将所有环成员和承诺绑定到签名
+
 - 防止"混合环"攻击 (不同签名的环成员混淆)
+
 - 域分离标签 `HASH_KEY_CLSAG_AGG_0/1` 防止哈希重用
 
 #### 片段 3: 环形挑战-响应计算 (Ring Challenge-Response Loop)
@@ -396,11 +431,15 @@ while (i != l) {
     copy(c, c_new);
     i = (i + 1) % n;
 }
+
 ```
 
 **Fiat-Shamir 变换**:
+
 - 对于 decoys (非秘密索引), 先选随机 s[i], 再计算 L, R
+
 - 挑战 c 通过哈希链传递: c[i+1] = H(L[i], R[i], ...)
+
 - 真实索引 l 的 s[l] 在环闭合时反推: s[l] = a - c[l]*(...)
 
 #### 片段 4: 真实响应计算 (Signing Index Response)
@@ -417,11 +456,15 @@ sc_mul(tmp2, mu_C, z);         // tmp2 = mu_C * z
 sc_add(tmp3, tmp1, tmp2);      // tmp3 = mu_P*p + mu_C*z
 sc_mul(tmp4, c, tmp3);         // tmp4 = c * (mu_P*p + mu_C*z)
 sc_sub(s, a, tmp4);            // s = a - c*(mu_P*p + mu_C*z)
+
 ```
 
 **零知识性**:
+
 - s[l] 混合了随机数 a 和秘密 (p, z)
+
 - 验证者无法从 s[l] 反推 p 或 z
+
 - 只能验证 s[l] 满足签名方程
 
 #### 片段 5: 验证环闭合 (Verification Ring Closure)
@@ -451,12 +494,17 @@ while (i < n) {
 // 验证环闭合: c 应该回到 c1
 sc_sub(c_new.bytes, c.bytes, sig.c1.bytes);
 return sc_isnonzero(c_new.bytes) == 0;  // c == c1?
+
 ```
 
 **验证逻辑**:
+
 - 从 c1 开始, 依次重建所有 (L[i], R[i])
+
 - 每个 L[i], R[i] 生成下一个挑战 c[i+1]
+
 - 如果签名有效, 最后的 c 会等于起点 c1 (环闭合)
+
 - 否则 c != c1, 签名无效
 
 #### 性能优化技巧
@@ -473,12 +521,17 @@ addKeys_aGbBcC(L, s, c_p, P_precomp.k, c_c, C_precomp.k);
 // 3. Cofactor 清除
 key D_8 = scalarmult8(sig.D);  // D' = 8*D, 确保在素数阶子群
 CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
+
 ```
 
 **学习笔记**:
+
 - CLSAG 使用 Fiat-Shamir 变换将交互式协议转为非交互式
+
 - 聚合哈希 (mu_P, mu_C) 是 CLSAG 相比 MLSAG 的关键改进
+
 - 承诺密钥镜像 D 防止"Janus/组合"类攻击
+
 - 域分离标签防止跨协议攻击 (如 Monero vs SuperVM 签名混淆) 
 
 ---
@@ -490,6 +543,7 @@ CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 **隐身地址 = 每笔交易生成唯一的一次性地址**
 
 - **发送方**: 使用接收方公钥生成一次性地址
+
 - **接收方**: 使用私钥扫描区块链识别属于自己的交易
 
 ### 2.2 关键文件
@@ -497,14 +551,18 @@ CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 - `src/cryptonote_basic/cryptonote_format_utils.cpp`
   - `generate_key_derivation()` - 派生密钥
   - `derive_public_key()` - 派生公钥
+
 - `src/wallet/wallet2.cpp`
   - 钱包扫描逻辑
 
 ### 2.3 地址生成流程
 
 ```
+
 接收方钱包密钥:
+
 - Spend key pair: (a, A = aG)  - 花费密钥
+
 - View key pair: (b, B = bG)   - 视图密钥
 
 发送方生成一次性地址:
@@ -519,6 +577,7 @@ CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 2. 计算共享秘密: S = aR = arG
 3. 计算期望公钥: P' = H(S, n)G + B
 4. 如果 P' == P, 则该输出属于自己
+
 ```
 
 ### 2.4 代码片段
@@ -531,8 +590,11 @@ CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 ```
 
 **关键问题**:
+
 - [ ] 如何高效扫描大量交易?
+
 - [ ] 视图密钥 vs 花费密钥的分离作用?
+
 - [ ] 多个输出如何索引 (n)?
 
 ---
@@ -544,8 +606,11 @@ CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 **目的**: 每笔交易生成唯一的一次性地址, 防止交易关联, 保护接收方隐私。
 
 **核心思想**: 
+
 - 发送方使用接收方的公钥 + 随机数生成一次性地址
+
 - 接收方通过扫描区块链, 使用私钥恢复属于自己的输出
+
 - 区块链上每个输出地址都不同, 但接收方可以花费
 
 ### 2.2 Monero 地址结构
@@ -553,6 +618,7 @@ CHECK(!(D_8 == identity()));    // 拒绝小子群攻击
 Monero 标准地址包含两对密钥:
 
 ```
+
 Address = (A, B)
   A = a*G  (View Public Key, 视图公钥)
   B = b*G  (Spend Public Key, 花费公钥)
@@ -560,10 +626,13 @@ Address = (A, B)
 用户持有:
   a = view secret key (视图私钥, 用于扫描)
   b = spend secret key (花费私钥, 用于签名)
+
 ```
 
 **职责分离**:
+
 - `a` (view key): 只能查看交易, 不能花费 (可分享给审计员)
+
 - `b` (spend key): 花费资金 (绝对保密)
 
 ### 2.3 一次性地址生成 (发送方)
@@ -579,6 +648,7 @@ random_scalar(r);  // 生成随机 256-bit 标量
 
 public_key R;  // 交易公钥 (transaction public key)
 secret_key_to_public_key(r, R);  // R = r*G
+
 ```
 
 `R` 会被写入交易的 `tx_extra` 字段, 公开可见。
@@ -607,14 +677,18 @@ bool generate_key_derivation(const public_key &A,     // 接收方视图公钥
     
     return true;
 }
+
 ```
 
 **数学原理** (ECDH):
+
 ```
+
 derivation = 8 * r * A
            = 8 * r * (a*G)
            = 8 * a * (r*G)
            = 8 * a * R
+
 ```
 
 发送方使用 `(r, A)` 计算, 接收方使用 `(a, R)` 计算, 结果相同!
@@ -650,11 +724,15 @@ bool derive_public_key(const key_derivation &derivation,
     
     return true;
 }
+
 ```
 
 **数学公式**:
+
 ```
+
 P_out = Hs(8*r*A || n)*G + B
+
 ```
 
 其中 `Hs()` 是 hash-to-scalar 函数.
@@ -668,6 +746,7 @@ P_out = Hs(8*r*A || n)*G + B
 ```cpp
 // src/cryptonote_basic/cryptonote_format_utils.cpp
 crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
+
 ```
 
 #### 步骤 2: 重建共享密钥
@@ -676,6 +755,7 @@ crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
 crypto::key_derivation derivation;
 acc.get_device().generate_key_derivation(R, acc.m_view_secret_key, derivation);
 // derivation = 8*a*R = 8*r*A (与发送方相同)
+
 ```
 
 #### 步骤 3: 逐个检查输出
@@ -695,6 +775,7 @@ for (size_t n = 0; n < tx.vout.size(); ++n) {
         outs.push_back(n);
     }
 }
+
 ```
 
 ### 2.5 花费输出 (派生一次性私钥)
@@ -710,14 +791,18 @@ void derive_secret_key(const key_derivation &derivation,
     derivation_to_scalar(derivation, output_index, scalar);
     sc_add(&p_out, &b, &scalar);  // p_out = Hs(...) + b
 }
+
 ```
 
 **数学验证**:
+
 ```
+
 P_out = p_out * G
       = (Hs(8*r*A || n) + b) * G
       = Hs(8*r*A || n)*G + b*G
       = Hs(8*r*A || n)*G + B  ✅
+
 ```
 
 ### 2.6 View Tags 优化 (Monero v15+)
@@ -745,6 +830,7 @@ void derive_view_tag(const key_derivation &derivation,
     // 只取前 1 字节
     memcpy(&view_tag, &view_tag_full, 1);
 }
+
 ```
 
 **优化原理**:
@@ -756,16 +842,23 @@ void derive_view_tag(const key_derivation &derivation,
 ### 2.7 关键问题解答
 
 ✅ **为什么需要两对密钥?**
+
 - `a` (view key): 轻钱包/审计员可扫描, 但不能花费
+
 - `b` (spend key): 冷钱包保管, 只在签名时需要
 
 ✅ **为什么要乘以 cofactor 8?**
+
 - Ed25519 曲线 cofactor=8, 确保结果在素数阶子群
+
 - 防止小子群攻击 (Lim-Lee attack)
 
 ✅ **如何防止地址重用?**
+
 - 每笔交易生成新的随机 `r`
+
 - 即使同一接收方, 每个 `P_out` 都不同
+
 - 区块链分析无法关联输出
 
 ---
@@ -777,23 +870,30 @@ void derive_view_tag(const key_derivation &derivation,
 **防止双花攻击**: Key Image 是从私钥派生的唯一值,全网可见
 
 - 每个输出有唯一的 Key Image
+
 - 花费输出时必须提供 Key Image
+
 - 网络拒绝重复的 Key Image
 
 ### 3.2 生成算法
 
 ```
+
 输入: 
+
 - x: 一次性私钥
+
 - P: 对应的一次性公钥 (P = xG)
 
 输出:
+
 - I: Key Image
 
 计算:
 I = x * Hp(P)
 
 其中 Hp(P) 是 "hash-to-point" 函数
+
 ```
 
 ### 3.3 关键函数实现
@@ -830,20 +930,27 @@ static void hash_to_ec(const public_key &key, ge_p3 &res) {
     ge_mul8(&point2, &point);
     ge_p1p1_to_p3(&res, &point2);
 }
+
 ```
 
 **数学性质**:
+
 - `I = x * Hp(P)` 绑定到私钥 `x`, 但不泄露 `x`
+
 - 同一输出再次花费会产生相同的 `I` (全网可检测)
 
 ### 3.4 安全性
 
 **为什么不能直接用公钥?**
+
 - 公钥会泄露环签名中的真实输出
+
 - Key Image 通过 hash-to-point 打破关联性
 
 **为什么攻击者不能伪造?**
+
 - 只有知道私钥 x 才能计算 I = x * Hp(P)
+
 - 环签名同时证明签名者知道某个私钥
 
 ---
@@ -855,13 +962,19 @@ static void hash_to_ec(const public_key &key, ge_p3 &res) {
 **目的**: 在不泄露金额的情况下, 证明交易金额 `v` 在合法范围内 (0 ≤ v < 2^64)。
 
 **核心思想**:
+
 - Pedersen Commitment 隐藏金额: `C = v*H + gamma*G`
+
 - Bulletproofs 证明 `v ∈ [0, 2^N)` 且不泄露 `v` 或 `gamma`
+
 - 聚合证明: 多个输出共享一个证明, 指数级减少大小
 
 **关键特性**:
+
 - **证明大小**: 2*log₂(n*m) + 9 个椭圆曲线点 (~700 bytes for 2 outputs)
+
 - **验证复杂度**: 批量验证 O(n + m*log(m)), 单个 O(n*log(n))
+
 - **无需可信设置** (相比 zk-SNARKs)
 
 ### 4.2 Pedersen Commitment 基础
@@ -875,18 +988,25 @@ static void hash_to_ec(const public_key &key, ge_p3 &res) {
 // H, G: 基点 (公开)
 
 let commitment = v * H + gamma * G;
+
 ```
 
 **同态性** (Homomorphic Property):
+
 ```
+
 C₁ + C₂ = (v₁*H + γ₁*G) + (v₂*H + γ₂*G)
         = (v₁ + v₂)*H + (γ₁ + γ₂)*G
+
 ```
 
 **应用**: 交易验证
+
 ```
+
 输入承诺之和 = 输出承诺之和 + 手续费*H
 Σ C_in = Σ C_out + fee*H
+
 ```
 
 ### 4.3 Bulletproofs 证明生成
@@ -919,14 +1039,18 @@ for (size_t j = 0; j < M; ++j) {
 for (size_t i = 0; i < M; ++i) {
     V[i] = addKeys2(gamma[i] / 8, v[i] / 8, H);  // 除以8是cofactor处理
 }
+
 ```
 
 **aL, aR 关系**:
+
 ```
+
 aL[i] ∈ {0, 1}         (比特值)
 aR[i] = aL[i] - 1 ∈ {-1, 0}
 aL ⊙ aR = 0            (Hadamard 积为0)
 Σ(aL[i] * 2^i) = v     (二进制重建金额)
+
 ```
 
 #### 步骤 2: 向量承诺 A, S (PAPER LINES 43-47)
@@ -943,6 +1067,7 @@ A = vector_exponent(aL, aR) + alpha * G;
 // S = sL*G + sR*H + rho*G (第二个承诺, 用于多项式)
 rho = random_scalar();
 S = vector_exponent(sL, sR) + rho * G;
+
 ```
 
 #### 步骤 3: Fiat-Shamir 挑战 (PAPER LINES 48-50)
@@ -951,6 +1076,7 @@ S = vector_exponent(sL, sR) + rho * G;
 // 从 V, A, S 派生挑战 (非交互式)
 y = H(V || A || S)
 z = H(y)
+
 ```
 
 #### 步骤 4: 多项式构造 (PAPER LINES 58-63)
@@ -971,6 +1097,7 @@ r1 = y_powers ⊙ sR;
 // t(X) = <l(X), r(X)> = t₀ + t₁*X + t₂*X²
 t1 = <l0, r1> + <l1, r0>;
 t2 = <l1, r1>;
+
 ```
 
 #### 步骤 5: 多项式承诺 T1, T2 (PAPER LINES 52-53)
@@ -981,6 +1108,7 @@ tau2 = random_scalar();
 
 T1 = t1*H / 8 + tau1*G / 8;
 T2 = t2*H / 8 + tau2*G / 8;
+
 ```
 
 #### 步骤 6: 挑战与响应 (PAPER LINES 54-63)
@@ -1001,6 +1129,7 @@ r = r0 + r1*x;
 
 // 计算 t (内积)
 t = <l, r>;
+
 ```
 
 #### 步骤 7: 内积证明 (Inner Product Argument)
@@ -1044,9 +1173,11 @@ while (nprime > 1) {
 }
 
 // 最终返回标量 a, b (长度为1)
+
 ```
 
 **证明结构**:
+
 ```rust
 struct Bulletproof {
     V: Vec<Point>,       // 承诺向量 (M个)
@@ -1062,19 +1193,27 @@ struct Bulletproof {
     b: Scalar,           // 最终 b
     t: Scalar,           // 最终内积
 }
+
 ```
 
 **大小计算**:
+
 ```
+
 M=2 outputs (128 bits total):
+
 - V: 2 * 32 = 64 bytes
+
 - A, S, T1, T2: 4 * 32 = 128 bytes
+
 - taux, mu, a, b, t: 5 * 32 = 160 bytes
+
 - L, R: 2 * log₂(128) * 32 = 2 * 7 * 32 = 448 bytes
 Total: ~800 bytes
 
 对比: 原始 RingCT (non-Bulletproofs): ~7 KB
 节省: 89% 空间
+
 ```
 
 ### 4.4 Bulletproofs 验证
@@ -1113,6 +1252,7 @@ lhs = a*G' + b*H' + (a*b)*x_ip*H;
 rhs = mu*G + Σ(w[i]²*L[i]) + Σ(w[i]⁻²*R[i]) + ...;
 
 CHECK(lhs == rhs);  // 方程 2
+
 ```
 
 ### 4.5 批量验证优化
@@ -1132,33 +1272,49 @@ aggregate_rhs = Σ(weight_y[i] * rhs[i]) + Σ(weight_z[i] * rhs2[i]);
 
 // 单次多标量乘法检查
 CHECK(aggregate_lhs == aggregate_rhs);
+
 ```
 
 **性能提升**:
+
 - 单个验证: ~5ms (1 output)
+
 - 批量验证 1000 proofs: ~1.2s (平均 1.2ms/proof)
+
 - **提速**: 4倍
 
 ### 4.6 关键问题解答
 
 ✅ **为什么需要两个向量 aL, aR?**
+
 - `aL ∈ {0,1}` 表示比特值
+
 - `aR = aL - 1 ∈ {-1,0}` 确保 `aL ⊙ aR = 0`
+
 - 这个约束隐式证明了 aL 是二进制
 
 ✅ **为什么要递归折叠?**
+
 - 初始向量长度 MN (例如 128)
+
 - 每轮折叠减半: 128 → 64 → 32 → ... → 1
+
 - 证明大小: O(log MN) 而非 O(MN)
 
 ✅ **Bulletproofs vs Bulletproofs+?**
+
 - Bulletproofs+: Monero v15+ 使用
+
 - 改进: 减少 1 个标量 (weighted norm argument)
+
 - 节省: ~32 bytes/proof
 
 ✅ **如何防止负数?**
+
 - 范围证明强制 `v ∈ [0, 2^N)`
+
 - 负数的二进制表示会溢出 N 位
+
 - 验证方程会失败
 
 ---
@@ -1175,6 +1331,7 @@ struct rctSig {
     vector<rangeSig> rangeSigs; // 范围证明 (Bulletproofs)
     // ...
 };
+
 ```
 
 ### 4.2 交易构造步骤
@@ -1182,6 +1339,7 @@ struct rctSig {
 **TODO**: 详细分析 `construct_tx_and_get_tx_key()`
 
 ```
+
 1. 选择输入 (UTXOs)
 2. 为每个输入选择 ring members
 3. 生成输出的隐身地址
@@ -1189,30 +1347,43 @@ struct rctSig {
 5. 生成 Bulletproofs (证明金额 ≥ 0)
 6. 生成 CLSAG 签名 (证明拥有某个输入)
 7. 验证 Commitment 平衡 (输入 = 输出 + 手续费)
+
 ```
 
 ### 4.3 承诺方案
 
 **Pedersen Commitment**:
+
 ```
+
 C(a, r) = aH + rG
 
 其中:
+
 - a: 金额 (secret)
+
 - r: 盲因子 (blinding factor)
+
 - H, G: 基点
+
 ```
 
 **平衡验证**:
+
 ```
+
 sum(C_inputs) = sum(C_outputs) + fee * H
+
 ```
 
 ### 4.4 关键问题
 
 - [ ] Ring size 如何选择? (当前默认 16)
+
 - [ ] Ring members 选择算法? (gamma 分布)
+
 - [ ] Bulletproofs 聚合如何工作?
+
 - [ ] 手续费如何计算?
 
 ---
@@ -1224,16 +1395,24 @@ sum(C_inputs) = sum(C_outputs) + fee * H
 **TODO**: 运行 Monero 基准测试
 
 ```bash
+
 # Clone Monero repository and run performance tests
+
 git clone https://github.com/monero-project/monero.git
 cd monero
+
 # 编译并运行性能测试
+
 ```
 
 **预期数据** (Ring Size = 16):
+
 - 签名生成: ~50-100ms
+
 - 签名验证: ~5-10ms
+
 - Bulletproofs 生成: ~200-300ms
+
 - Bulletproofs 验证: ~5-10ms (批量验证更快)
 
 ### 5.2 交易大小
@@ -1287,14 +1466,19 @@ impl RingSigner {
         todo!()
     }
 }
+
 ```
 
 ### 6.3 实现路线图
 
 **Week 9-12** (Phase 2.2.1):
+
 - [ ] 实现 `generate_key_image()` (基于 Monero)
+
 - [ ] 实现 CLSAG 签名算法
+
 - [ ] 实现 CLSAG 验证算法
+
 - [ ] 性能测试: 目标 <50ms 签名, <5ms 验证
 
 ---
@@ -1318,7 +1502,9 @@ impl RingSigner {
 ### 7.2 Monero 文档
 
 - **官方文档**: https://www.getmonero.org/resources/developer-guides/
+
 - **Moneropedia**: https://www.getmonero.org/resources/moneropedia/
+
 - **StackExchange**: https://monero.stackexchange.com/
 
 > **引用说明**: 本文档引用的所有外部资料（论文、项目、文档）已在 [ATTRIBUTIONS.md](../ATTRIBUTIONS.md) 中详细列出，包括版权声明与致谢。
@@ -1326,7 +1512,9 @@ impl RingSigner {
 ### 7.3 代码导航
 
 **核心目录**:
+
 ```
+
 monero-research/
 ├── src/
 │   ├── ringct/              ← RingCT 实现 (重点!)
@@ -1340,6 +1528,7 @@ monero-research/
 │   │   └── cryptonote_format_utils.cpp ← 地址生成
 │   └── wallet/              ← 钱包逻辑
 │       └── wallet2.cpp      ← 交易构造, 扫描
+
 ```
 
 ---
@@ -1349,41 +1538,63 @@ monero-research/
 ### Week 1 (2025-03-03 至 2025-03-09)
 
 **Day 1-3 (2025-03-03 ~ 2025-03-05)**:
+
 - [x] 克隆 Monero 仓库
+
 - [x] 创建学习笔记框架
+
 - [x] 阅读 `rctTypes.h` 了解数据结构
+
 - [x] 研究 Ring Signature 基本原理
+
 - [x] 实现 Key Image 机制（应用于 zk-groth16-test）
+
 - [x] 完成环签名电路实现与测试
 
 **Day 2-3**:
+
 - [ ] 深入 `rctSigs.cpp` - CLSAG 实现
+
 - [ ] 提取关键代码片段到笔记
+
 - [ ] 画出 CLSAG 签名流程图
 
 **Day 4-5**:
+
 - [ ] 研究 Stealth Address 实现
+
 - [ ] 研究 Key Image 生成
+
 - [ ] 运行 Monero 测试用例
 
 **Day 6-7**:
+
 - [ ] 总结 Week 1 学习成果
+
 - [ ] 准备 Week 2 深入研究计划
 
 ### Week 2 (2025-03-10 至 2025-03-16)
 
 **Day 8-10**:
+
 - [ ] 研究 Bulletproofs 实现
+
 - [ ] 研究 RingCT 完整交易流程
+
 - [ ] 编写 C++ 测试代码验证理解
 
 **Day 11-12**:
+
 - [ ] 设计 SuperVM 的 Ring Signature API
+
 - [ ] 编写技术选型报告
+
 - [ ] 确定实现细节 (ring size, 算法选择)
 
 **Day 13-14**:
+
 - [ ] 完成 Monero 学习总结报告
+
 - [ ] 准备 Week 3 zkSNARK 评估
 
 ---
@@ -1413,7 +1624,9 @@ monero-research/
 ## 🔗 相关笔记
 
 - `curve25519-dalek-notes.md` (Week 1-2 并行学习)
+
 - `cryptonote-whitepaper-notes.md` (Week 1-2 并行学习)
+
 - `phase2-implementation-decisions.md` (Week 7-8 架构设计)
 
 ---

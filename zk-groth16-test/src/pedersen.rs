@@ -1,17 +1,19 @@
 use ark_bls12_381::Fr;
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable};
+use ark_relations::r1cs::{
+    ConstraintSynthesizer, ConstraintSystemRef, LinearCombination, SynthesisError, Variable,
+};
 
 /// Pedersen 承诺电路：
 /// 公开：承诺 C（作为公开输入）
 /// 私有：金额 v，盲化因子 r
 /// 约束：C = v*H + r*G （这里用简化版：C = v + r*k，k 为公开参数）
-/// 
+///
 /// 注：完整 Pedersen 需要椭圆曲线群运算；这里用域乘法模拟线性承诺
 #[derive(Clone)]
 pub struct PedersenCommitmentCircuit {
-    pub value: Option<Fr>,       // 私有：金额 v
-    pub blinding: Option<Fr>,     // 私有：盲化因子 r
-    pub commitment_param: Fr,     // 公开参数 k（模拟 H/G 比例）
+    pub value: Option<Fr>,    // 私有：金额 v
+    pub blinding: Option<Fr>, // 私有：盲化因子 r
+    pub commitment_param: Fr, // 公开参数 k（模拟 H/G 比例）
 }
 
 impl PedersenCommitmentCircuit {
@@ -28,7 +30,8 @@ impl ConstraintSynthesizer<Fr> for PedersenCommitmentCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         // 见证私有输入 v, r
         let v = cs.new_witness_variable(|| self.value.ok_or(SynthesisError::AssignmentMissing))?;
-        let r = cs.new_witness_variable(|| self.blinding.ok_or(SynthesisError::AssignmentMissing))?;
+        let r =
+            cs.new_witness_variable(|| self.blinding.ok_or(SynthesisError::AssignmentMissing))?;
 
         // 公开输入：承诺 C = v + r*k
         let commitment = cs.new_input_variable(|| {
@@ -53,7 +56,8 @@ impl ConstraintSynthesizer<Fr> for PedersenCommitmentCircuit {
         // 约束：v + r_times_k = commitment
         // => (v + r_times_k - commitment) * 1 = 0
         cs.enforce_constraint(
-            LinearCombination::from(v) + LinearCombination::from(r_times_k) - LinearCombination::from(commitment),
+            LinearCombination::from(v) + LinearCombination::from(r_times_k)
+                - LinearCombination::from(commitment),
             LinearCombination::from(Variable::One),
             LinearCombination::zero(),
         )?;
@@ -66,7 +70,7 @@ impl ConstraintSynthesizer<Fr> for PedersenCommitmentCircuit {
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_groth16::{Groth16, prepare_verifying_key};
+    use ark_groth16::{prepare_verifying_key, Groth16};
     use ark_snark::SNARK;
     use rand::rngs::OsRng;
 

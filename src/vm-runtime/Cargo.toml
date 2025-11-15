@@ -13,6 +13,9 @@ thiserror = "1.0"
 log = "0.4"
 wat = "1.0"
 
+# HTTP 服务依赖（用于 /metrics 端点 demo）
+tiny_http = "0.12"
+
 # 密码学库
 sha2 = "0.10"
 sha3 = "0.10"
@@ -25,26 +28,63 @@ crossbeam-deque = "0.8"
 rayon = "1.10"
 dashmap = "6.1"
 parking_lot = "0.12"
+once_cell = "1.20"
+smallvec = "1.13"  # Phase C: MVCC 版本链优化,避免小版本链堆分配
 
 # 序列化库
 serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", optional = true }
+
+# Phase 6: 跨分片事务依赖
+rand = "0.8"  # 用于模拟和测试
+
+# 持久化存储 (Phase 4.3)
+# 简化依赖: 禁用 default features 避免 libclang/bindgen 依赖
+rocksdb = { version = "0.22", optional = true, default-features = false }
+
+# 时间戳支持（用于 CSV 基准导出）
+chrono = "0.4"
+tonic = { version = "0.11", optional = true }
+prost = { version = "0.12", optional = true }
+prost-types = { version = "0.12", optional = true }
+tokio = { version = "1.36", features = ["rt-multi-thread", "macros"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
+tempfile = "3.8"  # Phase 4.3: 用于 RocksDB 测试的临时目录
 
 [features]
 default = []
 demos = []
+rocksdb-storage = ["dep:rocksdb"]  # Phase 4.3: RocksDB 持久化存储特性
+unstable-examples = [] # 临时隔离编译失败或未完成示例，默认不启用
+dashmap-mvcc = []            # 共识路径 DashMap 优化占位特性（当前默认已启用 DashMap）
+smallvec-chains = []         # 使用 SmallVec<[Version;4]> 存储短版本链，减少堆分配
+thread-local-ts = []         # 线程本地时间戳批量分配，减少 AtomicU64 热点
+partitioned-fastpath = []    # 多核分区化 FastPath/Consensus 执行器 (按 key 哈希分区)
+consensus-optimizations = [] # 共识路径微优化开关（锁持有缩短/批量提交/冲突预检）
 groth16-verifier = [
     "dep:zk-groth16-test",
     "dep:ark-groth16",
     "dep:ark-bls12-381",
+    "dep:ark-bn254",
     "dep:ark-snark",
     "dep:ark-serialize",
     "dep:ark-crypto-primitives",
     "dep:ark-std",
+    "dep:ark-relations",
+    "dep:serde_json",
 ]
+cross-shard = [
+    "dep:tonic",
+    "dep:prost",
+    "dep:prost-types",
+    "dep:tokio",
+    "dep:tokio-stream"
+]
+hybrid-exec = ["dep:gpu-executor"] # Phase 13: CPU/GPU 混合执行器集成（当前仅 CPU/并行）
+hybrid-lite = []                 # Phase 13: 轻量模式（禁用指标采集等额外开销）
 
 [dependencies.zk-groth16-test]
 path = "../../zk-groth16-test"
@@ -56,6 +96,10 @@ version = "0.4"
 optional = true
 
 [dependencies.ark-bls12-381]
+version = "0.4"
+optional = true
+
+[dependencies.ark-bn254]
 version = "0.4"
 optional = true
 
@@ -76,8 +120,30 @@ optional = true
 version = "0.4"
 optional = true
 
+[dependencies.ark-relations]
+version = "0.4"
+optional = true
+
+# Phase 13: Hybrid Executor (optional)
+[dependencies.gpu-executor]
+path = "../gpu-executor"
+optional = true
+features = ["cpu", "parallel"]
+
 [[bench]]
 name = "parallel_benchmark"
+harness = false
+
+[[bench]]
+name = "retry_policy_benchmark"
+harness = false
+
+[[bench]]
+name = "flush_batch_benchmark"
+harness = false
+
+[[bench]]
+name = "hybrid_benchmark"
 harness = false
 
 [[example]]
@@ -140,3 +206,103 @@ required-features = ["groth16-verifier"]
 [[example]]
 name = "lfu_hotkey_demo"
 path = "../../examples/lfu_hotkey_demo.rs"
+
+[[example]]
+name = "rocksdb_batch_size_bench"
+path = "../../examples/rocksdb_batch_size_bench.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "rocksdb_monitor"
+path = "../../examples/rocksdb_monitor.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "rocksdb_adaptive_compare"
+path = "../../examples/rocksdb_adaptive_compare.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "rocksdb_adaptive_batch_bench"
+path = "../../src/node-core/examples/rocksdb_adaptive_batch_bench.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "cross_shard_minimal"
+path = "examples/cross_shard_minimal.rs"
+required-features = ["cross-shard"]
+
+[build-dependencies]
+tonic-build = "0.11"
+protoc-bin-vendored = "3"
+
+[[example]]
+name = "mvcc_auto_flush_demo"
+path = "examples/mvcc_auto_flush_demo.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "metrics_demo"
+path = "examples/metrics_demo.rs"
+
+[[example]]
+name = "metrics_http_demo"
+path = "examples/metrics_http_demo.rs"
+
+[[example]]
+name = "mixed_path_bench"
+path = "examples/mixed_path_bench.rs"
+
+[[example]]
+name = "e2e_three_channel_test"
+path = "examples/e2e_three_channel_test.rs"
+
+[[example]]
+name = "multi_core_consensus_bench"
+path = "examples/multi_core_consensus_bench.rs"
+required-features = ["partitioned-fastpath"]
+
+[[example]]
+name = "two_pc_consensus_bench"
+path = "examples/two_pc_consensus_bench.rs"
+required-features = ["partitioned-fastpath"]
+
+[[example]]
+name = "routing_metrics_http_demo"
+path = "examples/routing_metrics_http_demo.rs"
+
+[[example]]
+name = "state_pruning_demo"
+path = "examples/state_pruning_demo.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "stability_test_24h"
+path = "examples/stability_test_24h.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "quick_retry_bench"
+path = "examples/quick_retry_bench.rs"
+
+[[example]]
+name = "quick_flush_bench"
+path = "examples/quick_flush_bench.rs"
+required-features = ["rocksdb-storage"]
+
+[[example]]
+name = "zk_parallel_bench"
+path = "examples/zk_parallel_bench.rs"
+required-features = ["groth16-verifier"]
+
+[[example]]
+name = "zk_batch_vs_single_bench"
+path = "examples/zk_batch_vs_single_bench.rs"
+required-features = ["groth16-verifier"]
+[[example]]
+name = "zk_metrics_demo"
+path = "../../examples/zk_metrics_demo.rs"
+
+[[example]]
+name = "fast_path_bench"
+path = "../../examples/fast_path_bench.rs"

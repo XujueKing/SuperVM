@@ -2,13 +2,17 @@ use anyhow::Result;
 use clap::Parser;
 use futures::StreamExt;
 use libp2p::{
+    dcutr,
     gossipsub::{self, IdentTopic as Topic, MessageAuthenticity},
-    identify, mdns, ping, relay, dcutr,
-    swarm::{NetworkBehaviour, SwarmEvent}, 
+    identify, mdns, ping, relay,
+    swarm::{NetworkBehaviour, SwarmEvent},
     Multiaddr,
 };
 use std::time::Duration;
-use tokio::{select, io::{AsyncBufReadExt, BufReader}};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader},
+    select,
+};
 
 #[derive(NetworkBehaviour)]
 struct ChatBehaviour {
@@ -21,7 +25,10 @@ struct ChatBehaviour {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "chat_poc", about = "SuperVM Chat PoC (gossipsub + mDNS + QUIC/DCUtR/Relay)")]
+#[command(
+    name = "chat_poc",
+    about = "SuperVM Chat PoC (gossipsub + mDNS + QUIC/DCUtR/Relay)"
+)]
 struct Args {
     /// Optional multiaddr to dial, e.g. /ip4/192.168.1.10/tcp/4001
     #[arg(long)]
@@ -53,7 +60,7 @@ async fn main() -> Result<()> {
         .with_behaviour(|key, relay_client| {
             let local_peer_id = key.public().to_peer_id();
             println!("Local peer id: {local_peer_id}");
-            
+
             // gossipsub 配置
             let gs_config = gossipsub::ConfigBuilder::default()
                 .validation_mode(gossipsub::ValidationMode::Strict)
@@ -61,34 +68,32 @@ async fn main() -> Result<()> {
                 .max_transmit_size(1 << 20)
                 .build()
                 .expect("valid gossipsub config");
-            
-            let gossipsub = gossipsub::Behaviour::new(
-                MessageAuthenticity::Signed(key.clone()), 
-                gs_config
-            ).expect("gossipsub init");
-            
+
+            let gossipsub =
+                gossipsub::Behaviour::new(MessageAuthenticity::Signed(key.clone()), gs_config)
+                    .expect("gossipsub init");
+
             // mdns 本地发现
-            let mdns = mdns::tokio::Behaviour::new(
-                mdns::Config::default(), 
-                local_peer_id
-            ).expect("mdns init");
-            
+            let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
+                .expect("mdns init");
+
             // identify & ping
-            let identify = identify::Behaviour::new(
-                identify::Config::new("chat-poc/1.0".into(), key.public())
-            );
+            let identify = identify::Behaviour::new(identify::Config::new(
+                "chat-poc/1.0".into(),
+                key.public(),
+            ));
             let ping = ping::Behaviour::default();
-            
+
             // dcutr
             let dcutr = dcutr::Behaviour::new(local_peer_id);
-            
-            Ok(ChatBehaviour { 
-                gossipsub, 
-                mdns, 
-                identify, 
-                ping, 
-                relay_client, 
-                dcutr 
+
+            Ok(ChatBehaviour {
+                gossipsub,
+                mdns,
+                identify,
+                ping,
+                relay_client,
+                dcutr,
             })
         })?
         .build();

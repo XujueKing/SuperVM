@@ -1,0 +1,128 @@
+groups:
+  - name: supervm_performance_alerts
+    interval: 30s
+    rules:
+      # 核心性能告警
+      - alert: LowTPS
+        expr: mvcc_tps < 50000
+        for: 5m
+        labels:
+          severity: warning
+          component: mvcc
+        annotations:
+          summary: "SuperVM TPS过低"
+          description: "MVCC TPS {{ $value | humanize }}低于50K,当前值:{{ $value }},需检查性能瓶颈"
+
+      - alert: LowSuccessRate
+        expr: mvcc_success_rate < 80
+        for: 5m
+        labels:
+          severity: critical
+          component: mvcc
+        annotations:
+          summary: "事务成功率过低"
+          description: "MVCC成功率{{ $value | humanize }}%低于80%,当前值:{{ $value }}%,存在严重冲突"
+
+      # 三通道路由告警
+      - alert: HighFastPathFallbackRate
+        expr: vm_fast_fallback_ratio > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: routing
+        annotations:
+          summary: "FastPath回退率过高"
+          description: "FastPath回退率{{ $value | humanizePercentage }}超过10%,当前值:{{ $value | humanizePercentage }},可能存在路由配置问题或所有权预测不准确"
+
+      - alert: LowFastPathSuccessRate
+        expr: (sum(vm_fast_path_success_total) / sum(vm_fast_path_attempts_total)) * 100 < 95
+        for: 5m
+        labels:
+          severity: warning
+          component: routing
+        annotations:
+          summary: "FastPath成功率低于预期"
+          description: "FastPath成功率{{ $value | humanize }}%低于95%,当前值:{{ $value }}%,需优化AdaptiveRouter或所有权分析"
+
+      - alert: AdaptiveRouterAdjustmentFrequency
+        expr: rate(vm_routing_adaptive_adjustments_total[5m]) > 10
+        for: 10m
+        labels:
+          severity: info
+          component: routing
+        annotations:
+          summary: "AdaptiveRouter调整过于频繁"
+          description: "自适应路由器调整频率{{ $value | humanize }}次/秒,可能需要调整conflict_high/low阈值或update_every参数"
+
+      # ZK隐私验证告警
+      - alert: LowZKProofTPS
+        expr: vm_privacy_zk_parallel_tps < 30
+        for: 5m
+        labels:
+          severity: warning
+          component: privacy
+        annotations:
+          summary: "ZK证明吞吐量过低"
+          description: "RingCT证明TPS {{ $value | humanize }}低于30,当前值:{{ $value }},检查验证器性能或批量验证配置"
+
+      - alert: HighZKVerificationFailureRate
+        expr: vm_zk_verify_failure_rate > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: privacy
+        annotations:
+          summary: "ZK验证失败率过高"
+          description: "ZK验证失败率{{ $value | humanizePercentage }}超过5%,当前值:{{ $value | humanizePercentage }},检查证明生成器或验证器实现"
+
+      - alert: HighZKVerificationLatency
+        expr: vm_privacy_zk_verify_p95_latency_ms > 15
+        for: 5m
+        labels:
+          severity: warning
+          component: privacy
+        annotations:
+          summary: "ZK验证P95延迟过高"
+          description: "ZK验证P95延迟{{ $value | humanize }}ms超过15ms,当前值:{{ $value }}ms,可能影响Privacy通道性能"
+
+      # 存储与GC告警
+      - alert: HighGCFrequency
+        expr: rate(mvcc_gc_runs_total[5m]) > 100
+        for: 10m
+        labels:
+          severity: info
+          component: storage
+        annotations:
+          summary: "MVCC GC运行频率过高"
+          description: "GC运行频率{{ $value | humanize }}次/秒,可能需要调整GC阈值或增加版本清理间隔"
+
+      - alert: LowVersionCleaningRate
+        expr: rate(mvcc_gc_versions_cleaned_total[5m]) < 10 and rate(mvcc_gc_runs_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: info
+          component: storage
+        annotations:
+          summary: "MVCC版本清理效率低"
+          description: "GC版本清理速率{{ $value | humanize }}个/秒过低,可能存在长事务阻塞GC"
+
+      # 系统健康告警
+      - alert: HighTransactionAbortRate
+        expr: rate(mvcc_txn_aborted_total[5m]) / rate(mvcc_txn_started_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: mvcc
+        annotations:
+          summary: "事务中止率过高"
+          description: "事务中止率{{ $value | humanizePercentage }}超过20%,当前值:{{ $value | humanizePercentage }},存在严重冲突,建议检查工作负载或调整并发控制策略"
+
+      - alert: PrometheusMetricsStale
+        expr: up{job="supervm"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "SuperVM监控指标停止更新"
+          description: "Prometheus无法抓取SuperVM指标,实例可能已下线或/metrics端点不可用"

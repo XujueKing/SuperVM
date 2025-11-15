@@ -1,0 +1,72 @@
+# Prometheus 配置 - RingCT 并行证明监控
+# 用法: prometheus --config.file=prometheus-ringct.yml
+
+global:
+  scrape_interval: 5s       # 每5秒抓取一次指标
+  evaluation_interval: 5s   # 每5秒评估告警规则
+  scrape_timeout: 4s        # 抓取超时时间
+
+# 告警规则文件
+rule_files:
+  - "prometheus-zk-alerts.yml"
+
+# 抓取配置
+scrape_configs:
+  # RingCT HTTP Benchmark
+  - job_name: 'ringct-parallel-prover'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          env: 'dev'
+          component: 'ringct-prover'
+          instance: 'local-bench'
+    
+    # 指标路径
+    metrics_path: '/metrics'
+    
+    # 抓取间隔可以覆盖全局设置
+    # scrape_interval: 3s
+    
+    # 指标重写规则(可选)
+    metric_relabel_configs:
+      # 为RingCT指标添加额外标签
+      - source_labels: [__name__]
+        regex: 'vm_privacy_zk_parallel_.*'
+        target_label: 'proof_system'
+        replacement: 'groth16-bls12-381'
+
+  # 如果有多个实例,可以添加更多targets
+  # - job_name: 'ringct-prod-node1'
+  #   static_configs:
+  #     - targets: ['node1.example.com:9090']
+  #       labels:
+  #         env: 'prod'
+  #         instance: 'node1'
+
+  # SuperVM MVCC 指标 (如果运行其他示例)
+  - job_name: 'supervm-mvcc'
+    static_configs:
+      - targets: ['localhost:8080']
+        labels:
+          env: 'dev'
+          component: 'mvcc-scheduler'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+# Alertmanager 配置 (可选)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['localhost:9093']
+
+# 远程写入配置 (可选 - 用于长期存储)
+# remote_write:
+#   - url: "http://your-remote-storage:9009/api/v1/push"
+#     write_relabel_configs:
+#       - source_labels: [__name__]
+#         regex: 'vm_privacy_zk_parallel_.*'
+#         action: keep
+
+# 远程读取配置 (可选)
+# remote_read:
+#   - url: "http://your-remote-storage:9009/api/v1/read"

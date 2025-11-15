@@ -1,0 +1,46 @@
+[package]
+name = "l2-executor"
+version = "0.1.0"
+edition = "2021"
+authors = ["king <king@example.com>"]
+description = "SuperVM L2 zkVM and proof aggregation scaffolding"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/king/supervm"
+
+[features]
+default = []
+risc0-poc = ["dep:risc0-zkvm"]
+sp1-poc = ["dep:sp1-sdk"]
+
+[dependencies]
+anyhow = "1.0"
+sha2 = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1.3"
+toml = "0.8"
+log = "0.4"
+rayon = "1.11"
+lru = "0.12"
+actix-web = "4.9"
+tokio = { version = "1.41", features = ["full"] }
+
+[dev-dependencies]
+hex = "0.4"
+criterion = "0.5"
+num_cpus = "1.16"
+env_logger = "0.11"
+
+[[bench]]
+name = "l2_benchmark"
+harness = false
+
+[target.'cfg(not(windows))'.dependencies]
+risc0-zkvm = { version = "1.2.6", optional = true, default-features = false, features = ["std", "prove"] }
+sp1-sdk = { version = "3.0", optional = true }
+
+[target.'cfg(not(windows))'.build-dependencies]
+risc0-build = "1.2.6"
+sp1-build = "3.0"
+
+[package.metadata.risc0]
+methods = ["methods/fibonacci"]

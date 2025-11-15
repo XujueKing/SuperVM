@@ -1,5 +1,5 @@
 // Pedersen + Range 组合电路：隐藏金额的完整范围证明
-// 
+//
 // 公开输入：承诺 C
 // 私有输入：金额 v ∈ [0, 2^64-1]，盲化因子 r
 // 约束：
@@ -12,7 +12,7 @@ use ark_relations::r1cs::{
 };
 
 /// 组合电路：Pedersen 承诺 + 64-bit 范围证明
-/// 
+///
 /// 这是隐私交易中隐藏金额范围证明的核心组件
 #[derive(Clone)]
 pub struct CombinedCircuit<F: PrimeField> {
@@ -26,17 +26,13 @@ pub struct CombinedCircuit<F: PrimeField> {
 
 impl<F: PrimeField> CombinedCircuit<F> {
     /// 创建新的组合电路实例
-    /// 
+    ///
     /// # 参数
     /// * `value` - 金额 v ∈ [0, 2^64-1]（None 用于 setup）
     /// * `blinding` - 盲化因子 r（None 用于 setup）
     /// * `k` - 承诺常数（公开参数）
     pub fn new(value: Option<u64>, blinding: Option<F>, k: u64) -> Self {
-        Self {
-            value,
-            blinding,
-            k,
-        }
+        Self { value, blinding, k }
     }
 
     /// 计算承诺 C = v + r*k
@@ -56,7 +52,7 @@ impl<F: PrimeField> CombinedCircuit<F> {
 impl<F: PrimeField> ConstraintSynthesizer<F> for CombinedCircuit<F> {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
         // ========== 第一部分：Pedersen 承诺约束 ==========
-        
+
         // 1. 分配私有输入：金额 v
         let v_var = cs.new_witness_variable(|| {
             self.value
@@ -65,9 +61,8 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CombinedCircuit<F> {
         })?;
 
         // 2. 分配私有输入：盲化因子 r
-        let r_var = cs.new_witness_variable(|| {
-            self.blinding.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let r_var =
+            cs.new_witness_variable(|| self.blinding.ok_or(SynthesisError::AssignmentMissing))?;
 
         // 3. 计算 r * k
         let k_value = F::from(self.k);
@@ -75,9 +70,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CombinedCircuit<F> {
             Some(r) => Some(*r * k_value),
             None => None,
         };
-        let rk_var = cs.new_witness_variable(|| {
-            rk.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let rk_var = cs.new_witness_variable(|| rk.ok_or(SynthesisError::AssignmentMissing))?;
 
         // 约束：rk = r * k
         cs.enforce_constraint(
@@ -88,9 +81,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CombinedCircuit<F> {
 
         // 4. 计算承诺 C = v + r*k
         let c_value = self.compute_commitment();
-        let c_var = cs.new_input_variable(|| {
-            c_value.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let c_var = cs.new_input_variable(|| c_value.ok_or(SynthesisError::AssignmentMissing))?;
 
         // 约束：C = v + rk
         cs.enforce_constraint(
@@ -100,17 +91,16 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CombinedCircuit<F> {
         )?;
 
         // ========== 第二部分：64-bit 范围证明约束 ==========
-        
+
         // 将金额 v 分解为 64 个比特
         let value_u64 = self.value.unwrap_or(0);
-        
+
         // 为每个比特创建变量
         let mut bit_vars = Vec::with_capacity(64);
         for i in 0..64 {
             let bit_value = ((value_u64 >> i) & 1) == 1;
-            let bit_var = cs.new_witness_variable(|| {
-                Ok(if bit_value { F::one() } else { F::zero() })
-            })?;
+            let bit_var =
+                cs.new_witness_variable(|| Ok(if bit_value { F::one() } else { F::zero() }))?;
             bit_vars.push(bit_var);
         }
 
@@ -145,7 +135,7 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for CombinedCircuit<F> {
 mod tests {
     use super::*;
     use ark_bls12_381::{Bls12_381, Fr};
-    use ark_groth16::{Groth16, prepare_verifying_key};
+    use ark_groth16::{prepare_verifying_key, Groth16};
     use ark_snark::SNARK;
     use rand::rngs::OsRng;
 
@@ -155,7 +145,7 @@ mod tests {
         let k = 7u64;
 
         println!("\n=== Pedersen + Range 组合电路测试（小金额）===");
-        
+
         // 1. Trusted Setup
         println!("1. 执行 Trusted Setup...");
         let params = Groth16::<Bls12_381>::generate_random_parameters_with_reduction(
@@ -169,13 +159,12 @@ mod tests {
         let v = 100u64;
         let r = Fr::from(42u64);
         println!("\n2. 生成证明（v={}, r=42, k={}）...", v, k);
-        
+
         let circuit = CombinedCircuit::new(Some(v), Some(r), k);
         let c = circuit.compute_commitment().unwrap();
         println!("   承诺 C = v + r*k = {} + 42*{} = {}", v, k, c);
 
-        let proof = Groth16::<Bls12_381>::prove(&params, circuit, rng)
-            .expect("proving failed");
+        let proof = Groth16::<Bls12_381>::prove(&params, circuit, rng).expect("proving failed");
         println!("   ✓ 证明生成成功");
 
         // 3. 验证证明
@@ -203,7 +192,7 @@ mod tests {
         let k = 7u64;
 
         println!("\n=== Pedersen + Range 组合电路测试（大金额）===");
-        
+
         // 1. Trusted Setup
         println!("1. 执行 Trusted Setup...");
         let params = Groth16::<Bls12_381>::generate_random_parameters_with_reduction(
@@ -217,12 +206,11 @@ mod tests {
         let v = 123456789012345u64; // ~123 万亿
         let r = Fr::from(987654321u64);
         println!("\n2. 生成证明（v={}，真实场景大金额）...", v);
-        
+
         let circuit = CombinedCircuit::new(Some(v), Some(r), k);
         let c = circuit.compute_commitment().unwrap();
 
-        let proof = Groth16::<Bls12_381>::prove(&params, circuit, rng)
-            .expect("proving failed");
+        let proof = Groth16::<Bls12_381>::prove(&params, circuit, rng).expect("proving failed");
         println!("   ✓ 证明生成成功");
 
         // 3. 验证证明
@@ -241,7 +229,7 @@ mod tests {
         let k = 7u64;
 
         println!("\n=== Pedersen + Range 组合电路边界测试 ===");
-        
+
         let params = Groth16::<Bls12_381>::generate_random_parameters_with_reduction(
             CombinedCircuit::new(None, None, k),
             rng,

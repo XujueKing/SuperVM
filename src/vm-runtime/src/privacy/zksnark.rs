@@ -12,7 +12,9 @@ use anyhow::Result;
 pub struct ZkCircuitId(pub String);
 
 impl From<&str> for ZkCircuitId {
-    fn from(s: &str) -> Self { Self(s.to_owned()) }
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
 }
 
 /// Generic ZK verification error
@@ -33,16 +35,30 @@ pub enum ZkError {
 /// Implementations could wrap different libraries/backends (arkworks/Halo2/etc.).
 pub trait ZkVerifier: Send + Sync {
     /// Verify a proof for a given circuit with public inputs
-    fn verify_proof(&self, circuit: &ZkCircuitId, proof: &[u8], public_inputs: &[u8]) -> Result<bool, ZkError>;
+    fn verify_proof(
+        &self,
+        circuit: &ZkCircuitId,
+        proof: &[u8],
+        public_inputs: &[u8],
+    ) -> Result<bool, ZkError>;
 }
 
 /// No-op verifier useful for tests or when ZK is not enabled yet
 pub struct NoopVerifier;
 
-impl Default for NoopVerifier { fn default() -> Self { Self } }
+impl Default for NoopVerifier {
+    fn default() -> Self {
+        Self
+    }
+}
 
 impl ZkVerifier for NoopVerifier {
-    fn verify_proof(&self, _circuit: &ZkCircuitId, _proof: &[u8], _public_inputs: &[u8]) -> Result<bool, ZkError> {
+    fn verify_proof(
+        &self,
+        _circuit: &ZkCircuitId,
+        _proof: &[u8],
+        _public_inputs: &[u8],
+    ) -> Result<bool, ZkError> {
         // By default, do not accept any proof. This makes calls explicit in tests.
         Ok(false)
     }
@@ -55,7 +71,9 @@ mod tests {
     #[test]
     fn noop_verifier_always_false() {
         let v = NoopVerifier::default();
-        let ok = v.verify_proof(&ZkCircuitId::from("ring_signature_v1"), b"proof", b"inputs").unwrap();
+        let ok = v
+            .verify_proof(&ZkCircuitId::from("ring_signature_v1"), b"proof", b"inputs")
+            .unwrap();
         assert!(!ok);
     }
 }

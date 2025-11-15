@@ -12,9 +12,16 @@ use rand::rngs::OsRng;
 use std::time::Instant;
 
 // 辅助函数：执行完整的 prove-verify 流程
-fn bench_full_cycle(k: u32) -> (std::time::Duration, std::time::Duration, std::time::Duration, usize) {
+fn bench_full_cycle(
+    k: u32,
+) -> (
+    std::time::Duration,
+    std::time::Duration,
+    std::time::Duration,
+    usize,
+) {
     let mut rng = OsRng;
-    
+
     // 1. Setup: 生成 SRS (通用 trusted setup)
     let t_setup_start = Instant::now();
     let params = Params::<G1Affine>::new(k);
@@ -39,7 +46,7 @@ fn bench_full_cycle(k: u32) -> (std::time::Duration, std::time::Duration, std::t
     let instances = vec![vec![c]];
     let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
     let t_prove_start = Instant::now();
-    
+
     create_proof(
         &params,
         &pk,
@@ -49,7 +56,7 @@ fn bench_full_cycle(k: u32) -> (std::time::Duration, std::time::Duration, std::t
         &mut transcript,
     )
     .expect("create_proof");
-    
+
     let proof = transcript.finalize();
     let t_prove = t_prove_start.elapsed();
     let proof_size = proof.len();
@@ -57,7 +64,7 @@ fn bench_full_cycle(k: u32) -> (std::time::Duration, std::time::Duration, std::t
     // 5. Verify
     let mut transcript = Blake2bRead::<_, G1Affine, Challenge255<_>>::init(&proof[..]);
     let t_verify_start = Instant::now();
-    
+
     // 使用 SingleVerifier 策略（简单验证）
     use halo2_proofs::plonk::SingleVerifier;
     let strategy = SingleVerifier::new(&params);
@@ -69,7 +76,7 @@ fn bench_full_cycle(k: u32) -> (std::time::Duration, std::time::Duration, std::t
         &mut transcript,
     )
     .expect("verify_proof failed");
-    
+
     let t_verify = t_verify_start.elapsed();
 
     (t_setup + t_keygen, t_prove, t_verify, proof_size)
@@ -77,7 +84,7 @@ fn bench_full_cycle(k: u32) -> (std::time::Duration, std::time::Duration, std::t
 
 fn main() {
     println!("=== Halo2 (KZG/Bn256) 性能基准测试 ===\n");
-    
+
     for k in [6, 8, 10] {
         print!("k={} (2^{}={} 行): ", k, k, 1 << k);
         let (t_setup, t_prove, t_verify, proof_size) = bench_full_cycle(k);
@@ -86,7 +93,7 @@ fn main() {
             t_setup, t_prove, t_verify, proof_size
         );
     }
-    
+
     println!("\n对比 Groth16 (arkworks):");
     println!("  Groth16: Setup=26.8ms | Prove=10.0ms | Verify=3.6ms | 证明大小=128 bytes");
 }

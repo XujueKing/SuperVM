@@ -17,24 +17,28 @@ pub struct CommitmentGenerator {
     // TODO: Phase 2.2.3 - 添加椭圆曲线点操作
 }
 
+impl Default for CommitmentGenerator {
+    fn default() -> Self { Self::new() }
+}
+
 impl CommitmentGenerator {
     /// 创建新的生成器
     pub fn new() -> Self {
         todo!("Phase 2.2.3: Implement commitment generator")
     }
-    
+
     /// 生成 Pedersen Commitment
-    /// 
+    ///
     /// # 参数
     /// - `amount`: 金额 (0 到 2^64-1)
     /// - `blinding_factor`: 致盲因子 (32 bytes random scalar)
-    /// 
+    ///
     /// # 返回
     /// Commitment C = amount*G + blinding*H
     pub fn commit(&self, _amount: u64, _blinding_factor: &[u8; 32]) -> Result<Commitment> {
         todo!("Phase 2.2.3: Implement Pedersen commitment")
     }
-    
+
     /// 生成随机致盲因子
     pub fn generate_blinding_factor(&self) -> [u8; 32] {
         todo!("Phase 2.2.3: Implement blinding factor generation")
@@ -47,21 +51,25 @@ pub struct CommitmentVerifier {
     // TODO: Phase 2.2.3 - 添加验证逻辑
 }
 
+impl Default for CommitmentVerifier {
+    fn default() -> Self { Self::new() }
+}
+
 impl CommitmentVerifier {
     /// 创建新的验证器
     pub fn new() -> Self {
         todo!("Phase 2.2.3: Implement commitment verifier")
     }
-    
+
     /// 验证承诺和的平衡性
-    /// 
+    ///
     /// 验证: sum(inputs) = sum(outputs) + fee*G
-    /// 
+    ///
     /// # 参数
     /// - `input_commitments`: 输入承诺列表
     /// - `output_commitments`: 输出承诺列表
     /// - `fee`: 交易费 (明文)
-    /// 
+    ///
     /// # 返回
     /// 验证是否通过
     pub fn verify_sum(
@@ -89,13 +97,13 @@ pub fn sub_commitments(_c1: &Commitment, _c2: &Commitment) -> Result<Commitment>
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     #[should_panic(expected = "not yet implemented")]
     fn test_commitment_generator_placeholder() {
         let _generator = CommitmentGenerator::new();
     }
-    
+
     #[test]
     #[should_panic(expected = "not yet implemented")]
     fn test_commitment_verifier_placeholder() {

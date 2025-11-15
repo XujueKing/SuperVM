@@ -8,11 +8,8 @@ use std::sync::Arc;
 
 // Arkworks imports are only used when feature is enabled (this file is behind the feature)
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_groth16::{prepare_verifying_key, PreparedVerifyingKey, Proof};
+use ark_groth16::{PreparedVerifyingKey, Proof};
 use ark_serialize::CanonicalDeserialize;
-use ark_snark::SNARK;
-use zk_groth16_test::MultiplyCircuit;
-use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 
 /// Incremental Groth16 verifier adapter
 /// Note: Real verification wiring can be added later without breaking callers.
@@ -25,7 +22,9 @@ pub struct Groth16Verifier {
 impl Groth16Verifier {
     /// Create an empty verifier registry. Call `register` to add circuits.
     pub fn new() -> Self {
-        Self { registry: DashMap::new() }
+        Self {
+            registry: DashMap::new(),
+        }
     }
 
     /// Register a circuit verifier handler.
@@ -58,15 +57,18 @@ impl Groth16Verifier {
                 .map_err(|_| ZkError::InvalidPublicInputs)?;
 
             // Verify
-            ark_groth16::Groth16::<Bls12_381>
-                ::verify_proof(&pvk, &proof, &[c])
+            ark_groth16::Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[c])
                 .map_err(|e| ZkError::Other(anyhow::anyhow!(e)))
         });
     }
 
     /// Generic registration: public_inputs are encoded as a length-prefixed vector of Fr
     /// Bytes layout: [u32_le length] [Fr0] [Fr1] ... where each Fr is CanonicalSerialize (uncompressed)
-    pub fn register_circuit_with_pvk_fr_vec(&self, circuit: impl Into<String>, pvk: PreparedVerifyingKey<Bls12_381>) {
+    pub fn register_circuit_with_pvk_fr_vec(
+        &self,
+        circuit: impl Into<String>,
+        pvk: PreparedVerifyingKey<Bls12_381>,
+    ) {
         let pvk = Arc::new(pvk);
         let name = circuit.into();
         self.register(name, move |proof_bytes, public_inputs_bytes| {
@@ -76,11 +78,14 @@ impl Groth16Verifier {
                 .map_err(|_| ZkError::InvalidProof)?;
 
             // Deserialize public inputs vec<Fr>
-            if public_inputs_bytes.len() < 4 { return Err(ZkError::InvalidPublicInputs); }
+            if public_inputs_bytes.len() < 4 {
+                return Err(ZkError::InvalidPublicInputs);
+            }
             let mut ir = std::io::Cursor::new(public_inputs_bytes);
             use std::io::Read as _;
             let mut len_buf = [0u8; 4];
-            ir.read_exact(&mut len_buf).map_err(|_| ZkError::InvalidPublicInputs)?;
+            ir.read_exact(&mut len_buf)
+                .map_err(|_| ZkError::InvalidPublicInputs)?;
             let len = u32::from_le_bytes(len_buf) as usize;
             let mut inputs: Vec<Fr> = Vec::with_capacity(len);
             for _ in 0..len {
@@ -89,8 +94,7 @@ impl Groth16Verifier {
                 inputs.push(fr);
             }
 
-            ark_groth16::Groth16::<Bls12_381>
-                ::verify_proof(&pvk, &proof, &inputs)
+            ark_groth16::Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &inputs)
                 .map_err(|e| ZkError::Other(anyhow::anyhow!(e)))
         });
     }
@@ -104,22 +108,24 @@ impl Groth16Verifier {
     /// The verifier only needs PVK; Poseidon config is captured in the circuit constraints.
     pub fn register_ring_signature_v1_with_pvk(&self, pvk: PreparedVerifyingKey<Bls12_381>) {
         let pvk = Arc::new(pvk);
-        self.register("ring_signature_v1", move |proof_bytes, public_inputs_bytes| {
-            // Deserialize proof
-            let mut pr = std::io::Cursor::new(proof_bytes);
-            let proof = Proof::<Bls12_381>::deserialize_uncompressed_unchecked(&mut pr)
-                .map_err(|_| ZkError::InvalidProof)?;
+        self.register(
+            "ring_signature_v1",
+            move |proof_bytes, public_inputs_bytes| {
+                // Deserialize proof
+                let mut pr = std::io::Cursor::new(proof_bytes);
+                let proof = Proof::<Bls12_381>::deserialize_uncompressed_unchecked(&mut pr)
+                    .map_err(|_| ZkError::InvalidProof)?;
 
-            // Deserialize key_image (single Fr)
-            let mut ir = std::io::Cursor::new(public_inputs_bytes);
-            let key_image = Fr::deserialize_uncompressed_unchecked(&mut ir)
-                .map_err(|_| ZkError::InvalidPublicInputs)?;
+                // Deserialize key_image (single Fr)
+                let mut ir = std::io::Cursor::new(public_inputs_bytes);
+                let key_image = Fr::deserialize_uncompressed_unchecked(&mut ir)
+                    .map_err(|_| ZkError::InvalidPublicInputs)?;
 
-            // Verify
-            ark_groth16::Groth16::<Bls12_381>
-                ::verify_proof(&pvk, &proof, &[key_image])
-                .map_err(|e| ZkError::Other(anyhow::anyhow!(e)))
-        });
+                // Verify
+                ark_groth16::Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[key_image])
+                    .map_err(|e| ZkError::Other(anyhow::anyhow!(e)))
+            },
+        );
     }
 
     /// Register range_proof_v1 circuit with PVK.
@@ -135,8 +141,7 @@ impl Groth16Verifier {
             let c = Fr::deserialize_uncompressed_unchecked(&mut ir)
                 .map_err(|_| ZkError::InvalidPublicInputs)?;
 
-            ark_groth16::Groth16::<Bls12_381>
-                ::verify_proof(&pvk, &proof, &[c])
+            ark_groth16::Groth16::<Bls12_381>::verify_proof(&pvk, &proof, &[c])
                 .map_err(|e| ZkError::Other(anyhow::anyhow!(e)))
         });
     }
@@ -158,7 +163,12 @@ impl Groth16Verifier {
 }
 
 impl ZkVerifier for Groth16Verifier {
-    fn verify_proof(&self, circuit: &ZkCircuitId, proof: &[u8], public_inputs: &[u8]) -> Result<bool, ZkError> {
+    fn verify_proof(
+        &self,
+        circuit: &ZkCircuitId,
+        proof: &[u8],
+        public_inputs: &[u8],
+    ) -> Result<bool, ZkError> {
         if let Some(handler) = self.registry.get(&circuit.0) {
             (handler.value())(proof, public_inputs)
         } else {

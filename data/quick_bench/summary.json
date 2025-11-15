@@ -1,0 +1,18 @@
+﻿{
+    "generated_at":  "2025-11-08T08:32:53.3069135+08:00",
+    "no_emoji":  true,
+    "retry_bench":  {
+                        "successes":  1500,
+                        "retries":  4500,
+                        "throughput_ops_sec":  548,
+                        "raw_file":  "data\\quick_bench\\quick_retry_bench-output.txt",
+                        "exit_code":  0
+                    },
+    "flush_bench":  {
+                        "transactions":  2000,
+                        "committed":  2000,
+                        "throughput_txn_sec":  348371,
+                        "raw_file":  "data\\quick_bench\\quick_flush_bench-output.txt",
+                        "exit_code":  0
+                    }
+}

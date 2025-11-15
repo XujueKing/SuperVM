@@ -129,12 +129,12 @@ impl PublicKey {
     pub fn zero() -> Self {
         PublicKey([0u8; 32])
     }
-    
+
     /// 从字节数组创建
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         PublicKey(bytes)
     }
-    
+
     /// 转换为字节数组
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0
@@ -147,12 +147,12 @@ impl SecretKey {
     pub fn zero() -> Self {
         SecretKey([0u8; 32])
     }
-    
+
     /// 从字节数组创建
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         SecretKey(bytes)
     }
-    
+
     /// 安全清零 (drop 时调用)
     pub fn zeroize(&mut self) {
         self.0.fill(0);
@@ -170,12 +170,12 @@ impl KeyImage {
     pub fn zero() -> Self {
         KeyImage([0u8; 32])
     }
-    
+
     /// 从字节数组创建
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         KeyImage(bytes)
     }
-    
+
     /// 转换为字节数组
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0
@@ -187,12 +187,12 @@ impl Commitment {
     pub fn zero() -> Self {
         Commitment([0u8; 32])
     }
-    
+
     /// 从字节数组创建
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Commitment(bytes)
     }
-    
+
     /// 转换为字节数组
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0

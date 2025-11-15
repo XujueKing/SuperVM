@@ -1,0 +1,160 @@
+# HELP mvcc_txn_started_total Total number of transactions started
+# TYPE mvcc_txn_started_total counter
+mvcc_txn_started_total 100
+# HELP mvcc_txn_committed_total Total number of transactions committed
+# TYPE mvcc_txn_committed_total counter
+mvcc_txn_committed_total 100
+# HELP mvcc_txn_aborted_total Total number of transactions aborted
+# TYPE mvcc_txn_aborted_total counter
+mvcc_txn_aborted_total 0
+# HELP mvcc_tps Current transactions per second
+# TYPE mvcc_tps gauge
+mvcc_tps 153303.69
+# HELP mvcc_tps_window Current window TPS (rolling)
+# TYPE mvcc_tps_window gauge
+mvcc_tps_window 0.00
+# HELP mvcc_tps_peak Peak TPS observed over windows
+# TYPE mvcc_tps_peak gauge
+mvcc_tps_peak 0.00
+# HELP mvcc_success_rate Transaction success rate percentage
+# TYPE mvcc_success_rate gauge
+mvcc_success_rate 100.00
+# HELP vm_fast_fallback_total Total number of fast path fallbacks to consensus
+# TYPE vm_fast_fallback_total counter
+vm_fast_fallback_total 0
+# HELP vm_fast_fallback_ratio Ratio of fast fallbacks over total committed transactions
+# TYPE vm_fast_fallback_ratio gauge
+vm_fast_fallback_ratio 0.000000
+# HELP cross_shard_prepare_total Total number of cross-shard Prepare requests processed
+# TYPE cross_shard_prepare_total counter
+cross_shard_prepare_total 0
+# HELP cross_shard_prepare_abort_total Total number of cross-shard Prepare aborts (conflict/version/privacy)
+# TYPE cross_shard_prepare_abort_total counter
+cross_shard_prepare_abort_total 0
+# HELP cross_shard_privacy_invalid_total Total number of privacy proof validation failures in Prepare phase
+# TYPE cross_shard_privacy_invalid_total counter
+cross_shard_privacy_invalid_total 0
+# HELP cross_shard_prepare_last_latency_ms Last cross-shard Prepare handling latency (ms)
+# TYPE cross_shard_prepare_last_latency_ms gauge
+cross_shard_prepare_last_latency_ms 0.000
+# HELP mvcc_txn_latency_ms Transaction latency percentiles in milliseconds
+# TYPE mvcc_txn_latency_ms summary
+mvcc_txn_latency_ms{quantile="0.5"} 1.00
+mvcc_txn_latency_ms{quantile="0.9"} 1.00
+mvcc_txn_latency_ms{quantile="0.99"} 1.00
+# HELP mvcc_gc_runs_total Total number of GC runs
+# TYPE mvcc_gc_runs_total counter
+mvcc_gc_runs_total 0
+# HELP mvcc_gc_versions_cleaned_total Total number of versions cleaned by GC
+# TYPE mvcc_gc_versions_cleaned_total counter
+mvcc_gc_versions_cleaned_total 0
+# HELP mvcc_flush_runs_total Total number of flush operations
+# TYPE mvcc_flush_runs_total counter
+mvcc_flush_runs_total 0
+# HELP mvcc_flush_keys_total Total number of keys flushed
+# TYPE mvcc_flush_keys_total counter
+mvcc_flush_keys_total 0
+# HELP mvcc_flush_bytes_total Total number of bytes flushed
+# TYPE mvcc_flush_bytes_total counter
+mvcc_flush_bytes_total 0
+# HELP rocksdb_gets_total Total number of RocksDB get operations
+# TYPE rocksdb_gets_total counter
+rocksdb_gets_total 0
+# HELP rocksdb_puts_total Total number of RocksDB put operations
+# TYPE rocksdb_puts_total counter
+rocksdb_puts_total 0
+# HELP rocksdb_deletes_total Total number of RocksDB delete operations
+# TYPE rocksdb_deletes_total counter
+rocksdb_deletes_total 0
+# HELP rocksdb_estimate_num_keys Estimated number of keys in RocksDB
+# TYPE rocksdb_estimate_num_keys gauge
+rocksdb_estimate_num_keys 0
+# HELP rocksdb_total_sst_size_bytes Total SST file size in bytes
+# TYPE rocksdb_total_sst_size_bytes gauge
+rocksdb_total_sst_size_bytes 0
+# HELP rocksdb_cache_hit_total Total RocksDB block cache hits
+# TYPE rocksdb_cache_hit_total counter
+rocksdb_cache_hit_total 0
+# HELP rocksdb_cache_miss_total Total RocksDB block cache misses
+# TYPE rocksdb_cache_miss_total counter
+rocksdb_cache_miss_total 0
+# HELP rocksdb_cache_hit_rate Block cache hit rate percentage
+# TYPE rocksdb_cache_hit_rate gauge
+rocksdb_cache_hit_rate 0.00
+# HELP rocksdb_compaction_cpu_micros Total CPU time spent on compaction (microseconds)
+# TYPE rocksdb_compaction_cpu_micros counter
+rocksdb_compaction_cpu_micros 0
+# HELP rocksdb_compaction_write_bytes Total bytes written during compaction
+# TYPE rocksdb_compaction_write_bytes counter
+rocksdb_compaction_write_bytes 0
+# HELP rocksdb_write_stall_micros Total time spent in write stalls (microseconds)
+# TYPE rocksdb_write_stall_micros counter
+rocksdb_write_stall_micros 0
+# HELP rocksdb_num_files_level0 Number of SST files in Level 0
+# TYPE rocksdb_num_files_level0 gauge
+rocksdb_num_files_level0 0
+# HELP rocksdb_num_immutable_mem_table Number of immutable memtables
+# TYPE rocksdb_num_immutable_mem_table gauge
+rocksdb_num_immutable_mem_table 0
+# HELP vm_privacy_zk_parallel_proof_total Total parallel ZK proofs attempted
+# TYPE vm_privacy_zk_parallel_proof_total counter
+vm_privacy_zk_parallel_proof_total 0
+# HELP vm_privacy_zk_parallel_proof_failed_total Total parallel ZK proofs failed
+# TYPE vm_privacy_zk_parallel_proof_failed_total counter
+vm_privacy_zk_parallel_proof_failed_total 0
+# HELP vm_privacy_zk_parallel_batches_total Total parallel proof batches processed
+# TYPE vm_privacy_zk_parallel_batches_total counter
+vm_privacy_zk_parallel_batches_total 0
+# HELP vm_privacy_zk_parallel_batch_latency_ms Last batch total latency (ms)
+# TYPE vm_privacy_zk_parallel_batch_latency_ms gauge
+vm_privacy_zk_parallel_batch_latency_ms 0.000
+# HELP vm_privacy_zk_parallel_avg_latency_ms Last batch average per-proof latency (ms)
+# TYPE vm_privacy_zk_parallel_avg_latency_ms gauge
+vm_privacy_zk_parallel_avg_latency_ms 0.000
+# HELP vm_privacy_zk_parallel_tps Last batch throughput proofs/sec
+# TYPE vm_privacy_zk_parallel_tps gauge
+vm_privacy_zk_parallel_tps 0.000
+# HELP vm_privacy_zk_batch_verify_total Total ZK proofs verified in batches
+# TYPE vm_privacy_zk_batch_verify_total counter
+vm_privacy_zk_batch_verify_total 0
+# HELP vm_privacy_zk_batch_verify_failed_total Total failed ZK verifications in batches
+# TYPE vm_privacy_zk_batch_verify_failed_total counter
+vm_privacy_zk_batch_verify_failed_total 0
+# HELP vm_privacy_zk_batch_verify_batches_total Total number of verification batches processed
+# TYPE vm_privacy_zk_batch_verify_batches_total counter
+vm_privacy_zk_batch_verify_batches_total 0
+# HELP vm_privacy_zk_batch_verify_batch_latency_ms Last verification batch total latency (ms)
+# TYPE vm_privacy_zk_batch_verify_batch_latency_ms gauge
+vm_privacy_zk_batch_verify_batch_latency_ms 0.000
+# HELP vm_privacy_zk_batch_verify_avg_latency_ms Last batch average per-proof verification latency (ms)
+# TYPE vm_privacy_zk_batch_verify_avg_latency_ms gauge
+vm_privacy_zk_batch_verify_avg_latency_ms 0.000
+# HELP vm_privacy_zk_batch_verify_tps Last batch verification throughput proofs/sec
+# TYPE vm_privacy_zk_batch_verify_tps gauge
+vm_privacy_zk_batch_verify_tps 0.000
+# HELP vm_zk_verify_total Total ZK verifications attempted
+# TYPE vm_zk_verify_total counter
+vm_zk_verify_total 0
+# HELP vm_zk_verify_failures_total Total ZK verification failures
+# TYPE vm_zk_verify_failures_total counter
+vm_zk_verify_failures_total 0
+# HELP vm_zk_verify_failure_rate ZK verification failure rate (0.0-1.0)
+# TYPE vm_zk_verify_failure_rate gauge
+vm_zk_verify_failure_rate 0.000000
+# HELP vm_zk_verify_latency_avg_ms Average ZK verification latency (ms)
+# TYPE vm_zk_verify_latency_avg_ms gauge
+vm_zk_verify_latency_avg_ms 0.000
+# HELP vm_zk_verify_latency_p50_ms ZK verification latency P50 (ms)
+# TYPE vm_zk_verify_latency_p50_ms gauge
+vm_zk_verify_latency_p50_ms 0.000
+# HELP vm_zk_verify_latency_p90_ms ZK verification latency P90 (ms)
+# TYPE vm_zk_verify_latency_p90_ms gauge
+vm_zk_verify_latency_p90_ms 0.000
+# HELP vm_zk_verify_latency_p99_ms ZK verification latency P99 (ms)
+# TYPE vm_zk_verify_latency_p99_ms gauge
+vm_zk_verify_latency_p99_ms 0.000
+# HELP vm_zk_backend_count ZK verifications by backend type
+# TYPE vm_zk_backend_count counter
+vm_zk_backend_count{backend="groth16-bls12-381"} 0
+vm_zk_backend_count{backend="plonk"} 0
+vm_zk_backend_count{backend="mock"} 0

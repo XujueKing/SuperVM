@@ -11,7 +11,10 @@ fn main() {
     let a = Fr::from(3u64);
     let b = Fr::from(5u64);
     let c = a * b;
-    let circuit = MulCircuit { a: Some(a), b: Some(b) };
+    let circuit = MulCircuit {
+        a: Some(a),
+        b: Some(b),
+    };
 
     // MockProver (快速功能性验证 + 粗略性能)
     let t0 = Instant::now();

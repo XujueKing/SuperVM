@@ -1,5 +1,5 @@
 //! 压缩版 RingCT 性能测试
-//! 
+//!
 //! 对比压缩承诺方案的性能提升
 
 use ark_bls12_381::Bls12_381;
@@ -11,10 +11,10 @@ use zk_groth16_test::ringct_compressed::CompressedRingCTCircuit;
 
 fn main() {
     println!("=== Compressed RingCT Performance Test ===\n");
-    
+
     let mut rng = OsRng;
     let circuit = CompressedRingCTCircuit::example();
-    
+
     // Setup
     println!("🔧 Running setup...");
     let start = Instant::now();
@@ -22,15 +22,14 @@ fn main() {
         .expect("Setup failed");
     let setup_time = start.elapsed();
     println!("   ✅ Setup time: {:?}\n", setup_time);
-    
+
     // Prove
     println!("🔐 Generating proof...");
     let start = Instant::now();
-    let proof = Groth16::<Bls12_381>::prove(&pk, circuit.clone(), &mut rng)
-        .expect("Prove failed");
+    let proof = Groth16::<Bls12_381>::prove(&pk, circuit.clone(), &mut rng).expect("Prove failed");
     let prove_time = start.elapsed();
     println!("   ✅ Prove time: {:?}\n", prove_time);
-    
+
     // Verify
     println!("✓ Verifying proof...");
     let public_inputs = vec![
@@ -38,14 +37,13 @@ fn main() {
         circuit.output.commitment_hash,
         circuit.merkle_proof.root,
     ];
-    
+
     let start = Instant::now();
-    let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof)
-        .expect("Verify failed");
+    let valid = Groth16::<Bls12_381>::verify(&vk, &public_inputs, &proof).expect("Verify failed");
     let verify_time = start.elapsed();
     println!("   ✅ Verify time: {:?}", verify_time);
     println!("   ✅ Proof valid: {}\n", valid);
-    
+
     // Summary
     println!("=== Summary (Compressed) ===");
     println!("Constraints: 877 (vs 4755 原版)");

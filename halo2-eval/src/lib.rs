@@ -51,7 +51,13 @@ impl Circuit<Fr> for MulCircuit {
             vec![q * (a * b - c)]
         });
 
-        MulConfig { a, b, c, instance, q_mul }
+        MulConfig {
+            a,
+            b,
+            c,
+            instance,
+            q_mul,
+        }
     }
 
     fn synthesize(&self, cfg: MulConfig, mut layouter: impl Layouter<Fr>) -> Result<(), Error> {
@@ -98,7 +104,10 @@ mod tests {
         let b = Fr::from(5u64);
         let c = a * b;
 
-        let circuit = MulCircuit { a: Some(a), b: Some(b) };
+        let circuit = MulCircuit {
+            a: Some(a),
+            b: Some(b),
+        };
         let public_inputs = vec![vec![c]];
 
         let prover = MockProver::run(k, &circuit, public_inputs).unwrap();

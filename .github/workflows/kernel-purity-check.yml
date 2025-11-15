@@ -235,11 +235,9 @@ jobs:
         run: |
           echo "⚡ Running performance benchmarks..."
           
-          # 运行并行执行基准测试
-          cargo bench --bench parallel_execution -- --save-baseline current
-          
-          # 运行 MVCC 吞吐量测试
-          cargo bench --bench mvcc_throughput -- --save-baseline current
+          # 运行 vm-runtime 并行/GC/MVCC 基准测试
+          # 注意：当前仓库存在的基准文件为 src/vm-runtime/benches/parallel_benchmark.rs
+          cargo bench -p vm-runtime --bench parallel_benchmark -- --save-baseline current
       
       - name: 对比基准性能
         if: github.event_name == 'pull_request'
@@ -250,9 +248,8 @@ jobs:
           # 检出 main 分支
           git checkout origin/main
           
-          # 运行基准测试
-          cargo bench --bench parallel_execution -- --save-baseline main
-          cargo bench --bench mvcc_throughput -- --save-baseline main
+          # 运行基准测试（与 main 基线一致的基准）
+          cargo bench -p vm-runtime --bench parallel_benchmark -- --save-baseline main
           
           # 对比结果
           cargo criterion --baseline main

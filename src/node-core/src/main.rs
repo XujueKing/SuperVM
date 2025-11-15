@@ -6,8 +6,8 @@
 use clap::Parser;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
-use vm_runtime::Runtime;
 use vm_runtime::MemoryStorage;
+use vm_runtime::Runtime;
 
 /// 节点命令行参数（PoC）
 #[derive(Parser, Debug)]
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(Level::INFO)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
-    
+
     let args = Args::parse();
     info!("Starting node (PoC) with config: {}", args.config);
 
@@ -99,26 +99,22 @@ async fn main() -> anyhow::Result<()> {
     let wasm_events = wat::parse_str(wat_with_events)?;
     let block_number = 12345u64;
     let timestamp = 1704067200u64; // 2024-01-01 00:00:00 UTC
-    
-    let (result, events, bn, ts) = runtime.execute_with_context(
-        &wasm_events,
-        "process",
-        block_number,
-        timestamp,
-    )?;
-    
+
+    let (result, events, bn, ts) =
+        runtime.execute_with_context(&wasm_events, "process", block_number, timestamp)?;
+
     info!("Demo 2: execute_with_context results:");
     info!("  Function returned: {}", result);
     info!("  Block number: {}, Timestamp: {}", bn, ts);
     info!("  Events collected: {} events", events.len());
-    
+
     for (i, event) in events.iter().enumerate() {
         let event_str = String::from_utf8_lossy(event);
         info!("    Event {}: {}", i + 1, event_str);
     }
 
-        // 演示 3: 密码学功能
-        let wat_crypto = r#"
+    // 演示 3: 密码学功能
+    let wat_crypto = r#"
         (module
           ;; 导入密码学 host functions
           (import "crypto_api" "sha256" (func $sha256 (param i32 i32 i32) (result i32)))
@@ -163,48 +159,47 @@ async fn main() -> anyhow::Result<()> {
           )
         )
         "#;
-        let wasm_crypto = wat::parse_str(wat_crypto)?;
-        let (result, crypto_events, _, _) = runtime.execute_with_context(
-            &wasm_crypto,
-            "hash_demo",
-            100,
-            1704067300,
-        )?;
-    
-        info!("Demo 3: 密码学功能演示");
-        info!("  执行结果: {}", result);
-        info!("  生成的哈希事件数: {}", crypto_events.len());
-    
-        for (i, hash_event) in crypto_events.iter().enumerate() {
-            let hash_hex = hash_event.iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>();
-            let hash_type = if i == 0 { "SHA-256" } else { "Keccak-256" };
-            info!("    {}: {}", hash_type, hash_hex);
-        }
-    
-        // 验证哈希结果
-        let expected_sha256 = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
-        let expected_keccak256 = "47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad";
-    
-        let actual_sha256 = crypto_events[0].iter()
+    let wasm_crypto = wat::parse_str(wat_crypto)?;
+    let (result, crypto_events, _, _) =
+        runtime.execute_with_context(&wasm_crypto, "hash_demo", 100, 1704067300)?;
+
+    info!("Demo 3: 密码学功能演示");
+    info!("  执行结果: {}", result);
+    info!("  生成的哈希事件数: {}", crypto_events.len());
+
+    for (i, hash_event) in crypto_events.iter().enumerate() {
+        let hash_hex = hash_event
+            .iter()
             .map(|b| format!("{:02x}", b))
             .collect::<String>();
-        let actual_keccak256 = crypto_events[1].iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>();
-    
-        if actual_sha256 == expected_sha256 {
-            info!("  ✓ SHA-256 验证通过");
-        } else {
-            info!("  ✗ SHA-256 验证失败");
-        }
-    
-        if actual_keccak256 == expected_keccak256 {
-            info!("  ✓ Keccak-256 验证通过");
-        } else {
-            info!("  ✗ Keccak-256 验证失败");
-        }
+        let hash_type = if i == 0 { "SHA-256" } else { "Keccak-256" };
+        info!("    {}: {}", hash_type, hash_hex);
+    }
+
+    // 验证哈希结果
+    let expected_sha256 = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
+    let expected_keccak256 = "47173285a8d7341e5e972fc677286384f802f8ef42a5ec5f03bbfa254cb01fad";
+
+    let actual_sha256 = crypto_events[0]
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+    let actual_keccak256 = crypto_events[1]
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
+
+    if actual_sha256 == expected_sha256 {
+        info!("  ✓ SHA-256 验证通过");
+    } else {
+        info!("  ✗ SHA-256 验证失败");
+    }
+
+    if actual_keccak256 == expected_keccak256 {
+        info!("  ✓ Keccak-256 验证通过");
+    } else {
+        info!("  ✗ Keccak-256 验证失败");
+    }
 
     // 演示 4: 以太坊地址派生 (简化演示)
     info!("Demo 4: 以太坊地址派生");
@@ -214,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 演示 5: 并行执行引擎
     info!("Demo 5: 并行执行演示");
-    
+
     // 创建三个模拟交易
     let tx1_wat = r#"
     (module
@@ -231,7 +226,7 @@ async fn main() -> anyhow::Result<()> {
       )
     )
     "#;
-    
+
     let tx2_wat = r#"
     (module
       (import "storage_api" "storage_set" (func $storage_set (param i32 i32 i32 i32) (result i32)))
@@ -247,7 +242,7 @@ async fn main() -> anyhow::Result<()> {
       )
     )
     "#;
-    
+
     let tx3_wat = r#"
     (module
       (import "storage_api" "storage_get" (func $storage_get (param i32 i32) (result i64)))
@@ -262,79 +257,79 @@ async fn main() -> anyhow::Result<()> {
       )
     )
     "#;
-    
+
     use vm_runtime::{ConflictDetector, TxId};
-    
+
     let tx1_wasm = wat::parse_str(tx1_wat)?;
     let tx2_wasm = wat::parse_str(tx2_wat)?;
     let tx3_wasm = wat::parse_str(tx3_wat)?;
-    
+
     // 执行并收集读写集
     let mut result1 = runtime.execute_with_rw_tracking(&tx1_wasm, "run", 1000, 1704067500)?;
     result1.tx_id = 1;
-    
+
     let mut result2 = runtime.execute_with_rw_tracking(&tx2_wasm, "run", 1000, 1704067500)?;
     result2.tx_id = 2;
-    
+
     let mut result3 = runtime.execute_with_rw_tracking(&tx3_wasm, "run", 1000, 1704067500)?;
     result3.tx_id = 3;
-    
+
     info!("  执行了 3 笔交易:");
     info!("    TX1: 写入 alice_balance");
     info!("    TX2: 写入 bob_balance");
     info!("    TX3: 读取 alice_balance");
-    
+
     // 冲突检测
     let mut detector = ConflictDetector::new();
     detector.record(result1.tx_id, result1.read_write_set.clone());
     detector.record(result2.tx_id, result2.read_write_set.clone());
     detector.record(result3.tx_id, result3.read_write_set.clone());
-    
+
     let tx_order: Vec<TxId> = vec![1, 2, 3];
     let graph = detector.build_dependency_graph(&tx_order);
-    
+
     info!("  冲突分析:");
     info!("    TX1 和 TX2 无冲突 → 可并行执行 ✓");
     info!("    TX3 依赖 TX1 → 必须等待 TX1 完成");
-    
+
     let deps1 = graph.get_dependencies(1);
     let deps2 = graph.get_dependencies(2);
     let deps3 = graph.get_dependencies(3);
-    
+
     info!("  依赖关系:");
     info!("    TX1 依赖: {:?}", deps1);
     info!("    TX2 依赖: {:?}", deps2);
     info!("    TX3 依赖: {:?}", deps3);
-    
+
     if deps1.is_empty() && deps2.is_empty() && deps3 == vec![1] {
         info!("  ✓ 并行执行调度正确!");
     }
 
     // 演示 6: 状态快照与回滚
     info!("\n=== Demo 6: 状态快照与回滚 ===");
-    
+
     use vm_runtime::ParallelScheduler;
-    
+
     let scheduler = ParallelScheduler::new();
-    
+
     info!("场景 1: 成功的交易");
     info!("  初始状态: 账户余额为空");
-    
+
     // 成功的存款交易
     let deposit_result = scheduler.execute_with_snapshot(|manager| {
         let storage_arc = manager.get_storage();
         let mut storage = storage_arc.lock().unwrap();
-        
+
         info!("  执行存款: 向账户存入 100 COIN");
         storage.insert(b"account_balance".to_vec(), b"100".to_vec());
-        
+
         let events_arc = manager.get_events();
         let mut events = events_arc.lock().unwrap();
         events.push(b"Deposited 100 COIN".to_vec());
-        
+
         Ok("存款成功".to_string())
     });
-    
+
     match deposit_result {
         Ok(msg) => {
             info!("  ✓ 交易成功: {}", msg);
@@ -347,38 +342,39 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => info!("  ✗ 交易失败: {}", e),
     }
-    
+
     info!("\n场景 2: 失败的交易 - 自动回滚");
     info!("  当前余额: 100 COIN");
     info!("  尝试取款: 150 COIN (余额不足)");
-    
+
     // 会失败的取款交易
     let withdraw_result = scheduler.execute_with_snapshot(|manager| {
         let storage_arc = manager.get_storage();
         let mut storage = storage_arc.lock().unwrap();
-        
+
         // 检查余额
-        let balance = storage.get(&b"account_balance".to_vec())
+        let balance = storage
+            .get(&b"account_balance".to_vec())
             .and_then(|b| String::from_utf8(b.clone()).ok())
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(0);
-        
+
         if balance < 150 {
             info!("  验证失败: 余额不足 ({} < 150)", balance);
             return Err(format!("余额不足: 需要 150 COIN,但只有 {} COIN", balance));
         }
-        
+
         // 这段代码不会被执行
         storage.insert(b"account_balance".to_vec(), b"0".to_vec());
         Ok("取款成功".to_string())
     });
-    
+
     match withdraw_result {
         Ok(msg) => info!("  ✓ 交易成功: {}", msg),
         Err(e) => {
             info!("  ✗ 交易失败: {}", e);
             info!("  执行回滚...");
-            
+
             // 验证状态已回滚
             let storage_arc = scheduler.get_storage();
             let storage = storage_arc.lock().unwrap();
@@ -388,54 +384,64 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
-    
+
     info!("\n场景 3: 嵌套交易 - 部分回滚");
     info!("  当前余额: 100 COIN");
-    
+
     // 第一笔成功的取款
-    scheduler.execute_with_snapshot(|manager| {
-        let storage_arc = manager.get_storage();
-        let mut storage = storage_arc.lock().unwrap();
-        
-        let balance = storage.get(&b"account_balance".to_vec())
-            .and_then(|b| String::from_utf8(b.clone()).ok())
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(0);
-        
-        let new_balance = balance - 30;
-        storage.insert(b"account_balance".to_vec(), new_balance.to_string().into_bytes());
-        
-        info!("  交易 1: 取款 30 COIN 成功,余额: {} COIN", new_balance);
-        Ok(())
-    }).unwrap();
-    
+    scheduler
+        .execute_with_snapshot(|manager| {
+            let storage_arc = manager.get_storage();
+            let mut storage = storage_arc.lock().unwrap();
+
+            let balance = storage
+                .get(&b"account_balance".to_vec())
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0);
+
+            let new_balance = balance - 30;
+            storage.insert(
+                b"account_balance".to_vec(),
+                new_balance.to_string().into_bytes(),
+            );
+
+            info!("  交易 1: 取款 30 COIN 成功,余额: {} COIN", new_balance);
+            Ok(())
+        })
+        .unwrap();
+
     // 第二笔失败的取款
     let result2: Result<(), String> = scheduler.execute_with_snapshot(|manager| {
         let storage_arc = manager.get_storage();
         let storage = storage_arc.lock().unwrap();
-        
-        let balance = storage.get(&b"account_balance".to_vec())
+
+        let balance = storage
+            .get(&b"account_balance".to_vec())
             .and_then(|b| String::from_utf8(b.clone()).ok())
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(0);
-        
+
         if balance < 100 {
             info!("  交易 2: 取款 100 COIN 失败(余额不足: {} COIN)", balance);
             return Err("余额不足".to_string());
         }
-        
+
         Ok(())
     });
-    
+
     if result2.is_err() {
         let storage_arc = scheduler.get_storage();
         let storage = storage_arc.lock().unwrap();
         if let Some(balance) = storage.get(&b"account_balance".to_vec()) {
             let balance_str = String::from_utf8_lossy(balance);
-            info!("  ✓ 交易 2 已回滚,但交易 1 保留,最终余额: {} COIN", balance_str);
+            info!(
+                "  ✓ 交易 2 已回滚,但交易 1 保留,最终余额: {} COIN",
+                balance_str
+            );
         }
     }
-    
+
     info!("\n✓ Demo 6 完成: 状态快照与回滚功能演示成功!");
     info!("  - 成功交易提交状态 ✓");
     info!("  - 失败交易自动回滚 ✓");
@@ -446,7 +452,7 @@ async fn main() -> anyhow::Result<()> {
         info!("按 Ctrl-C 退出...");
         tokio::signal::ctrl_c().await?;
     }
-    
+
     info!("Shutting down...");
     Ok(())
 }
