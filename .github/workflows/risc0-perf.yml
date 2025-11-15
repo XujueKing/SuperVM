@@ -22,6 +22,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache build target
+        uses: actions/cache@v4
+        with:
+          path: |
+            target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
+
       - name: Install prerequisites
         run: |
           sudo apt-get update
@@ -32,21 +51,42 @@ jobs:
 
       - name: Install RISC0 toolchain (rzup)
         run: |
+          set -euxo pipefail
           curl -L https://risczero.com/install | bash
           echo "$HOME/.risc0/bin" >> $GITHUB_PATH
           source "$HOME/.risc0/bin/env"
-          rzup --version
+          rzup --version | tee -a rzup_install.log
           # retry rzup install to mitigate transient network/TLS issues
           n=0
           until [ $n -ge 5 ]
           do
-            rzup install && break
+            if rzup install 2>&1 | tee -a rzup_install.log; then
+              break
+            fi
             n=$((n+1))
-            echo "rzup install failed, retry $n...";
+            echo "rzup install failed, retry $n..." | tee -a rzup_install.log
             sleep $((5*n))
           done
+          command -v cargo-risczero || true
           cargo risczero --help || true
-          echo "RISC0 toolchain installed successfully"
+          echo "RISC0 toolchain installed successfully" | tee -a rzup_install.log
+
+      - name: Diagnostics (env/rust/cargo/rzup)
+        run: |
+          set -euxo pipefail
+          {
+            echo "=== env ===";
+            env | sort;
+            echo "\n=== rustup show ===";
+            rustup show;
+            echo "\n=== rustc/cargo versions ===";
+            rustc -Vv || true; cargo -Vv || true;
+            echo "\n=== rzup toolchain list ===";
+            source "$HOME/.risc0/bin/env" || true
+            rzup toolchain list || true;
+            echo "\n=== which cargo-risczero ===";
+            command -v cargo-risczero || true;
+          } > ci_diagnostics.txt
 
       - name: Build & Run example
         working-directory: src/l2-executor
@@ -56,8 +96,11 @@ jobs:
           cargo run --release --features risc0-poc --example risc0_performance_comparison 2>&1 | tee ../../risc0_ci_run.log
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: risc0-perf-logs
           path: |
             risc0_ci_run.log
+            rzup_install.log
+            ci_diagnostics.txt
